@@ -1,0 +1,774 @@
+import React, { useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useAppointments } from '../../store/useAppointments';
+import { useCurrentUser } from '../../store/useCurrentUser';
+import { useState } from 'react';
+import { scheduleNotification, cancelNotification } from '../../lib/notifications';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const appointmentSchema = z.object({
+  doctorName: z.string().min(1, 'Obligatorio'),
+  specialty: z.string().optional(),
+  location: z.string().min(1, 'Obligatorio'),
+  date: z.date({ required_error: 'Selecciona una fecha' }),
+  time: z.string().min(1, 'Obligatorio'),
+  notes: z.string().optional(),
+});
+
+type AppointmentForm = z.infer<typeof appointmentSchema>;
+
+export default function AppointmentsScreen() {
+  const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment } = useAppointments();
+  const { profile } = useCurrentUser();
+  const [modalVisible, setModalVisible] = React.useState(false);
+  const [showDatePicker, setShowDatePicker] = React.useState(false);
+  const [showTimePicker, setShowTimePicker] = React.useState(false);
+  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(undefined);
+  const [editingAppointment, setEditingAppointment] = React.useState<any>(null);
+  const [formError, setFormError] = React.useState<string | null>(null);
+
+  // NUEVO: Estado para horas y frecuencia
+  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
+  const [showCustomTimePicker, setShowCustomTimePicker] = useState(false);
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]); // 0=Domingo
+  const [everyXHours, setEveryXHours] = useState('8');
+  const notificationIdsRef = React.useRef<{ [apptId: string]: string }>({});
+
+  const perfilIncompleto = !profile || !profile.name || !profile.age;
+
+  const {
+    control,
+    handleSubmit,
+    reset,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<AppointmentForm>({
+    resolver: zodResolver(appointmentSchema),
+    defaultValues: {
+      doctorName: '',
+      specialty: '',
+      location: '',
+      date: undefined,
+      time: '',
+      notes: '',
+    },
+  });
+
+  React.useEffect(() => {
+    getAppointments();
+  }, []);
+
+  // Handlers para fecha y hora
+  const onDateChange = (event: any, date?: Date) => {
+    setShowDatePicker(false);
+    if (date) {
+      setValue('date', date);
+      setSelectedDate(date);
+    }
+  };
+  const onTimeChange = (event: any, time?: Date) => {
+    setShowTimePicker(false);
+    if (time) {
+      const hh = time.getHours().toString().padStart(2, '0');
+      const mm = time.getMinutes().toString().padStart(2, '0');
+      setValue('time', `${hh}:${mm}`);
+    }
+  };
+
+  // NUEVO: Función para agregar hora
+  const addTime = (date: Date) => {
+    setSelectedTimes((prev) => [...prev, date]);
+    setShowCustomTimePicker(false);
+  };
+  const removeTime = (idx: number) => {
+    setSelectedTimes((prev) => prev.filter((_, i) => i !== idx));
+  };
+  const toggleDay = (day: number) => {
+    setDaysOfWeek((prev) => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+  };
+
+  const openEditModal = (appt: any) => {
+    setEditingAppointment(appt);
+    setModalVisible(true);
+    setValue('doctorName', appt.title);
+    setValue('specialty', appt.specialty || '');
+    setValue('location', appt.location);
+    setValue('date', appt.dateTime ? new Date(appt.dateTime) : undefined);
+    setValue('time', appt.dateTime ? new Date(appt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+    setValue('notes', appt.description || '');
+  };
+  const openCreateModal = () => {
+    setEditingAppointment(null);
+    setModalVisible(true);
+    reset();
+  };
+  // Modifica onSubmit para programar notificaciones según la configuración
+  const onSubmit = async (data: AppointmentForm) => {
+    setFormError(null);
+    try {
+      let apptId = editingAppointment?.id;
+      const [h, m] = data.time.split(':').map(Number);
+      const date = new Date(data.date);
+      date.setHours(h, m, 0, 0);
+      if (editingAppointment) {
+        await updateAppointment(editingAppointment.id, {
+          title: data.doctorName,
+          dateTime: date.toISOString(),
+          location: data.location,
+          description: data.notes,
+        });
+        apptId = editingAppointment.id;
+        // Cancelar notificaciones anteriores
+        await cancelNotification(apptId);
+      } else {
+        await createAppointment({
+          title: data.doctorName,
+          dateTime: date.toISOString(),
+          location: data.location,
+          description: data.notes,
+        });
+        // Espera a que getAppointments actualice la lista
+        await new Promise(res => setTimeout(res, 500));
+        // Busca la nueva cita
+        const newAppt = appointments.find(a => a.title === data.doctorName && a.dateTime === date.toISOString());
+        apptId = newAppt?.id;
+      }
+      // Programar notificaciones según la configuración
+      if (apptId) {
+        if (frequencyType === 'daily') {
+          for (const t of selectedTimes) {
+            const now = new Date();
+            let firstDate = new Date(now);
+            firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
+            if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
+            if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            const nowLog = new Date();
+            console.log('[CITA] Hora actual:', nowLog.toISOString());
+            console.log('[CITA] Programando notificación para:', firstDate.toISOString());
+            await scheduleNotification({
+              title: `Recordatorio de cita: ${data.doctorName}`,
+              body: `Ubicación: ${data.location}`,
+              data: {
+                kind: 'APPOINTMENT',
+                refId: apptId,
+                scheduledFor: firstDate.toISOString(),
+                name: data.doctorName,
+                dosage: '',
+                instructions: data.notes,
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              },
+              trigger: { type: 'date', date: firstDate },
+            });
+            const id = await scheduleNotification({
+              title: `Recordatorio de cita: ${data.doctorName}`,
+              body: `Ubicación: ${data.location}`,
+              data: {
+                kind: 'APPOINTMENT',
+                refId: apptId,
+                scheduledFor: t.toISOString(),
+                name: data.doctorName,
+                dosage: '',
+                instructions: data.notes,
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              },
+              trigger: { hour: t.getHours(), minute: t.getMinutes(), repeats: true },
+            });
+            notificationIdsRef.current[`${apptId}_${t.getHours()}_${t.getMinutes()}`] = id;
+          }
+        } else if (frequencyType === 'daysOfWeek') {
+          for (const t of selectedTimes) {
+            for (const day of daysOfWeek) {
+              const now = new Date();
+              let firstDate = new Date(now);
+              firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
+              firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
+              if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
+              if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+              console.log('Programando notificación CITA para:', firstDate.toISOString());
+              await scheduleNotification({
+                title: `Recordatorio de cita: ${data.doctorName}`,
+                body: `Ubicación: ${data.location}`,
+                data: {
+                  kind: 'APPOINTMENT',
+                  refId: apptId,
+                  scheduledFor: firstDate.toISOString(),
+                  name: data.doctorName,
+                  dosage: '',
+                  instructions: data.notes,
+                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                },
+                trigger: { type: 'date', date: firstDate },
+              });
+              const id = await scheduleNotification({
+                title: `Recordatorio de cita: ${data.doctorName}`,
+                body: `Ubicación: ${data.location}`,
+                data: {
+                  kind: 'APPOINTMENT',
+                  refId: apptId,
+                  scheduledFor: t.toISOString(),
+                  name: data.doctorName,
+                  dosage: '',
+                  instructions: data.notes,
+                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                },
+                trigger: { weekday: day + 1, hour: t.getHours(), minute: t.getMinutes(), repeats: true },
+              });
+              notificationIdsRef.current[`${apptId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
+            }
+          }
+        } else if (frequencyType === 'everyXHours') {
+          if (selectedTimes.length > 0) {
+            const base = selectedTimes[0];
+            const interval = parseInt(everyXHours) || 8;
+            let firstDate = new Date();
+            firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
+            if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
+            if ((firstDate - new Date()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            console.log('Programando notificación CITA para:', firstDate.toISOString());
+            await scheduleNotification({
+              title: `Recordatorio de cita: ${data.doctorName}`,
+              body: `Ubicación: ${data.location}`,
+              data: {
+                kind: 'APPOINTMENT',
+                refId: apptId,
+                scheduledFor: firstDate.toISOString(),
+                name: data.doctorName,
+                dosage: '',
+                instructions: data.notes,
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              },
+              trigger: { type: 'date', date: firstDate },
+            });
+            const id = await scheduleNotification({
+              title: `Recordatorio de cita: ${data.doctorName}`,
+              body: `Ubicación: ${data.location}`,
+              data: {
+                kind: 'APPOINTMENT',
+                refId: apptId,
+                scheduledFor: base.toISOString(),
+                name: data.doctorName,
+                dosage: '',
+                instructions: data.notes,
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              },
+              trigger: { hour: base.getHours(), minute: base.getMinutes(), repeats: true, interval: interval * 60 },
+            });
+            notificationIdsRef.current[`${apptId}_every${interval}h`] = id;
+          }
+        }
+      }
+      reset();
+      setModalVisible(false);
+      setEditingAppointment(null);
+    } catch (e: any) {
+      setFormError(e.message || 'Error al guardar');
+    }
+  };
+  const onDelete = async (id: string) => {
+    Alert.alert(
+      'Eliminar cita',
+      '¿Seguro que deseas eliminar esta cita?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Eliminar', style: 'destructive', onPress: async () => {
+            await deleteAppointment(id);
+          }
+        },
+      ]
+    );
+  };
+
+  const renderItem = ({ item }: { item: any }) => (
+    <LinearGradient colors={["#d1fae5", "#f0fdfa"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
+      <View style={styles.cardHeaderModern}>
+        <MaterialIcons name="event" size={24} color="#34d399" style={{ marginRight: 10 }} />
+        <Text style={styles.cardTitleModern}>{item.title}</Text>
+        <View style={styles.cardActionsModern}>
+          <TouchableOpacity style={styles.iconBtnModern} onPress={() => openEditModal(item)}>
+            <MaterialIcons name="edit" size={20} color="#2563eb" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtnModern} onPress={() => onDelete(item.id)}>
+            <MaterialIcons name="delete" size={20} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
+      <Text style={styles.cardInfoModern}>{item.location}</Text>
+      <Text style={styles.cardInfoModern}>{item.dateTime ? new Date(item.dateTime).toLocaleString() : '-'}</Text>
+      <Text style={styles.cardInfoModern}>{item.description}</Text>
+    </LinearGradient>
+  );
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.headerRow}>
+        <Text style={styles.headerTitle}>Mis Citas</Text>
+        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={perfilIncompleto} activeOpacity={0.85}>
+          <Ionicons name="add-circle" size={28} color="#34d399" />
+          <Text style={styles.addBtnTextModern}>Nueva cita</Text>
+        </TouchableOpacity>
+      </View>
+      {perfilIncompleto && (
+        <Text style={{ color: '#ef4444', marginBottom: 8, textAlign: 'center' }}>
+          Completa tu perfil para poder agregar citas.
+        </Text>
+      )}
+      {loading ? (
+        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
+      ) : error ? (
+        <Text style={styles.errorText}>{error}</Text>
+      ) : (
+        <FlatList
+          data={appointments}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingBottom: 32 }}
+          ListEmptyComponent={<Text style={styles.emptyText}>No hay citas programadas</Text>}
+        />
+      )}
+      {/* Modal para crear/editar cita */}
+      <Modal
+        visible={modalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => { setModalVisible(false); setEditingAppointment(null); }}
+      >
+        <View style={styles.modalOverlayModern}>
+          <View style={styles.modalContentModern}>
+            <Text style={styles.modalTitle}>{editingAppointment ? 'Editar Cita Médica' : 'Agregar Cita Médica'}</Text>
+            <Controller
+              control={control}
+              name="doctorName"
+              render={({ field: { onChange, value } }) => (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Doctor *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Nombre del doctor"
+                    value={value}
+                    onChangeText={onChange}
+                  />
+                  {errors.doctorName && <Text style={styles.errorText}>{errors.doctorName.message}</Text>}
+                </View>
+              )}
+            />
+            <Controller
+              control={control}
+              name="specialty"
+              render={({ field: { onChange, value } }) => (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Especialidad</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Especialidad"
+                    value={value}
+                    onChangeText={onChange}
+                  />
+                </View>
+              )}
+            />
+            <Controller
+              control={control}
+              name="location"
+              render={({ field: { onChange, value } }) => (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Ubicación *</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ubicación"
+                    value={value}
+                    onChangeText={onChange}
+                  />
+                  {errors.location && <Text style={styles.errorText}>{errors.location.message}</Text>}
+                </View>
+              )}
+            />
+            {/* Fecha */}
+            <Controller
+              control={control}
+              name="date"
+              render={({ field: { value } }) => (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Fecha *</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
+                  </TouchableOpacity>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={value || new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={onDateChange}
+                    />
+                  )}
+                  {errors.date && <Text style={styles.errorText}>{errors.date.message as string}</Text>}
+                </View>
+              )}
+            />
+            {/* Hora */}
+            <Controller
+              control={control}
+              name="time"
+              render={({ field: { value, onChange } }) => (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Hora *</Text>
+                  <TouchableOpacity
+                    style={styles.input}
+                    onPress={() => setShowTimePicker(true)}
+                  >
+                    <Text>{value ? value : 'Seleccionar hora'}</Text>
+                  </TouchableOpacity>
+                  {showTimePicker && (
+                    <DateTimePicker
+                      value={selectedDate || new Date()}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={onTimeChange}
+                    />
+                  )}
+                  {errors.time && <Text style={styles.errorText}>{errors.time.message as string}</Text>}
+                </View>
+              )}
+            />
+            {/* Frecuencia de recordatorio */}
+            <View style={{ marginBottom: 10 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Frecuencia de recordatorio</Text>
+              <View style={{ flexDirection: 'row', marginBottom: 6 }}>
+                <TouchableOpacity onPress={() => setFrequencyType('daily')} style={{ marginRight: 12 }}>
+                  <Text style={{ color: frequencyType === 'daily' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daily' ? 'bold' : 'normal' }}>Todos los días</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setFrequencyType('daysOfWeek')} style={{ marginRight: 12 }}>
+                  <Text style={{ color: frequencyType === 'daysOfWeek' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daysOfWeek' ? 'bold' : 'normal' }}>Días específicos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setFrequencyType('everyXHours')}>
+                  <Text style={{ color: frequencyType === 'everyXHours' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'everyXHours' ? 'bold' : 'normal' }}>Cada X horas</Text>
+                </TouchableOpacity>
+              </View>
+              {frequencyType === 'daysOfWeek' && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
+                  {["D","L","M","M","J","V","S"].map((d, i) => (
+                    <TouchableOpacity key={i} onPress={() => toggleDay(i)} style={{ backgroundColor: daysOfWeek.includes(i) ? '#2563eb' : '#e5e7eb', borderRadius: 6, padding: 6, marginRight: 4, marginBottom: 4 }}>
+                      <Text style={{ color: daysOfWeek.includes(i) ? '#fff' : '#334155', fontWeight: 'bold' }}>{d}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {frequencyType === 'everyXHours' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <Text>Cada </Text>
+                  <TextInput
+                    style={{ borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, width: 40, marginHorizontal: 4, textAlign: 'center', backgroundColor: '#fff' }}
+                    value={everyXHours}
+                    onChangeText={setEveryXHours}
+                    keyboardType="numeric"
+                  />
+                  <Text> horas</Text>
+                </View>
+              )}
+            </View>
+            {/* Horas de recordatorio */}
+            <View style={{ marginBottom: 10 }}>
+              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Horas de recordatorio</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
+                {selectedTimes.map((t, idx) => (
+                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0e7ff', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
+                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                    <TouchableOpacity onPress={() => removeTime(idx)}>
+                      <Ionicons name="close-circle" size={18} color="#ef4444" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity onPress={() => setShowCustomTimePicker(true)} style={{ backgroundColor: '#2563eb', borderRadius: 6, padding: 8 }}>
+                  <Ionicons name="add" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+              {showCustomTimePicker && (
+                <DateTimePicker
+                  value={new Date()}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(event, date) => { if (date) addTime(date); else setShowCustomTimePicker(false); }}
+                />
+              )}
+            </View>
+            {/* Notas */}
+            <Controller
+              control={control}
+              name="notes"
+              render={({ field: { onChange, value } }) => (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Notas</Text>
+                  <TextInput
+                    style={[styles.input, { height: 60 }]}
+                    placeholder="Notas adicionales"
+                    value={value}
+                    onChangeText={onChange}
+                    multiline
+                  />
+                </View>
+              )}
+            />
+            <View style={styles.modalActions}>
+              {formError && <Text style={{ color: '#ef4444', textAlign: 'center', marginBottom: 8 }}>{formError}</Text>}
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#2563eb' }]}
+                onPress={handleSubmit(onSubmit)}
+                disabled={isSubmitting || loading}
+              >
+                <Text style={styles.buttonText}>{editingAppointment ? 'Guardar cambios' : 'Guardar'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, { backgroundColor: '#64748b' }]}
+                onPress={() => { setModalVisible(false); setEditingAppointment(null); reset(); }}
+              >
+                <Text style={styles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingTop: 24,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2563eb',
+  },
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+    marginLeft: 6,
+  },
+  card: {
+    flexDirection: 'column',
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  cardTitle: {
+    fontWeight: 'bold',
+    color: '#22c55e',
+    fontSize: 16,
+    flex: 1,
+  },
+  cardSubtitle: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  cardInfo: {
+    color: '#64748b',
+    fontSize: 13,
+  },
+  cardNotes: {
+    color: '#94a3b8',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cardStatus: {
+    color: '#2563eb',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  iconBtn: {
+    marginHorizontal: 2,
+    padding: 4,
+  },
+  progressBox: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 8,
+    padding: 8,
+    marginTop: 8,
+  },
+  progressText: {
+    color: '#22c55e',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  emptyText: {
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 40,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 20,
+    width: '92%',
+    elevation: 4,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2563eb',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  inputGroup: {
+    marginBottom: 12,
+  },
+  inputLabel: {
+    marginBottom: 4,
+    color: '#334155',
+    fontWeight: '500',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#f8fafc',
+    fontSize: 15,
+    color: '#1e293b',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  button: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginHorizontal: 4,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  // Nuevos estilos modernos
+  addBtnModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    shadowColor: '#34d399',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  addBtnTextModern: {
+    color: '#059669',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  cardModern: {
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    shadowColor: '#34d399',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+    elevation: 4,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  cardHeaderModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  cardTitleModern: {
+    fontWeight: 'bold',
+    color: '#059669',
+    fontSize: 18,
+    flex: 1,
+  },
+  cardActionsModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  iconBtnModern: {
+    marginHorizontal: 2,
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: '#e0e7ff',
+  },
+  cardInfoModern: {
+    color: '#64748b',
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  modalOverlayModern: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContentModern: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 24,
+    width: '95%',
+    elevation: 6,
+    shadowColor: '#34d399',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.10,
+    shadowRadius: 8,
+  },
+});
