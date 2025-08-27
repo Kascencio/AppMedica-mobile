@@ -1,6 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Dimensions, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Image, Alert, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMedications } from '../../store/useMedications';
 import { useAppointments } from '../../store/useAppointments';
@@ -8,21 +7,29 @@ import { useTreatments } from '../../store/useTreatments';
 import { useAuth } from '../../store/useAuth';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
+import OfflineIndicator from '../../components/OfflineIndicator';
+import { LinearGradient } from 'expo-linear-gradient';
 import logo from '../../assets/logo.webp';
+import { useNavigation } from '@react-navigation/native';
+import SyncStatusBar from '../../components/SyncStatusBar';
+import AlarmStatus from '../../components/AlarmStatus';
+import COLORS from '../../constants/colors';
+import { scheduleNotification, testNotification, testMedicationAlarm, testAppointmentAlarm } from '../../lib/notificationTest';
+import * as Notifications from 'expo-notifications';
 
 const { width } = Dimensions.get('window');
 
-function getNextEvents(meds, appts, trts) {
+function getNextEvents(meds: any[], appts: any[], trts: any[]) {
   const now = new Date();
-  const events = [];
+  const events: any[] = [];
   if (Array.isArray(meds)) {
     meds.forEach(m => {
       if (m.startDate) events.push({
         type: 'Medicamento',
         name: m.name,
         date: new Date(m.startDate),
-        icon: <Ionicons name="medkit" size={22} color="#22d3ee" />,
-        color: '#22d3ee',
+        icon: <Ionicons name="medkit" size={22} color={COLORS.medical.medication} />,
+        color: COLORS.medical.medication,
       });
     });
   }
@@ -32,8 +39,8 @@ function getNextEvents(meds, appts, trts) {
         type: 'Cita',
         name: a.title,
         date: new Date(a.dateTime),
-        icon: <MaterialCommunityIcons name="calendar-check" size={22} color="#34d399" />,
-        color: '#34d399',
+        icon: <MaterialCommunityIcons name="calendar-check" size={22} color={COLORS.medical.appointment} />,
+        color: COLORS.medical.appointment,
       });
     });
   }
@@ -43,14 +50,14 @@ function getNextEvents(meds, appts, trts) {
         type: 'Tratamiento',
         name: t.title,
         date: new Date(t.startDate),
-        icon: <MaterialCommunityIcons name="leaf" size={22} color="#a78bfa" />,
-        color: '#a78bfa',
+        icon: <MaterialCommunityIcons name="leaf" size={22} color={COLORS.medical.treatment} />,
+        color: COLORS.medical.treatment,
       });
     });
   }
   return events
     .filter(e => e.date > now)
-    .sort((a, b) => a.date - b.date)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
     .slice(0, 3);
 }
 
@@ -65,10 +72,10 @@ const HEALTH_TIPS = [
   'Come frutas y verduras todos los días.',
 ];
 
-function getAdherence(events) {
+function getAdherence(events: any[]) {
   // Porcentaje de tomas marcadas como TAKEN hoy
   const today = new Date();
-  const isToday = (d) => {
+  const isToday = (d: any) => {
     const dt = new Date(d);
     return dt.getFullYear() === today.getFullYear() && dt.getMonth() === today.getMonth() && dt.getDate() === today.getDate();
   };
@@ -78,40 +85,328 @@ function getAdherence(events) {
   return { percent: total ? Math.round((taken / total) * 100) : 0, total, taken };
 }
 
-function getLastIntakeEvents(events) {
+function getLastIntakeEvents(events: any[]) {
   return Array.isArray(events)
-    ? [...events].sort((a, b) => new Date(b.scheduledFor) - new Date(a.scheduledFor)).slice(0, 5)
+    ? [...events].sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime()).slice(0, 5)
     : [];
 }
 
 export default function HomeScreen() {
-  const { medications } = useMedications();
+  const { medications, getMedications } = useMedications();
   const { appointments } = useAppointments();
   const { treatments } = useTreatments();
   const { logout } = useAuth();
-  const { profile } = useCurrentUser();
-  const { events: intakeEvents } = useIntakeEvents();
+  const { profile, fetchProfile, loading, error } = useCurrentUser();
+  const { events: intakeEvents, registerEvent, getEvents } = useIntakeEvents();
+  const navigation = useNavigation();
 
-  const cards = [
-    {
-      icon: <Ionicons name="medkit" size={36} color="#38bdf8" />, title: 'Medicamentos',
-      count: Array.isArray(medications) ? medications.length : 0,
-      bg: ['#bae6fd', '#e0f2fe'], // azul pastel
-      desc: 'Activos',
-    },
-    {
-      icon: <MaterialCommunityIcons name="calendar-check" size={36} color="#6ee7b7" />, title: 'Citas',
-      count: Array.isArray(appointments) ? appointments.length : 0,
-      bg: ['#bbf7d0', '#d1fae5'], // verde pastel
-      desc: 'Próximas',
-    },
-    {
-      icon: <MaterialCommunityIcons name="leaf" size={36} color="#c7d2fe" />, title: 'Tratamientos',
-      count: Array.isArray(treatments) ? treatments.length : 0,
-      bg: ['#ddd6fe', '#e0e7ff'], // morado pastel
-      desc: 'En curso',
-    },
-  ];
+  React.useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  // Funciones para acciones de medicamentos
+  const handleTakeMedication = async () => {
+    const nextMed = getNextMedication();
+    if (!nextMed) return;
+
+    try {
+      // Crear evento de adherencia
+      const adherenceEvent = {
+        refId: nextMed.id,
+        patientProfileId: profile?.id,
+        scheduledFor: new Date().toISOString(),
+        action: 'TAKEN' as const,
+        kind: 'MED' as const,
+        notes: 'Registrado desde Home'
+      };
+
+      // Usar el store de eventos de adherencia
+      await registerEvent(adherenceEvent);
+      
+      // Mostrar confirmación
+      Alert.alert(
+        '✅ Toma registrada',
+        `Has registrado la toma de ${nextMed.name} correctamente.`,
+        [{ text: 'OK' }]
+      );
+
+      // Actualizar datos
+      await Promise.all([
+        getMedications(),
+        getEvents()
+      ]);
+    } catch (error) {
+      console.error('[HomeScreen] Error al registrar toma:', error);
+      Alert.alert(
+        '❌ Error',
+        'No se pudo registrar la toma. Inténtalo de nuevo.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleSnoozeMedication = async () => {
+    const nextMed = getNextMedication();
+    if (!nextMed) return;
+
+    try {
+      // Crear evento de posponer
+      const adherenceEvent = {
+        refId: nextMed.id,
+        patientProfileId: profile?.id,
+        scheduledFor: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // +10 minutos
+        action: 'SNOOZE' as const,
+        kind: 'MED' as const,
+        notes: 'Pospuesto 10 minutos desde Home'
+      };
+
+      // Usar el store de eventos de adherencia
+      await registerEvent(adherenceEvent);
+      
+      // Programar notificación para 10 minutos
+      const snoozeTime = new Date(Date.now() + 10 * 60 * 1000);
+      await scheduleNotification({
+        title: `⏰ ${nextMed.name} - Recordatorio pospuesto`,
+        body: `Es hora de tomar ${nextMed.dosage} (pospuesto 10 minutos)`,
+        data: {
+          type: 'MEDICATION_SNOOZE',
+          medicationId: nextMed.id,
+          medicationName: nextMed.name,
+          dosage: nextMed.dosage,
+          snoozeMinutes: 10,
+          patientProfileId: profile?.id,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: snoozeTime,
+        },
+        identifier: `med_${nextMed.id}_snooze_${Date.now()}`,
+      });
+      
+      // Mostrar confirmación
+      Alert.alert(
+        '⏰ Toma pospuesta',
+        `La toma de ${nextMed.name} se ha pospuesto 10 minutos.`,
+        [{ text: 'OK' }]
+      );
+
+      // Actualizar datos
+      await Promise.all([
+        getMedications(),
+        getEvents()
+      ]);
+    } catch (error) {
+      console.error('[HomeScreen] Error al posponer toma:', error);
+      Alert.alert(
+        '❌ Error',
+        'No se pudo posponer la toma. Inténtalo de nuevo.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Función para probar notificaciones
+  const handleTestNotification = async () => {
+    try {
+      const success = await testNotification();
+      if (success) {
+        Alert.alert(
+          '🧪 Prueba de Notificación',
+          'Se ha programado una notificación de prueba que aparecerá en 2 segundos.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          '❌ Error',
+          'No se pudo programar la notificación de prueba.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Error probando notificación:', error);
+      Alert.alert(
+        '❌ Error',
+        'Error al probar la notificación.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Función para probar alarma de medicamento
+  const handleTestMedicationAlarm = async () => {
+    try {
+      const success = await testMedicationAlarm();
+      if (success) {
+        Alert.alert(
+          '💊 Prueba de Alarma de Medicamento',
+          'Se ha programado una alarma de medicamento que aparecerá en 3 segundos y debería navegar automáticamente a la pantalla de alarma.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          '❌ Error',
+          'No se pudo programar la alarma de medicamento.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Error probando alarma de medicamento:', error);
+      Alert.alert(
+        '❌ Error',
+        'Error al probar la alarma de medicamento.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Función para probar alarma de cita
+  const handleTestAppointmentAlarm = async () => {
+    try {
+      const success = await testAppointmentAlarm();
+      if (success) {
+        Alert.alert(
+          '📅 Prueba de Alarma de Cita',
+          'Se ha programado una alarma de cita que aparecerá en 3 segundos y debería navegar automáticamente a la pantalla de alarma.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          '❌ Error',
+          'No se pudo programar la alarma de cita.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[HomeScreen] Error probando alarma de cita:', error);
+      Alert.alert(
+        '❌ Error',
+        'Error al probar la alarma de cita.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  // Funciones auxiliares para el nuevo diseño
+  const getNextMedication = () => {
+    if (!medications || medications.length === 0) return null;
+    const now = new Date();
+    const todayMedications = medications.filter(med => {
+      if (!med.startDate) return false;
+      const startDate = new Date(med.startDate);
+      return startDate <= now;
+    });
+    
+    if (todayMedications.length === 0) return null;
+    
+    // Ordenar por hora y encontrar la próxima
+    return todayMedications.sort((a, b) => {
+      const timeA = a.time ? new Date(`2000-01-01 ${a.time}`) : new Date(0);
+      const timeB = b.time ? new Date(`2000-01-01 ${b.time}`) : new Date(0);
+      return timeA.getTime() - timeB.getTime();
+    })[0];
+  };
+
+  const getNextMedicationTime = () => {
+    const nextMed = getNextMedication();
+    if (!nextMed?.time) return '--:--';
+    return nextMed.time;
+  };
+
+  const getNextAppointment = () => {
+    if (!appointments || appointments.length === 0) return null;
+    const now = new Date();
+    const futureAppointments = appointments.filter(apt => {
+      if (!apt.dateTime) return false;
+      const aptDate = new Date(apt.dateTime);
+      return aptDate > now;
+    });
+    
+    if (futureAppointments.length === 0) return null;
+    
+    return futureAppointments.sort((a, b) => {
+      const dateA = new Date(a.dateTime);
+      const dateB = new Date(b.dateTime);
+      return dateA.getTime() - dateB.getTime();
+    })[0];
+  };
+
+  const formatAppointmentDateTime = (appointment: any) => {
+    if (!appointment?.dateTime) return '--';
+    const date = new Date(appointment.dateTime);
+    return date.toLocaleDateString('es-ES', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getTodayTimeline = () => {
+    const timeline = [];
+    
+    // Agregar medicamentos del día
+    if (medications && medications.length > 0) {
+      medications.forEach(med => {
+        if (med.startDate && med.time) {
+          timeline.push({
+            time: med.time,
+            title: med.name,
+            subtitle: `${med.dosage} - ${med.type}`,
+            completed: false, // Esto se debería verificar contra eventos de adherencia
+            type: 'medication'
+          });
+        }
+      });
+    }
+    
+    // Agregar citas del día
+    if (appointments && appointments.length > 0) {
+      appointments.forEach(apt => {
+        if (apt.dateTime) {
+          const aptDate = new Date(apt.dateTime);
+          const today = new Date();
+          if (aptDate.toDateString() === today.toDateString()) {
+            timeline.push({
+              time: aptDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+              title: `Cita con ${apt.doctorName}`,
+              subtitle: apt.location,
+              completed: false,
+              type: 'appointment'
+            });
+          }
+        }
+      });
+    }
+    
+    // Ordenar por hora
+    return timeline.sort((a, b) => {
+      const timeA = new Date(`2000-01-01 ${a.time}`);
+      const timeB = new Date(`2000-01-01 ${b.time}`);
+      return timeA.getTime() - timeB.getTime();
+    });
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Cargando perfil...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle" size={48} color={COLORS.error} />
+        <Text style={styles.errorText}>Error: {error}</Text>
+        <TouchableOpacity onPress={fetchProfile} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>Reintentar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   const nextEvents = getNextEvents(medications, appointments, treatments);
   const adherence = getAdherence(intakeEvents);
@@ -119,389 +414,694 @@ export default function HomeScreen() {
   const healthTip = HEALTH_TIPS[new Date().getDate() % HEALTH_TIPS.length];
 
   return (
-    <LinearGradient colors={["#e0f2fe", "#f0fdf4", "#f0fdfa"]} style={styles.gradient}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Logo principal */}
-        <View style={{ alignItems: 'center', marginBottom: 10 }}>
-          <Image source={logo} style={{ width: 80, height: 80, borderRadius: 20 }} resizeMode="contain" />
-        </View>
-        {/* Header con avatar y saludo */}
-        <View style={styles.headerBox}>
-          <View style={styles.avatarBox}>
-            {profile?.photoUrl ? (
-              <Image source={{ uri: profile.photoUrl }} style={styles.avatar} />
-            ) : (
-              <Ionicons name="person-circle" size={70} color="#cbd5e1" />
-            )}
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Indicador de sincronización */}
+        <OfflineIndicator showDetails={true} />
+        
+        {/* Estado de las alarmas */}
+        <AlarmStatus />
+        
+        {/* Header con logo y notificaciones */}
+        <View style={styles.headerRow}>
+          <View style={styles.logoContainer}>
+            <Image source={logo} style={styles.logo} resizeMode="contain" />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>¡Hola, {profile?.name || 'Usuario'}!</Text>
-            <Text style={styles.motivational}>Recuerda cuidar de ti cada día. ¡Tú salud es lo más importante!</Text>
-          </View>
-        </View>
-        {/* Consejo de salud del día */}
-        <View style={styles.tipBox}>
-          <MaterialCommunityIcons name="lightbulb-on-outline" size={22} color="#f59e42" style={{ marginRight: 6 }} />
-          <Text style={styles.tipText}>{healthTip}</Text>
-        </View>
-        {/* Perfil rápido */}
-        <View style={styles.sectionBox}>
-          <Text style={styles.sectionTitle}>Perfil rápido</Text>
-          <View style={styles.profileRow}>
-            <View style={styles.profileCol}><Text style={styles.profileLabel}>Edad</Text><Text style={styles.profileValue}>{profile?.age || '—'}</Text></View>
-            <View style={styles.profileCol}><Text style={styles.profileLabel}>Peso</Text><Text style={styles.profileValue}>{profile?.weight ? profile.weight + ' kg' : '—'}</Text></View>
-            <View style={styles.profileCol}><Text style={styles.profileLabel}>Altura</Text><Text style={styles.profileValue}>{profile?.height ? profile.height + ' cm' : '—'}</Text></View>
-          </View>
-          <View style={styles.profileRow}>
-            <View style={styles.profileCol}><Text style={styles.profileLabel}>Alergias</Text><Text style={styles.profileValue}>{profile?.allergies || '—'}</Text></View>
-            <View style={styles.profileCol}><Text style={styles.profileLabel}>Médico</Text><Text style={styles.profileValue}>{profile?.doctorName || '—'}</Text></View>
-          </View>
-          <TouchableOpacity style={styles.editProfileBtn} onPress={() => { /* Navegar a perfil */ }}>
-            <Ionicons name="create-outline" size={18} color="#2563eb" />
-            <Text style={styles.editProfileText}>Editar perfil</Text>
+          <TouchableOpacity 
+            style={styles.notificationBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Ver notificaciones"
+            accessibilityHint="Toca para ver tus notificaciones y recordatorios"
+          >
+            <Ionicons name="notifications-outline" size={24} color={COLORS.text.primary} />
           </TouchableOpacity>
         </View>
-        {/* Últimos eventos de adherencia */}
-        <View style={styles.sectionBox}>
-          <Text style={styles.sectionTitle}>Últimos eventos</Text>
-          {lastEvents.length === 0 ? (
-            <Text style={styles.emptyText}>No hay eventos recientes.</Text>
-          ) : (
-            lastEvents.map((ev, idx) => (
-              <View key={ev.id} style={styles.lastEventRow}>
-                <MaterialCommunityIcons
-                  name={ev.kind === 'MED' ? 'pill' : 'leaf'}
-                  size={20}
-                  color={ev.kind === 'MED' ? '#22d3ee' : '#a78bfa'}
-                  style={{ marginRight: 8 }}
-                />
-                <Text style={styles.lastEventText}>{ev.kind === 'MED' ? 'Medicamento' : 'Tratamiento'}</Text>
-                <Text style={[styles.lastEventText, { flex: 1, color: '#334155' }]}>{new Date(ev.scheduledFor).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</Text>
-                <Text style={[styles.lastEventStatus, ev.action === 'TAKEN' ? styles.statusTaken : ev.action === 'SKIPPED' ? styles.statusSkipped : styles.statusSnooze]}>{ev.action === 'TAKEN' ? 'Tomado' : ev.action === 'SKIPPED' ? 'Omitido' : 'Pospuesto'}</Text>
-              </View>
-            ))
-          )}
+
+        {/* Hero Section - Hoy */}
+        <View 
+          style={styles.heroSection}
+          accessibilityRole="summary"
+          accessibilityLabel={`Progreso de hoy: ${adherence.percent}% completado. ${adherence.total > 0 ? `${adherence.taken} de ${adherence.total} tomas realizadas` : 'No hay tomas programadas para hoy'}`}
+        >
+          <Text style={styles.heroTitle}>Hoy</Text>
+          <View 
+            style={styles.progressRing}
+            accessibilityRole="progressbar"
+            accessibilityValue={{ min: 0, max: 100, now: adherence.percent }}
+            accessibilityLabel={`Progreso diario: ${adherence.percent} por ciento completado`}
+          >
+            <Text style={styles.progressText}>{adherence.percent}%</Text>
+            <Text style={styles.progressSubtext}>Completado</Text>
+          </View>
+          <Text style={styles.heroSubtitle}>
+            {adherence.total > 0 
+              ? `${adherence.taken} de ${adherence.total} tomas realizadas`
+              : 'No hay tomas programadas para hoy'
+            }
+          </Text>
         </View>
-        {/* Próximos eventos */}
-        <View style={styles.sectionBox}>
-          <Text style={styles.sectionTitle}>Próximos eventos</Text>
-          {nextEvents.length === 0 ? (
-            <Text style={styles.emptyText}>No hay eventos próximos.</Text>
-          ) : (
-            nextEvents.map((ev, idx) => (
-              <View key={idx} style={[styles.eventCard, { borderLeftColor: ev.color }] }>
-                <View style={styles.eventIcon}>{ev.icon}</View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.eventType}>{ev.type}</Text>
-                  <Text style={styles.eventName}>{ev.name}</Text>
-                  <Text style={styles.eventDate}>{ev.date.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</Text>
+
+        {/* Próxima Toma - PRIORIDAD ALTA */}
+        {getNextMedication() && (
+          <View 
+            style={styles.nextMedicationCard}
+            accessibilityRole="summary"
+            accessibilityLabel={`Próxima toma: ${getNextMedication()?.name} a las ${getNextMedicationTime()}, dosis ${getNextMedication()?.dosage}`}
+          >
+            <View style={styles.nextMedHeader}>
+              <Ionicons name="time" size={20} color={COLORS.primary} />
+              <Text style={styles.nextMedTitle}>Próxima toma</Text>
+            </View>
+            <View style={styles.nextMedContent}>
+              <Text style={styles.nextMedTime} accessibilityLabel={`Hora: ${getNextMedicationTime()}`}>{getNextMedicationTime()}</Text>
+              <Text style={styles.nextMedName} accessibilityLabel={`Medicamento: ${getNextMedication()?.name}`}>{getNextMedication()?.name}</Text>
+              <Text style={styles.nextMedDosage} accessibilityLabel={`Dosis: ${getNextMedication()?.dosage}`}>{getNextMedication()?.dosage}</Text>
+            </View>
+            <View style={styles.nextMedActions}>
+              <TouchableOpacity 
+                style={styles.actionButtonPrimary}
+                accessibilityRole="button"
+                accessibilityLabel="Registrar toma"
+                accessibilityHint={`Marca como tomado el medicamento ${getNextMedication()?.name}`}
+                onPress={handleTakeMedication}
+              >
+                <Ionicons name="checkmark-circle" size={20} color={COLORS.text.inverse} />
+                <Text style={styles.actionButtonText}>Registrar toma</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.actionButtonSecondary}
+                accessibilityRole="button"
+                accessibilityLabel="Posponer 10 minutos"
+                accessibilityHint={`Pospone la toma de ${getNextMedication()?.name} por 10 minutos`}
+                onPress={handleSnoozeMedication}
+              >
+                <Ionicons name="time" size={20} color={COLORS.primary} />
+                <Text style={styles.actionButtonTextSecondary}>Posponer 10 min</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Siguiente Cita - PRIORIDAD ALTA */}
+        {getNextAppointment() && (
+          <View style={styles.nextAppointmentCard}>
+            <View style={styles.nextApptHeader}>
+              <Ionicons name="calendar" size={20} color={COLORS.medical.appointment} />
+              <Text style={styles.nextApptTitle}>Siguiente cita</Text>
+            </View>
+            <View style={styles.nextApptContent}>
+              <Text style={styles.nextApptDateTime}>
+                {formatAppointmentDateTime(getNextAppointment())}
+              </Text>
+              <Text style={styles.nextApptDoctor}>{getNextAppointment()?.doctorName}</Text>
+              <Text style={styles.nextApptLocation}>{getNextAppointment()?.location}</Text>
+            </View>
+            <TouchableOpacity style={styles.viewAppointmentBtn}>
+              <Text style={styles.viewAppointmentText}>Ver detalles</Text>
+              <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Acciones Rápidas */}
+        <View 
+          style={styles.quickActionsSection}
+          accessibilityRole="summary"
+          accessibilityLabel="Acciones rápidas"
+        >
+          <Text style={styles.sectionTitle}>Acciones rápidas</Text>
+          <View style={styles.quickActionsRow}>
+            <TouchableOpacity 
+              style={styles.quickActionBtn} 
+              onPress={() => navigation.navigate('Medications' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Agregar medicamento"
+              accessibilityHint="Navega a la pantalla de medicamentos para agregar uno nuevo"
+            >
+              <Ionicons name="add-circle" size={24} color={COLORS.primary} />
+              <Text style={styles.quickActionText}>Agregar medicamento</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.quickActionBtn} 
+              onPress={() => navigation.navigate('Appointments' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Agendar cita"
+              accessibilityHint="Navega a la pantalla de citas para agendar una nueva"
+            >
+              <Ionicons name="calendar-outline" size={24} color={COLORS.medical.appointment} />
+              <Text style={styles.quickActionText}>Agendar cita</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.quickActionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Registrar síntoma"
+              accessibilityHint="Registra un síntoma o nota médica"
+            >
+              <Ionicons name="medical" size={24} color={COLORS.medical.treatment} />
+              <Text style={styles.quickActionText}>Registrar síntoma</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.quickActionBtn}
+              onPress={handleTestNotification}
+              accessibilityRole="button"
+              accessibilityLabel="Probar notificación"
+              accessibilityHint="Prueba el sistema de notificaciones"
+            >
+              <Ionicons name="notifications" size={24} color={COLORS.accent} />
+              <Text style={styles.quickActionText}>Probar notificación</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.quickActionBtn}
+              onPress={handleTestMedicationAlarm}
+              accessibilityRole="button"
+              accessibilityLabel="Probar alarma de medicamento"
+              accessibilityHint="Prueba la alarma de medicamento que navega a la pantalla de alarma"
+            >
+              <Ionicons name="medical" size={24} color={COLORS.medical.medication} />
+              <Text style={styles.quickActionText}>Probar alarma medicamento</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.quickActionBtn}
+              onPress={handleTestAppointmentAlarm}
+              accessibilityRole="button"
+              accessibilityLabel="Probar alarma de cita"
+              accessibilityHint="Prueba la alarma de cita que navega a la pantalla de alarma"
+            >
+              <Ionicons name="calendar" size={24} color={COLORS.medical.appointment} />
+              <Text style={styles.quickActionText}>Probar alarma cita</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Timeline de Hoy - Solo si hay eventos */}
+        {getTodayTimeline().length > 0 && (
+          <View style={styles.timelineSection}>
+            <Text style={styles.sectionTitle}>Timeline de hoy</Text>
+            {getTodayTimeline().map((event, idx) => (
+              <View key={idx} style={styles.timelineItem}>
+                <View style={styles.timelineTime}>
+                  <Text style={styles.timelineTimeText}>{event.time}</Text>
+                </View>
+                <View style={styles.timelineContent}>
+                  <Text style={styles.timelineTitle}>{event.title}</Text>
+                  <Text style={styles.timelineSubtitle}>{event.subtitle}</Text>
+                </View>
+                <View style={styles.timelineStatus}>
+                  {event.completed ? (
+                    <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                  ) : (
+                    <Ionicons name="time" size={20} color={COLORS.text.tertiary} />
+                  )}
                 </View>
               </View>
-            ))
-          )}
+            ))}
+          </View>
+        )}
+
+        {/* CTA si no hay eventos */}
+        {getTodayTimeline().length === 0 && (
+          <View style={styles.emptyStateCard}>
+            <Ionicons name="calendar-outline" size={48} color={COLORS.text.tertiary} />
+            <Text style={styles.emptyStateTitle}>No tienes eventos hoy</Text>
+            <Text style={styles.emptyStateSubtitle}>Agrega medicamentos o agenda citas para comenzar</Text>
+            <TouchableOpacity style={styles.emptyStateCTA} onPress={() => navigation.navigate('Medications' as never)}>
+              <Text style={styles.emptyStateCTAText}>Agregar medicamento</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Tip del día - Descartable y pequeño */}
+        <View style={styles.tipCard}>
+          <View style={styles.tipHeader}>
+            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={COLORS.accent} />
+            <Text style={styles.tipTitle}>Tip del día</Text>
+            <TouchableOpacity style={styles.dismissTipBtn}>
+              <Ionicons name="close" size={16} color={COLORS.text.tertiary} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.tipText}>{healthTip}</Text>
         </View>
-        {/* Tarjetas de resumen */}
-        <View style={styles.cardsRow}>
-          {cards.map((card, idx) => (
-            <LinearGradient key={card.title} colors={card.bg} style={styles.card} start={{x:0, y:0}} end={{x:1, y:1}}>
-              <View style={styles.cardIcon}>{card.icon}</View>
-              <Text style={styles.cardTitle}>{card.title}</Text>
-              <Text style={styles.cardCount}>{card.count}</Text>
-              <Text style={styles.cardDesc}>{card.desc}</Text>
-            </LinearGradient>
-          ))}
-        </View>
+
+        {/* Botón de logout */}
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
-          <Ionicons name="log-out-outline" size={22} color="#fff" />
+          <Ionicons name="log-out-outline" size={20} color={COLORS.text.inverse} />
           <Text style={styles.logoutText}>Cerrar sesión</Text>
         </TouchableOpacity>
       </ScrollView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  gradient: {
-    flex: 1,
-  },
   container: {
+    flex: 1,
+    backgroundColor: COLORS.background.primary,
+  },
+  scrollContent: {
     alignItems: 'center',
     paddingTop: 32,
     paddingBottom: 32,
     minHeight: '100%',
   },
-  headerBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '92%',
-    marginBottom: 18,
-    gap: 12,
-  },
-  avatarBox: {
-    marginRight: 8,
-  },
-  avatar: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginRight: 8,
-  },
-  greeting: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2563eb',
-    marginBottom: 2,
-    textAlign: 'left',
-    letterSpacing: 0.5,
-  },
-  motivational: {
-    fontSize: 15,
-    color: '#64748b',
-    marginBottom: 2,
-    textAlign: 'left',
-  },
-  sectionBox: {
-    width: '92%',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#2563eb',
-    marginBottom: 10,
-  },
-  eventCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderLeftWidth: 5,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-    width: '100%',
-    gap: 10,
-  },
-  eventIcon: {
-    marginRight: 8,
-  },
-  eventType: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: 'bold',
-  },
-  eventName: {
-    fontSize: 15,
-    color: '#2563eb',
-    fontWeight: 'bold',
-  },
-  eventDate: {
-    fontSize: 13,
-    color: '#334155',
-  },
-  emptyText: {
-    color: '#94a3b8',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  cardsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    width: '92%',
-    marginBottom: 36,
-    gap: 12,
-  },
-  card: {
+  loadingContainer: {
     flex: 1,
-    minWidth: width * 0.27,
-    maxWidth: width * 0.3,
-    borderRadius: 18,
-    paddingVertical: 28,
-    paddingHorizontal: 10,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 6,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.13,
-    shadowRadius: 8,
-    elevation: 6,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: COLORS.background.primary,
   },
-  cardIcon: {
-    marginBottom: 8,
+  loadingText: {
+    marginTop: 16,
+    color: COLORS.text.secondary,
+    fontSize: 16,
   },
-  cardTitle: {
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background.primary,
+  },
+  errorText: {
+    marginTop: 16,
+    color: COLORS.error,
+    fontSize: 16,
+    textAlign: 'center',
+    marginHorizontal: 32,
+  },
+  retryButton: {
+    marginTop: 20,
+    backgroundColor: COLORS.error,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: COLORS.text.inverse,
     fontSize: 16,
     fontWeight: '600',
-    color: '#334155',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '92%',
+    marginBottom: 24,
+  },
+  logoContainer: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    padding: 12,
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  logo: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+  },
+  notificationBtn: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.background.card,
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  heroSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingVertical: 24,
+  },
+  heroTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 20,
+    letterSpacing: -0.5,
+  },
+  progressRing: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: COLORS.background.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: COLORS.shadow.medium,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+  },
+  progressText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  progressSubtext: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  nextMedicationCard: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 16,
+    width: '92%',
+    shadowColor: COLORS.shadow.medium,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  nextMedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  nextMedTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginLeft: 8,
+  },
+  nextMedContent: {
+    marginBottom: 20,
+  },
+  nextMedTime: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 8,
+  },
+  nextMedName: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.text.primary,
     marginBottom: 4,
   },
-  cardCount: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2563eb',
+  nextMedDosage: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
   },
-  cardDesc: {
+  nextMedActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButtonPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  actionButtonSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background.card,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  actionButtonText: {
+    color: COLORS.text.inverse,
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  actionButtonTextSecondary: {
+    color: COLORS.primary,
+    fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  nextAppointmentCard: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 16,
+    width: '92%',
+    shadowColor: COLORS.shadow.medium,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  nextApptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  nextApptTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginLeft: 8,
+  },
+  nextApptContent: {
+    marginBottom: 20,
+  },
+  nextApptDateTime: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.medical.appointment,
+    marginBottom: 8,
+  },
+  nextApptDoctor: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  nextApptLocation: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+  },
+  viewAppointmentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  viewAppointmentText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.primary,
+    marginRight: 6,
+  },
+  quickActionsSection: {
+    width: '92%',
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 16,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  quickActionBtn: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  quickActionText: {
     fontSize: 13,
-    color: '#64748b',
-    marginTop: 2,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  timelineSection: {
+    width: '92%',
+    marginBottom: 24,
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 12,
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  timelineTime: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 16,
+  },
+  timelineTimeText: {
+    color: COLORS.text.inverse,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  timelineContent: {
+    flex: 1,
+  },
+  timelineTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  timelineSubtitle: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+  },
+  timelineStatus: {
+    marginLeft: 16,
+  },
+  emptyStateCard: {
+    alignItems: 'center',
+    backgroundColor: COLORS.background.card,
+    borderRadius: 20,
+    padding: 40,
+    marginBottom: 24,
+    width: '92%',
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  emptyStateTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginTop: 20,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  emptyStateCTA: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  emptyStateCTAText: {
+    color: COLORS.text.inverse,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tipCard: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+    width: '92%',
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  tipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tipTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginLeft: 8,
+    flex: 1,
+  },
+  dismissTipBtn: {
+    padding: 6,
+  },
+  tipText: {
+    fontSize: 15,
+    color: COLORS.text.secondary,
+    lineHeight: 22,
   },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2563eb',
+    backgroundColor: COLORS.error,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 32,
     marginTop: 32,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
+    shadowColor: COLORS.error,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 4,
   },
   logoutText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 17,
+    color: COLORS.text.inverse,
+    fontSize: 16,
+    fontWeight: '600',
     marginLeft: 10,
     letterSpacing: 0.5,
-  },
-  tipBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef9c3',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 18,
-    width: '92%',
-    borderWidth: 1,
-    borderColor: '#fde047',
-  },
-  tipText: {
-    color: '#b45309',
-    fontSize: 15,
-    fontWeight: '500',
-    flex: 1,
-  },
-  adherenceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 10,
-  },
-  adherenceCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#e0f2fe',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#22d3ee',
-  },
-  adherencePercent: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2563eb',
-  },
-  progressBarBg: {
-    height: 10,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 6,
-    overflow: 'hidden',
-    marginBottom: 4,
-  },
-  progressBarFill: {
-    height: 10,
-    backgroundColor: '#22d3ee',
-    borderRadius: 6,
-  },
-  adherenceLabel: {
-    fontSize: 13,
-    color: '#64748b',
-  },
-  profileRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-    gap: 8,
-  },
-  profileCol: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: '#f0fdfa',
-    borderRadius: 8,
-    padding: 6,
-    marginHorizontal: 2,
-  },
-  profileLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: 'bold',
-  },
-  profileValue: {
-    fontSize: 15,
-    color: '#2563eb',
-    fontWeight: 'bold',
-  },
-  editProfileBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 6,
-    backgroundColor: '#e0e7ff',
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  editProfileText: {
-    color: '#2563eb',
-    fontWeight: 'bold',
-    fontSize: 13,
-    marginLeft: 4,
-  },
-  lastEventRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 4,
-  },
-  lastEventText: {
-    fontSize: 13,
-    color: '#64748b',
-  },
-  lastEventStatus: {
-    fontWeight: 'bold',
-    fontSize: 13,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    textAlign: 'center',
-  },
-  statusTaken: {
-    backgroundColor: '#bbf7d0',
-    color: '#22c55e',
-  },
-  statusSkipped: {
-    backgroundColor: '#fee2e2',
-    color: '#ef4444',
-  },
-  statusSnooze: {
-    backgroundColor: '#fef9c3',
-    color: '#f59e42',
   },
 });

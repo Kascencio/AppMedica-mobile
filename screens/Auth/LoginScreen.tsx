@@ -30,12 +30,17 @@ export default function LoginScreen({ navigation }: any) {
   });
 
   const onSubmit = async (data: LoginForm) => {
+    console.log('[LoginScreen] Iniciando proceso de login...');
     setError(null);
     try {
+      console.log('[LoginScreen] Llamando a login...');
       await login(data.email, data.password);
+      console.log('[LoginScreen] Login exitoso, llamando a fetchProfile...');
       await fetchProfile();
+      console.log('[LoginScreen] fetchProfile completado');
       // No navigation.replace ni navigation.reset: el flujo lo maneja App.tsx
     } catch (err: any) {
+      console.log('[LoginScreen] Error en login:', err.message);
       setError(err.message || 'Credenciales incorrectas');
     }
   };

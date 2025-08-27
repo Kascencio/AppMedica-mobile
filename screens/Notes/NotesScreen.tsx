@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNotes } from '../../store/useNotes';
+import OfflineIndicator from '../../components/OfflineIndicator';
 
 // Mock de notas
 const mockNotes = [
@@ -103,6 +104,7 @@ export default function NotesScreen() {
 
   return (
     <View style={styles.container}>
+      <OfflineIndicator />
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Notas Médicas</Text>
         <TouchableOpacity style={styles.addBtn} onPress={openCreateModal}>

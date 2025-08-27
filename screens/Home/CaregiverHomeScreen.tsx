@@ -39,7 +39,7 @@ export default function CaregiverHomeScreen({ navigation }: any) {
           </View>
         </View>
         {/* Acceso a perfil personal */}
-        <TouchableOpacity style={styles.profileBtn} onPress={() => navigation.navigate('Profile')}>
+        <TouchableOpacity style={styles.profileBtn} onPress={() => navigation.navigate('Perfil')}>
           <Ionicons name="person-circle-outline" size={22} color="#2563eb" />
           <Text style={styles.profileBtnText}>Mi perfil</Text>
         </TouchableOpacity>
@@ -70,7 +70,7 @@ export default function CaregiverHomeScreen({ navigation }: any) {
                     <Text style={styles.patientName}>{p.name}</Text>
                     <Text style={styles.patientDetail}>Edad: {p.age || '—'} años</Text>
                   </View>
-                  <TouchableOpacity style={styles.dashboardBtn} onPress={() => navigation.navigate('Caregiver', { screen: 'CaregiverDashboardScreen', params: { patientId: p.id } })}>
+                  <TouchableOpacity style={styles.dashboardBtn} onPress={() => navigation.navigate('CaregiverDashboardScreen', { patientId: p.id })}>
                     <Ionicons name="arrow-forward-circle" size={32} color="#2563eb" />
                   </TouchableOpacity>
                 </View>

@@ -1,769 +1,782 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, StyleSheet, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { useTreatments } from '../../store/useTreatments';
-import { scheduleNotification, cancelNotification } from '../../lib/notifications';
-import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTreatments } from '../../store/useTreatments';
+import { useCurrentUser } from '../../store/useCurrentUser';
+import OfflineIndicator from '../../components/OfflineIndicator';
+import COLORS from '../../constants/colors';
+import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
-const treatmentSchema = z.object({
-  title: z.string().min(1, 'Obligatorio'),
-  description: z.string().optional(),
-  startDate: z.date({ required_error: 'Selecciona una fecha' }),
-  endDate: z.date().optional(),
-  progress: z.string().optional(),
-});
-
-type TreatmentForm = z.infer<typeof treatmentSchema>;
+const { width, height } = Dimensions.get('window');
+const isTablet = width > 768;
+const isLandscape = width > height;
 
 export default function TreatmentsScreen() {
   const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment } = useTreatments();
   const { profile } = useCurrentUser();
-  const [modalVisible, setModalVisible] = React.useState(false);
-  const [showStartPicker, setShowStartPicker] = React.useState(false);
-  const [showEndPicker, setShowEndPicker] = React.useState(false);
-  const [editingTreatment, setEditingTreatment] = React.useState<any>(null);
-  // Guardar los IDs de notificación en memoria temporal (idealmente en backend o AsyncStorage)
-  const notificationIdsRef = React.useRef<{ [trtId: string]: string }>({});
-  const [formError, setFormError] = React.useState<string | null>(null);
-
-  // NUEVO: Estado para horas y frecuencia
-  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
-  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]); // 0=Domingo
-  const [everyXHours, setEveryXHours] = useState('8');
-
-  // NUEVO: Función para agregar hora
-  const addTime = (date: Date) => {
-    setSelectedTimes((prev) => [...prev, date]);
-    setShowTimePicker(false);
-  };
-  const removeTime = (idx: number) => {
-    setSelectedTimes((prev) => prev.filter((_, i) => i !== idx));
-  };
-  const toggleDay = (day: number) => {
-    setDaysOfWeek((prev) => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
-  };
-
-  const perfilIncompleto = !profile || !profile.name || !profile.age;
-
-  const {
-    control,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<TreatmentForm>({
-    resolver: zodResolver(treatmentSchema),
-    defaultValues: {
-      title: '',
-      description: '',
-      startDate: undefined,
-      endDate: undefined,
-      progress: '',
-    },
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingTreatment, setEditingTreatment] = useState<any>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    startDate: '',
+    endDate: '',
+    frequency: 'daily',
+    notes: ''
   });
 
-  useEffect(() => {
-    getTreatments();
-  }, []);
+  const perfilIncompleto = !profile?.patientProfileId && !profile?.id;
 
-  const onStartChange = (event: any, date?: Date) => {
-    setShowStartPicker(false);
-    if (date) setValue('startDate', date);
-  };
-  const onEndChange = (event: any, date?: Date) => {
-    setShowEndPicker(false);
-    if (date) setValue('endDate', date);
+  useEffect(() => {
+    if (profile?.patientProfileId) {
+      console.log('[TRATAMIENTOS] Cargando tratamientos para perfil:', profile.patientProfileId);
+      getTreatments().catch((e) => {
+        console.log('[TRATAMIENTOS] Error:', e.message || e);
+      });
+    } else {
+      console.log('[TRATAMIENTOS] No hay patientProfileId disponible:', profile);
+    }
+  }, [profile?.patientProfileId]);
+
+  const openCreateModal = () => {
+    setEditingTreatment(null);
+    setFormData({
+      name: '',
+      description: '',
+      startDate: '',
+      endDate: '',
+      frequency: 'daily',
+      notes: ''
+    });
+    setModalVisible(true);
   };
 
   const openEditModal = (treatment: any) => {
     setEditingTreatment(treatment);
-    setModalVisible(true);
-    setValue('title', treatment.title);
-    setValue('description', treatment.description || '');
-    setValue('startDate', treatment.startDate ? new Date(treatment.startDate) : undefined);
-    setValue('endDate', treatment.endDate ? new Date(treatment.endDate) : undefined);
-    setValue('progress', treatment.progress || '');
-  };
-  const openCreateModal = () => {
-    setEditingTreatment(null);
-    setModalVisible(true);
-    reset();
-  };
-  const scheduleTreatmentNotification = async (trt: any) => {
-    if (!trt.startDate) return;
-    const date = new Date(trt.startDate);
-    // Programar notificación diaria a la hora de startDate
-    const id = await scheduleNotification({
-      title: `Recuerda tu tratamiento: ${trt.title}`,
-      body: trt.description || '',
-      data: { trtId: trt.id },
-      trigger: {
-        hour: date.getHours(),
-        minute: date.getMinutes(),
-        repeats: true,
-      },
+    setFormData({
+      name: treatment.name || '',
+      description: treatment.description || '',
+      startDate: treatment.startDate || '',
+      endDate: treatment.endDate || '',
+      frequency: treatment.frequency || 'daily',
+      notes: treatment.notes || ''
     });
-    notificationIdsRef.current[trt.id] = id;
+    setModalVisible(true);
   };
-  const cancelTreatmentNotification = async (trtId: string) => {
-    const notifId = notificationIdsRef.current[trtId];
-    if (notifId) {
-      await cancelNotification(notifId);
-      delete notificationIdsRef.current[trtId];
+
+  const handleSubmit = async () => {
+    if (!formData.name.trim()) {
+      Alert.alert('Error', 'El nombre del tratamiento es obligatorio');
+      return;
     }
-  };
-  // Modifica onSubmit para programar notificaciones según la configuración
-  const onSubmit = async (data: TreatmentForm) => {
-    setFormError(null);
+
     try {
-      let trtId = editingTreatment?.id;
+      const treatmentData = {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        startDate: formData.startDate || new Date().toISOString(),
+        endDate: formData.endDate || null,
+        frequency: formData.frequency,
+        notes: formData.notes.trim(),
+        patientProfileId: profile?.patientProfileId || profile?.id
+      };
+
       if (editingTreatment) {
-        await updateTreatment(editingTreatment.id, {
-          title: data.title,
-          description: data.description,
-          startDate: data.startDate?.toISOString(),
-          endDate: data.endDate?.toISOString(),
-          progress: data.progress,
-        });
-        trtId = editingTreatment.id;
-        // Cancelar notificaciones anteriores
-        await cancelTreatmentNotification(trtId);
+        await updateTreatment(editingTreatment.id, treatmentData);
+        Alert.alert('Éxito', 'Tratamiento actualizado correctamente');
       } else {
-        await createTreatment({
-          title: data.title,
-          description: data.description,
-          startDate: data.startDate?.toISOString(),
-          endDate: data.endDate?.toISOString(),
-          progress: data.progress,
-        });
-        // Espera a que getTreatments actualice la lista
-        await new Promise(res => setTimeout(res, 500));
-        // Busca el nuevo tratamiento
-        const newTrt = treatments.find(t => t.title === data.title && t.startDate === data.startDate?.toISOString());
-        trtId = newTrt?.id;
+        await createTreatment(treatmentData);
+        Alert.alert('Éxito', 'Tratamiento creado correctamente');
       }
-      // Programar notificaciones según la configuración
-      if (trtId) {
-        if (frequencyType === 'daily') {
-          for (const t of selectedTimes) {
-            const now = new Date();
-            let firstDate = new Date(now);
-            firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-            if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
-            if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            const nowLog = new Date();
-            console.log('[TRATAMIENTO] Hora actual:', nowLog.toISOString());
-            console.log('[TRATAMIENTO] Programando notificación para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Recuerda tu tratamiento: ${data.title}`,
-              body: data.description || '',
-              data: {
-                kind: 'TREATMENT',
-                refId: trtId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.title,
-                dosage: '',
-                instructions: data.description,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { type: 'date', date: firstDate },
-            });
-            const id = await scheduleNotification({
-              title: `Recuerda tu tratamiento: ${data.title}`,
-              body: data.description || '',
-              data: {
-                kind: 'TREATMENT',
-                refId: trtId,
-                scheduledFor: t.toISOString(),
-                name: data.title,
-                dosage: '',
-                instructions: data.description,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { hour: t.getHours(), minute: t.getMinutes(), repeats: true },
-            });
-            notificationIdsRef.current[`${trtId}_${t.getHours()}_${t.getMinutes()}`] = id;
-          }
-        } else if (frequencyType === 'daysOfWeek') {
-          for (const t of selectedTimes) {
-            for (const day of daysOfWeek) {
-              const now = new Date();
-              let firstDate = new Date(now);
-              firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
-              firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-              if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
-              if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-              console.log('Programando notificación TRATAMIENTO para:', firstDate.toISOString());
-              await scheduleNotification({
-                title: `Recuerda tu tratamiento: ${data.title}`,
-                body: data.description || '',
-                data: {
-                  kind: 'TREATMENT',
-                  refId: trtId,
-                  scheduledFor: firstDate.toISOString(),
-                  name: data.title,
-                  dosage: '',
-                  instructions: data.description,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                },
-                trigger: { type: 'date', date: firstDate },
-              });
-              const id = await scheduleNotification({
-                title: `Recuerda tu tratamiento: ${data.title}`,
-                body: data.description || '',
-                data: {
-                  kind: 'TREATMENT',
-                  refId: trtId,
-                  scheduledFor: t.toISOString(),
-                  name: data.title,
-                  dosage: '',
-                  instructions: data.description,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                },
-                trigger: { weekday: day + 1, hour: t.getHours(), minute: t.getMinutes(), repeats: true },
-              });
-              notificationIdsRef.current[`${trtId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
-            }
-          }
-        } else if (frequencyType === 'everyXHours') {
-          if (selectedTimes.length > 0) {
-            const base = selectedTimes[0];
-            const interval = parseInt(everyXHours) || 8;
-            let firstDate = new Date();
-            firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
-            if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
-            if ((firstDate - new Date()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            console.log('Programando notificación TRATAMIENTO para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Recuerda tu tratamiento: ${data.title}`,
-              body: data.description || '',
-              data: {
-                kind: 'TREATMENT',
-                refId: trtId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.title,
-                dosage: '',
-                instructions: data.description,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { type: 'date', date: firstDate },
-            });
-            const id = await scheduleNotification({
-              title: `Recuerda tu tratamiento: ${data.title}`,
-              body: data.description || '',
-              data: {
-                kind: 'TREATMENT',
-                refId: trtId,
-                scheduledFor: base.toISOString(),
-                name: data.title,
-                dosage: '',
-                instructions: data.description,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { hour: base.getHours(), minute: base.getMinutes(), repeats: true, interval: interval * 60 },
-            });
-            notificationIdsRef.current[`${trtId}_every${interval}h`] = id;
-          }
-        }
-      }
-      reset();
+
       setModalVisible(false);
       setEditingTreatment(null);
-    } catch (e: any) {
-      setFormError(e.message || 'Error al guardar');
+      setFormData({
+        name: '',
+        description: '',
+        startDate: '',
+        endDate: '',
+        frequency: 'daily',
+        notes: ''
+      });
+    } catch (error) {
+      console.error('[TreatmentsScreen] Error:', error);
+      Alert.alert('Error', 'No se pudo guardar el tratamiento');
     }
   };
-  const onDelete = async (id: string) => {
+
+  const handleDelete = async (id: string) => {
     Alert.alert(
       'Eliminar tratamiento',
       '¿Seguro que deseas eliminar este tratamiento?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Eliminar', style: 'destructive', onPress: async () => {
-            await deleteTreatment(id);
-            await cancelTreatmentNotification(id);
+        { 
+          text: 'Eliminar', 
+          style: 'destructive', 
+          onPress: async () => {
+            try {
+              await deleteTreatment(id);
+              Alert.alert('Éxito', 'Tratamiento eliminado correctamente');
+            } catch (error) {
+              Alert.alert('Error', 'No se pudo eliminar el tratamiento');
+            }
           }
         },
       ]
     );
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <LinearGradient colors={["#f0fdf4", "#f1f5f9"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
-      <View style={styles.cardHeaderModern}>
-        <MaterialCommunityIcons name="clipboard-list" size={24} color="#4ade80" style={{ marginRight: 10 }} />
-        <Text style={styles.cardTitleModern}>{item.title}</Text>
-        <View style={styles.cardActionsModern}>
-          <TouchableOpacity style={styles.iconBtnModern} onPress={() => openEditModal(item)}>
-            <Ionicons name="create-outline" size={20} color="#2563eb" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtnModern} onPress={() => onDelete(item.id)}>
-            <Ionicons name="trash-outline" size={20} color="#ef4444" />
-          </TouchableOpacity>
-        </View>
+  if (loading) {
+    return (
+      <View style={GLOBAL_STYLES.centered}>
+        <Text style={GLOBAL_STYLES.bodyText}>Cargando tratamientos...</Text>
       </View>
-      {item.description ? <Text style={styles.cardInfoModern}>{item.description}</Text> : null}
-      <Text style={styles.cardInfoModern}>Inicio: {item.startDate ? new Date(item.startDate).toLocaleDateString() : '-'}</Text>
-      <Text style={styles.cardInfoModern}>Fin: {item.endDate ? new Date(item.endDate).toLocaleDateString() : '-'}</Text>
-      {item.progress ? (
-        <View style={styles.progressBoxModern}>
-          <Text style={styles.progressTextModern}>Progreso: {item.progress}</Text>
-        </View>
-      ) : null}
-    </LinearGradient>
-  );
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={GLOBAL_STYLES.centered}>
+        <MaterialCommunityIcons name="alert-circle" size={64} color={COLORS.error} />
+        <Text style={GLOBAL_STYLES.sectionHeader}>Error</Text>
+        <Text style={GLOBAL_STYLES.bodyText}>{error}</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>Tratamientos</Text>
-        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={perfilIncompleto} activeOpacity={0.85}>
-          <Ionicons name="add-circle" size={28} color="#4ade80" />
-          <Text style={styles.addBtnTextModern}>Nuevo</Text>
-        </TouchableOpacity>
-      </View>
-      {perfilIncompleto && (
-        <Text style={{ color: '#ef4444', marginBottom: 8, textAlign: 'center' }}>
-          Completa tu perfil para poder agregar tratamientos.
-        </Text>
-      )}
-      {loading ? (
-        <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
-      ) : error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : (
-        <FlatList
-          data={treatments}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 32 }}
-          ListEmptyComponent={<Text style={styles.emptyText}>No hay tratamientos registrados</Text>}
-        />
-      )}
-      {/* Modal para crear/editar tratamiento */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => { setModalVisible(false); setEditingTreatment(null); }}
+    <LinearGradient colors={COLORS.gradients.primary as [string, string, string]} style={{ flex: 1 }}>
+      <ScrollView 
+        style={[
+          GLOBAL_STYLES.container,
+          isTablet && styles.containerTablet,
+          isLandscape && styles.containerLandscape
+        ]}
+        contentContainerStyle={{
+          paddingBottom: isTablet ? 48 : 32,
+          paddingHorizontal: isTablet ? 24 : 16
+        }}
       >
-        <View style={styles.modalOverlayModern}>
-          <View style={styles.modalContentModern}>
-            <Text style={styles.modalTitle}>{editingTreatment ? 'Editar Tratamiento' : 'Agregar Tratamiento'}</Text>
-            <Controller
-              control={control}
-              name="title"
-              render={({ field: { onChange, value } }) => (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Título *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Título del tratamiento"
-                    value={value}
-                    onChangeText={onChange}
+        <OfflineIndicator />
+        
+        <View style={[
+          GLOBAL_STYLES.rowSpaced,
+          isTablet && styles.headerRowTablet,
+          isLandscape && styles.headerRowLandscape
+        ]}>
+          <Text style={[
+            GLOBAL_STYLES.sectionHeader,
+            isTablet && styles.headerTitleTablet,
+            isLandscape && styles.headerTitleLandscape
+          ]}>Tratamientos</Text>
+          <TouchableOpacity 
+            style={[
+              GLOBAL_STYLES.buttonPrimary,
+              perfilIncompleto && { opacity: 0.6 },
+              isTablet && styles.addButtonTablet,
+              isLandscape && styles.addButtonLandscape
+            ]} 
+            onPress={openCreateModal} 
+            disabled={perfilIncompleto} 
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Agregar nuevo tratamiento"
+            accessibilityHint={perfilIncompleto ? "Completa tu perfil primero" : "Abre el formulario para agregar un tratamiento"}
+          >
+            <Ionicons 
+              name="add-circle" 
+              size={isTablet ? 32 : 28} 
+              color={COLORS.text.inverse} 
+            />
+            <Text style={[
+              GLOBAL_STYLES.buttonText,
+              isTablet && styles.buttonTextTablet
+            ]}>Nuevo</Text>
+          </TouchableOpacity>
+        </View>
+
+        {perfilIncompleto && (
+          <View style={[
+            GLOBAL_STYLES.card, 
+            { backgroundColor: COLORS.error + '20', borderColor: COLORS.error },
+            isTablet && styles.warningCardTablet,
+            isLandscape && styles.warningCardLandscape
+          ]}>
+            <Text style={[
+              GLOBAL_STYLES.bodyText, 
+              { color: COLORS.error, textAlign: 'center' },
+              isTablet && styles.warningTextTablet
+            ]}>
+              Completa tu perfil para poder agregar tratamientos.
+            </Text>
+          </View>
+        )}
+
+        {(!treatments || treatments.length === 0) ? (
+          <View style={[
+            GLOBAL_STYLES.centered,
+            isTablet && styles.emptyStateTablet,
+            isLandscape && styles.emptyStateLandscape
+          ]}>
+            <Text style={[
+              GLOBAL_STYLES.bodyText,
+              isTablet && styles.emptyTextTablet
+            ]}>No hay tratamientos registrados.</Text>
+          </View>
+        ) : (
+          treatments.map((treatment) => (
+            <View 
+              key={treatment.id} 
+              style={[
+                MEDICAL_STYLES.treatmentCard,
+                isTablet && styles.treatmentCardTablet,
+                isLandscape && styles.treatmentCardLandscape
+              ]}
+            >
+              <View style={[
+                GLOBAL_STYLES.rowSpaced,
+                isTablet && styles.cardHeaderTablet,
+                isLandscape && styles.cardHeaderLandscape
+              ]}>
+                <View style={GLOBAL_STYLES.row}>
+                  <MaterialCommunityIcons 
+                    name="medical-bag" 
+                    size={isTablet ? 28 : 24} 
+                    color={COLORS.medical.treatment} 
+                    style={GLOBAL_STYLES.icon} 
                   />
-                  {errors.title && <Text style={styles.errorText}>{errors.title.message}</Text>}
+                  <Text style={[
+                    GLOBAL_STYLES.sectionTitle, 
+                    { marginBottom: 0 },
+                    isTablet && styles.treatmentTitleTablet
+                  ]}>{treatment.name}</Text>
+                </View>
+                <View style={[
+                  GLOBAL_STYLES.row,
+                  isTablet && styles.actionButtonsTablet
+                ]}>
+                  <TouchableOpacity 
+                    style={[
+                      MEDICAL_STYLES.actionButton,
+                      isTablet && styles.actionButtonTablet
+                    ]} 
+                    onPress={() => openEditModal(treatment)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Editar tratamiento ${treatment.name}`}
+                  >
+                    <Ionicons 
+                      name="create-outline" 
+                      size={isTablet ? 24 : 20} 
+                      color={COLORS.text.inverse} 
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[
+                      MEDICAL_STYLES.actionButton, 
+                      { backgroundColor: COLORS.error },
+                      isTablet && styles.actionButtonTablet
+                    ]} 
+                    onPress={() => handleDelete(treatment.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Eliminar tratamiento ${treatment.name}`}
+                  >
+                    <Ionicons 
+                      name="trash-outline" 
+                      size={isTablet ? 24 : 20} 
+                      color={COLORS.text.inverse} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              {treatment.description && (
+                <Text style={[
+                  GLOBAL_STYLES.bodyText,
+                  isTablet && styles.descriptionTextTablet
+                ]}>{treatment.description}</Text>
+              )}
+              
+              <View style={[
+                GLOBAL_STYLES.rowSpaced,
+                isTablet && styles.infoRowTablet
+              ]}>
+                <Text style={[
+                  GLOBAL_STYLES.bodyText,
+                  isTablet && styles.labelTextTablet
+                ]}>Frecuencia:</Text>
+                <Text style={[
+                  GLOBAL_STYLES.bodyText, 
+                  { fontWeight: '600', color: COLORS.text.primary },
+                  isTablet && styles.valueTextTablet
+                ]}>
+                  {treatment.frequency === 'daily' ? 'Diario' : 
+                   treatment.frequency === 'weekly' ? 'Semanal' : 
+                   treatment.frequency === 'monthly' ? 'Mensual' : 'Personalizado'}
+                </Text>
+              </View>
+              
+              <View style={[
+                GLOBAL_STYLES.rowSpaced,
+                isTablet && styles.infoRowTablet
+              ]}>
+                <Text style={[
+                  GLOBAL_STYLES.bodyText,
+                  isTablet && styles.labelTextTablet
+                ]}>Inicio:</Text>
+                <Text style={[
+                  GLOBAL_STYLES.bodyText, 
+                  { fontWeight: '600', color: COLORS.text.primary },
+                  isTablet && styles.valueTextTablet
+                ]}>
+                  {treatment.startDate ? new Date(treatment.startDate).toLocaleDateString() : '—'}
+                </Text>
+              </View>
+              
+              {treatment.endDate && (
+                <View style={[
+                  GLOBAL_STYLES.rowSpaced,
+                  isTablet && styles.infoRowTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.bodyText,
+                    isTablet && styles.labelTextTablet
+                  ]}>Fin:</Text>
+                  <Text style={[
+                    GLOBAL_STYLES.bodyText, 
+                    { fontWeight: '600', color: COLORS.text.primary },
+                    isTablet && styles.valueTextTablet
+                  ]}>
+                    {new Date(treatment.endDate).toLocaleDateString()}
+                  </Text>
                 </View>
               )}
-            />
-            <Controller
-              control={control}
-              name="description"
-              render={({ field: { onChange, value } }) => (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Descripción</Text>
+              
+              {treatment.notes && (
+                <View style={[
+                  GLOBAL_STYLES.card, 
+                  { marginTop: 12, marginBottom: 0, padding: 12 },
+                  isTablet && styles.notesCardTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.caption,
+                    isTablet && styles.notesTextTablet
+                  ]}>{treatment.notes}</Text>
+                </View>
+              )}
+            </View>
+          ))
+        )}
+
+        {/* Modal para crear/editar tratamiento */}
+        <Modal
+          visible={modalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => { setModalVisible(false); setEditingTreatment(null); }}
+        >
+          <View style={[
+            GLOBAL_STYLES.loadingContainer,
+            isTablet && styles.modalOverlayTablet
+          ]}>
+            <View style={[
+              GLOBAL_STYLES.card, 
+              { 
+                width: isTablet ? '70%' : '95%', 
+                maxWidth: isTablet ? 600 : undefined,
+                maxHeight: '90%', 
+                padding: isTablet ? 32 : 24 
+              },
+              isTablet && styles.modalContentTablet,
+              isLandscape && styles.modalContentLandscape
+            ]}>
+              <ScrollView 
+                showsVerticalScrollIndicator={true}
+                contentContainerStyle={{ 
+                  paddingBottom: 20,
+                  paddingHorizontal: isTablet ? 8 : 0
+                }}
+              >
+                <Text style={[
+                  GLOBAL_STYLES.sectionHeader,
+                  isTablet && styles.modalTitleTablet,
+                  isLandscape && styles.modalTitleLandscape
+                ]}>
+                  {editingTreatment ? 'Editar Tratamiento' : 'Agregar Tratamiento'}
+                </Text>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Nombre *</Text>
                   <TextInput
-                    style={[styles.input, { height: 60 }]}
-                    placeholder="Descripción"
-                    value={value}
-                    onChangeText={onChange}
+                    style={[
+                      GLOBAL_STYLES.input,
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="Nombre del tratamiento"
+                    value={formData.name}
+                    onChangeText={(text) => setFormData({ ...formData, name: text })}
+                  />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Descripción</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input, 
+                      { height: isTablet ? 80 : 60 },
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="Descripción del tratamiento"
+                    value={formData.description}
+                    onChangeText={(text) => setFormData({ ...formData, description: text })}
                     multiline
                   />
                 </View>
-              )}
-            />
-            {/* Fecha inicio */}
-            <Controller
-              control={control}
-              name="startDate"
-              render={({ field: { value } }) => (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Fecha de inicio *</Text>
-                  <TouchableOpacity
-                    style={styles.input}
-                    onPress={() => setShowStartPicker(true)}
-                  >
-                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-                  </TouchableOpacity>
-                  {showStartPicker && (
-                    <DateTimePicker
-                      value={value || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={onStartChange}
-                    />
-                  )}
-                  {errors.startDate && <Text style={styles.errorText}>{errors.startDate.message as string}</Text>}
-                </View>
-              )}
-            />
-            {/* Fecha fin */}
-            <Controller
-              control={control}
-              name="endDate"
-              render={({ field: { value } }) => (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Fecha de fin</Text>
-                  <TouchableOpacity
-                    style={styles.input}
-                    onPress={() => setShowEndPicker(true)}
-                  >
-                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-                  </TouchableOpacity>
-                  {showEndPicker && (
-                    <DateTimePicker
-                      value={value || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={onEndChange}
-                    />
-                  )}
-                </View>
-              )}
-            />
-            {/* Progreso */}
-            <Controller
-              control={control}
-              name="progress"
-              render={({ field: { onChange, value } }) => (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Progreso</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Progreso"
-                    value={value}
-                    onChangeText={onChange}
-                  />
-                </View>
-              )}
-            />
-            {/* Frecuencia */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Frecuencia de recordatorio</Text>
-              <View style={{ flexDirection: 'row', marginBottom: 6 }}>
-                <TouchableOpacity onPress={() => setFrequencyType('daily')} style={{ marginRight: 12 }}>
-                  <Text style={{ color: frequencyType === 'daily' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daily' ? 'bold' : 'normal' }}>Todos los días</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFrequencyType('daysOfWeek')} style={{ marginRight: 12 }}>
-                  <Text style={{ color: frequencyType === 'daysOfWeek' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daysOfWeek' ? 'bold' : 'normal' }}>Días específicos</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFrequencyType('everyXHours')}>
-                  <Text style={{ color: frequencyType === 'everyXHours' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'everyXHours' ? 'bold' : 'normal' }}>Cada X horas</Text>
-                </TouchableOpacity>
-              </View>
-              {frequencyType === 'daysOfWeek' && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                  {["D","L","M","M","J","V","S"].map((d, i) => (
-                    <TouchableOpacity key={i} onPress={() => toggleDay(i)} style={{ backgroundColor: daysOfWeek.includes(i) ? '#2563eb' : '#e5e7eb', borderRadius: 6, padding: 6, marginRight: 4, marginBottom: 4 }}>
-                      <Text style={{ color: daysOfWeek.includes(i) ? '#fff' : '#334155', fontWeight: 'bold' }}>{d}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {frequencyType === 'everyXHours' && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                  <Text>Cada </Text>
-                  <TextInput
-                    style={{ borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, width: 40, marginHorizontal: 4, textAlign: 'center', backgroundColor: '#fff' }}
-                    value={everyXHours}
-                    onChangeText={setEveryXHours}
-                    keyboardType="numeric"
-                  />
-                  <Text> horas</Text>
-                </View>
-              )}
-            </View>
-            {/* Horas */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Horas de recordatorio</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                {selectedTimes.map((t, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0e7ff', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
-                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                    <TouchableOpacity onPress={() => removeTime(idx)}>
-                      <Ionicons name="close-circle" size={18} color="#ef4444" />
-                    </TouchableOpacity>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Frecuencia</Text>
+                  <View style={[
+                    GLOBAL_STYLES.row,
+                    isTablet && styles.frequencyButtonsTablet
+                  ]}>
+                    {['daily', 'weekly', 'monthly'].map((freq) => (
+                      <TouchableOpacity
+                        key={freq}
+                        style={[
+                          { 
+                            paddingHorizontal: isTablet ? 20 : 16, 
+                            paddingVertical: isTablet ? 12 : 8, 
+                            borderRadius: 20, 
+                            marginRight: isTablet ? 12 : 8,
+                            backgroundColor: formData.frequency === freq ? COLORS.primary : COLORS.border.neutral
+                          },
+                          isTablet && styles.frequencyButtonTablet
+                        ]}
+                        onPress={() => setFormData({ ...formData, frequency: freq })}
+                      >
+                        <Text style={[
+                          { 
+                            color: formData.frequency === freq ? COLORS.text.inverse : COLORS.text.secondary,
+                            fontWeight: formData.frequency === freq ? '600' : '400'
+                          },
+                          isTablet && styles.frequencyButtonTextTablet
+                        ]}>
+                          {freq === 'daily' ? 'Diario' : freq === 'weekly' ? 'Semanal' : 'Mensual'}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                ))}
-                <TouchableOpacity onPress={() => setShowTimePicker(true)} style={{ backgroundColor: '#2563eb', borderRadius: 6, padding: 8 }}>
-                  <Ionicons name="add" size={18} color="#fff" />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Fecha de inicio</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input,
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="YYYY-MM-DD (opcional)"
+                    value={formData.startDate}
+                    onChangeText={(text) => setFormData({ ...formData, startDate: text })}
+                  />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Fecha de fin</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input,
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="YYYY-MM-DD (opcional)"
+                    value={formData.endDate}
+                    onChangeText={(text) => setFormData({ ...formData, endDate: text })}
+                  />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Notas</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input, 
+                      { height: isTablet ? 80 : 60 },
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="Notas adicionales"
+                    value={formData.notes}
+                    onChangeText={(text) => setFormData({ ...formData, notes: text })}
+                    multiline
+                  />
+                </View>
+              </ScrollView>
+              
+              <View style={[
+                GLOBAL_STYLES.rowSpaced,
+                isTablet && styles.modalActionsTablet,
+                isLandscape && styles.modalActionsLandscape
+              ]}>
+                <TouchableOpacity
+                  style={[
+                    GLOBAL_STYLES.buttonPrimary, 
+                    { flex: 1, marginRight: 8 },
+                    isTablet && styles.modalButtonTablet
+                  ]}
+                  onPress={handleSubmit}
+                >
+                  <Text style={[
+                    GLOBAL_STYLES.buttonText,
+                    isTablet && styles.modalButtonTextTablet
+                  ]}>
+                    {editingTreatment ? 'Guardar cambios' : 'Guardar'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    GLOBAL_STYLES.buttonSecondary, 
+                    { flex: 1, marginLeft: 8 },
+                    isTablet && styles.modalButtonTablet
+                  ]}
+                  onPress={() => { setModalVisible(false); setEditingTreatment(null); }}
+                >
+                  <Text style={[
+                    GLOBAL_STYLES.buttonTextSecondary,
+                    isTablet && styles.modalButtonTextTablet
+                  ]}>Cancelar</Text>
                 </TouchableOpacity>
               </View>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={new Date()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, date) => { if (date) addTime(date); else setShowTimePicker(false); }}
-                />
-              )}
-            </View>
-            <View style={styles.modalActions}>
-              {formError && <Text style={{ color: '#ef4444', textAlign: 'center', marginBottom: 8 }}>{formError}</Text>}
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#2563eb' }]}
-                onPress={handleSubmit(onSubmit)}
-                disabled={isSubmitting || loading}
-              >
-                <Text style={styles.buttonText}>{editingTreatment ? 'Guardar cambios' : 'Guardar'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#64748b' }]}
-                onPress={() => { setModalVisible(false); setEditingTreatment(null); reset(); }}
-              >
-                <Text style={styles.buttonText}>Cancelar</Text>
-              </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
+        </Modal>
+             </ScrollView>
+     </LinearGradient>
+   );
+ }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingTop: 24,
+  // Estilos para tablets
+  containerTablet: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  containerLandscape: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  
+  // Header responsive
+  headerRowTablet: {
+    marginBottom: 24,
+  },
+  headerRowLandscape: {
+    marginBottom: 20,
+  },
+  headerTitleTablet: {
+    fontSize: 28,
+  },
+  headerTitleLandscape: {
+    fontSize: 24,
+  },
+  
+  // Botón agregar responsive
+  addButtonTablet: {
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+  },
+  addButtonLandscape: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  buttonTextTablet: {
+    fontSize: 18,
+    marginLeft: 12,
+  },
+  
+  // Estado vacío responsive
+  emptyStateTablet: {
+    paddingVertical: 40,
+  },
+  emptyStateLandscape: {
+    paddingVertical: 30,
+  },
+  emptyTextTablet: {
+    fontSize: 18,
+  },
+  
+  // Tarjetas de tratamiento responsive
+  treatmentCardTablet: {
+    padding: 24,
+    marginBottom: 20,
+    borderRadius: 20,
+  },
+  treatmentCardLandscape: {
+    padding: 20,
     marginBottom: 18,
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2563eb',
+  
+  // Encabezado de tarjeta responsive
+  cardHeaderTablet: {
+    marginBottom: 16,
   },
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+  cardHeaderLandscape: {
+    marginBottom: 14,
   },
-  addBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
-    marginLeft: 6,
+  treatmentTitleTablet: {
+    fontSize: 20,
   },
-  card: {
-    backgroundColor: '#f0fdf4',
+  
+  // Botones de acción responsive
+  actionButtonsTablet: {
+    gap: 12,
+  },
+  actionButtonTablet: {
+    padding: 12,
     borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  
+  // Información de tratamiento responsive
+  infoRowTablet: {
+    marginBottom: 12,
+  },
+  labelTextTablet: {
+    fontSize: 16,
+  },
+  valueTextTablet: {
+    fontSize: 16,
+  },
+  
+  // Descripción responsive
+  descriptionTextTablet: {
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  
+  // Notas responsive
+  notesCardTablet: {
+    padding: 16,
+    marginTop: 16,
+  },
+  notesTextTablet: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  
+  // Modal responsive
+  modalOverlayTablet: {
+    padding: 20,
+  },
+  modalContentTablet: {
+    borderRadius: 24,
+    elevation: 8,
+    shadowColor: COLORS.shadow.dark,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+  },
+  modalContentLandscape: {
+    width: '85%',
+    maxHeight: '80%',
+    padding: 20,
+  },
+  modalTitleTablet: {
+    fontSize: 24,
+    marginBottom: 24,
+  },
+  modalTitleLandscape: {
+    fontSize: 22,
+    marginBottom: 20,
+  },
+  
+  // Campos del formulario responsive
+  inputGroupTablet: {
+    marginBottom: 16,
+  },
+  inputLabelTablet: {
+    fontSize: 16,
     marginBottom: 8,
   },
-  cardTitle: {
-    fontWeight: 'bold',
-    color: '#22c55e',
+  inputTablet: {
+    padding: 16,
     fontSize: 16,
-    flex: 1,
-  },
-  cardActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  iconBtn: {
-    marginHorizontal: 2,
-    padding: 4,
-  },
-  cardInfo: {
-    color: '#64748b',
-    fontSize: 13,
-  },
-  progressBox: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    padding: 8,
-    marginTop: 8,
-  },
-  progressText: {
-    color: '#22c55e',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  emptyText: {
-    color: '#94a3b8',
-    textAlign: 'center',
-    marginTop: 40,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 20,
-    width: '92%',
-    elevation: 4,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2563eb',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  inputGroup: {
-    marginBottom: 12,
-  },
-  inputLabel: {
-    marginBottom: 4,
-    color: '#334155',
-    fontWeight: '500',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#f8fafc',
-    fontSize: 15,
-    color: '#1e293b',
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  button: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginHorizontal: 4,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  // Nuevos estilos modernos
-  addBtnModern: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0fdf4',
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    shadowColor: '#4ade80',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.10,
-    shadowRadius: 6,
-    elevation: 2,
   },
-  addBtnTextModern: {
-    color: '#22c55e',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginLeft: 8,
-  },
-  cardModern: {
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 16,
-    shadowColor: '#4ade80',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10,
-    shadowRadius: 8,
-    elevation: 4,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-  },
-  cardHeaderModern: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  cardTitleModern: {
-    fontWeight: 'bold',
-    color: '#22c55e',
-    fontSize: 18,
-    flex: 1,
-  },
-  cardActionsModern: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  iconBtnModern: {
-    marginHorizontal: 2,
-    padding: 4,
-    borderRadius: 8,
-    backgroundColor: '#e0e7ff',
-  },
-  cardInfoModern: {
-    color: '#64748b',
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  progressBoxModern: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 10,
-    padding: 10,
+  
+  // Botones de frecuencia responsive
+  frequencyButtonsTablet: {
+    gap: 16,
     marginTop: 8,
   },
-  progressTextModern: {
-    color: '#22c55e',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  modalOverlayModern: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.18)',
-    justifyContent: 'center',
+  frequencyButtonTablet: {
+    minWidth: 100,
     alignItems: 'center',
   },
-  modalContentModern: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 24,
-    width: '95%',
-    elevation: 6,
-    shadowColor: '#4ade80',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10,
-    shadowRadius: 8,
+  frequencyButtonTextTablet: {
+    fontSize: 16,
+  },
+  
+  // Acciones del modal responsive
+  modalActionsTablet: {
+    marginTop: 24,
+    gap: 16,
+  },
+  modalActionsLandscape: {
+    marginTop: 20,
+  },
+  modalButtonTablet: {
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  modalButtonTextTablet: {
+    fontSize: 16,
+  },
+  
+  // Advertencia responsive
+  warningCardTablet: {
+    padding: 20,
+    marginBottom: 16,
+  },
+  warningCardLandscape: {
+    padding: 16,
+    marginBottom: 12,
+  },
+  warningTextTablet: {
+    fontSize: 16,
   },
 });

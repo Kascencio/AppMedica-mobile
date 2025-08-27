@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useAuth } from './useAuth';
+import { buildApiUrl, API_CONFIG } from '../constants/config';
 
 export interface PatientProfile {
   id: string;
@@ -22,19 +23,23 @@ interface CaregiverState {
   error: string | null;
   fetchPatients: () => Promise<void>;
   joinPatient: (code: string) => Promise<boolean>;
+  selectedPatientId: string | null;
+  setSelectedPatientId: (id: string | null) => void;
 }
 
 export const useCaregiver = create<CaregiverState>((set, get) => ({
   patients: [],
   loading: false,
   error: null,
+  selectedPatientId: null,
+  setSelectedPatientId: (id) => set({ selectedPatientId: id }),
 
   fetchPatients: async () => {
     set({ loading: true, error: null });
     try {
       const token = useAuth.getState().userToken;
       if (!token) throw new Error('No autenticado');
-      const res = await fetch('http://72.60.30.129:3001/api/caregivers/patients', {
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.PATIENTS), {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -50,18 +55,15 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
     }
   },
 
-  joinPatient: async (code) => {
+  joinPatient: async (patientId) => {
     set({ loading: true, error: null });
     try {
       const token = useAuth.getState().userToken;
       if (!token) throw new Error('No autenticado');
-      const res = await fetch('http://72.60.30.129:3001/api/caregivers/join', {
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.JOIN), {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ code }),
+        headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ patientId }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

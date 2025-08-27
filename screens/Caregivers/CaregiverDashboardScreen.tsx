@@ -10,13 +10,14 @@ import { useMedications } from '../../store/useMedications';
 import { useTreatments } from '../../store/useTreatments';
 import { useAppointments } from '../../store/useAppointments';
 import { useNotes } from '../../store/useNotes';
+import { useIntakeEvents } from '../../store/useIntakeEvents';
 
 export default function CaregiverDashboardScreen() {
-  const { patients, loading, error, fetchPatients, joinPatient } = useCaregiver();
-  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const { patients, loading, error, fetchPatients, joinPatient, selectedPatientId, setSelectedPatientId } = useCaregiver();
   const [joinCode, setJoinCode] = useState('');
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const intakeEventsStore = useIntakeEvents();
 
   // Datos del paciente seleccionado
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
@@ -35,10 +36,11 @@ export default function CaregiverDashboardScreen() {
   // Cargar datos del paciente seleccionado
   useEffect(() => {
     if (selectedPatientId) {
-      medsStore.getMedications(selectedPatientId);
-      treatmentsStore.getTreatments(selectedPatientId);
-      appointmentsStore.getAppointments(selectedPatientId);
-      notesStore.getNotes(selectedPatientId);
+      medsStore.getMedications();
+      treatmentsStore.getTreatments();
+      appointmentsStore.getAppointments();
+      notesStore.getNotes();
+      intakeEventsStore.getEvents();
     }
   }, [selectedPatientId]);
 
@@ -56,11 +58,76 @@ export default function CaregiverDashboardScreen() {
     setJoining(false);
     if (ok) {
       setJoinCode('');
+      await fetchPatients(); // Forzar recarga
+      // Seleccionar automáticamente el nuevo paciente (el último de la lista)
+      setTimeout(() => {
+        if (patients.length > 0) {
+          setSelectedPatientId(patients[patients.length - 1].id);
+        }
+      }, 500);
       Alert.alert('¡Éxito!', 'Te has unido al paciente correctamente.');
     } else {
       setJoinError('Código inválido o error al unirse.');
     }
   };
+
+  // Debug logs para depuración
+  useEffect(() => {
+    console.log('PACIENTES:', patients);
+    if (selectedPatientId) {
+      console.log('Paciente seleccionado:', selectedPatientId);
+      console.log('Medicamentos:', medsStore.medications);
+      console.log('Tratamientos:', treatmentsStore.treatments);
+      console.log('Citas:', appointmentsStore.appointments);
+      console.log('Notas:', notesStore.notes);
+      console.log('Eventos:', intakeEventsStore.events);
+    }
+  }, [patients, selectedPatientId, medsStore.medications, treatmentsStore.treatments, appointmentsStore.appointments, notesStore.notes, intakeEventsStore.events]);
+
+  // Calcular adherencia del día
+  function getAdherence(events) {
+    const today = new Date();
+    const isToday = (d) => {
+      const dt = new Date(d);
+      return dt.getFullYear() === today.getFullYear() && dt.getMonth() === today.getMonth() && dt.getDate() === today.getDate();
+    };
+    const todayEvents = Array.isArray(events) ? events.filter(e => isToday(e.scheduledFor)) : [];
+    const total = todayEvents.length;
+    const taken = todayEvents.filter(e => e.action === 'TAKEN').length;
+    return { percent: total ? Math.round((taken / total) * 100) : 0, total, taken };
+  }
+
+  // Últimos eventos
+  function getLastIntakeEvents(events) {
+    return Array.isArray(events)
+      ? [...events].sort((a, b) => new Date(b.scheduledFor) - new Date(a.scheduledFor)).slice(0, 5)
+      : [];
+  }
+
+  // Alertas rápidas
+  function getAlerts(events, appointments) {
+    const alerts = [];
+    if (Array.isArray(events)) {
+      const skipped = events.filter(e => e.action === 'SKIPPED' && new Date(e.scheduledFor) > new Date(Date.now() - 24*60*60*1000));
+      if (skipped.length > 0) alerts.push('¡Hay medicamentos o tratamientos omitidos en las últimas 24h!');
+    }
+    if (Array.isArray(appointments)) {
+      const soon = appointments.filter(a => {
+        const d = new Date(a.dateTime);
+        const now = new Date();
+        return d > now && d < new Date(now.getTime() + 2*60*60*1000); // próximas 2h
+      });
+      if (soon.length > 0) alerts.push('¡Hay citas próximas en las próximas 2 horas!');
+    }
+    return alerts;
+  }
+
+  const adherence = getAdherence(intakeEventsStore.events);
+  const lastEvents = getLastIntakeEvents(intakeEventsStore.events);
+  const alerts = getAlerts(intakeEventsStore.events, appointmentsStore.appointments);
+
+  // Validación de perfil incompleto SOLO sobre el paciente seleccionado
+  const perfilIncompleto = !selectedPatient || !selectedPatient.name || !selectedPatient.age;
 
   if (loading && patients.length === 0) {
     return (
@@ -106,10 +173,57 @@ export default function CaregiverDashboardScreen() {
         </View>
         {joinError && <Text style={styles.errorTextModern}>{joinError}</Text>}
         {error && <Text style={styles.errorTextModern}>{error}</Text>}
+        <TouchableOpacity onPress={fetchPatients} style={{ marginTop: 10, alignSelf: 'flex-end', backgroundColor: '#e0e7ff', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 16 }}>
+          <Text style={{ color: '#2563eb', fontWeight: 'bold' }}>Recargar pacientes</Text>
+        </TouchableOpacity>
       </LinearGradient>
       {/* Información básica del paciente */}
       {selectedPatient ? (
         <>
+          {/* Alertas rápidas */}
+          {alerts.length > 0 && (
+            <LinearGradient colors={["#fef9c3", "#fef3c7"]} style={[styles.cardModern, { borderColor: '#fde047', borderWidth: 1 }] } start={{x:0, y:0}} end={{x:1, y:1}}>
+              <Text style={[styles.sectionTitleModern, { color: '#b45309' }]}>Alertas</Text>
+              {alerts.map((a, idx) => (
+                <Text key={idx} style={{ color: '#b45309', fontWeight: 'bold', marginBottom: 4 }}>{a}</Text>
+              ))}
+            </LinearGradient>
+          )}
+          {/* Adherencia */}
+          <LinearGradient colors={["#e0f2fe", "#f0fdfa"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
+            <Text style={styles.sectionTitleModern}>Adherencia de hoy</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: '#e0f2fe', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#22d3ee', marginRight: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2563eb' }}>{adherence.percent}%</Text>
+              </View>
+              <Text style={{ color: '#64748b', fontSize: 15 }}>Tomas registradas: {adherence.taken} / {adherence.total}</Text>
+            </View>
+          </LinearGradient>
+          {/* Últimos eventos */}
+          <LinearGradient colors={["#e0e7ff", "#f0fdfa"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
+            <Text style={styles.sectionTitleModern}>Últimos eventos</Text>
+            {lastEvents.length === 0 ? (
+              <Text style={styles.emptyTextModern}>No hay eventos recientes.</Text>
+            ) : (
+              lastEvents.map((ev, idx) => (
+                <View key={ev.id || idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                  <MaterialCommunityIcons
+                    name={ev.kind === 'MED' ? 'pill' : ev.kind === 'TREATMENT' ? 'leaf' : 'alert-circle-outline'}
+                    size={20}
+                    color={ev.action === 'TAKEN' ? '#22c55e' : ev.action === 'SKIPPED' ? '#ef4444' : '#f59e42'}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={{ fontSize: 13, color: '#64748b', flex: 1 }}>{ev.kind === 'MED' ? 'Medicamento' : ev.kind === 'TREATMENT' ? 'Tratamiento' : 'Evento'}</Text>
+                  <Text style={{ fontSize: 13, color: '#334155', flex: 1 }}>{new Date(ev.scheduledFor).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</Text>
+                  <Text style={{ fontWeight: 'bold', fontSize: 13, color: ev.action === 'TAKEN' ? '#22c55e' : ev.action === 'SKIPPED' ? '#ef4444' : '#f59e42', marginLeft: 8 }}>{ev.action === 'TAKEN' ? 'Tomado' : ev.action === 'SKIPPED' ? 'Omitido' : 'Pospuesto'}</Text>
+                </View>
+              ))
+            )}
+            <TouchableOpacity onPress={() => Alert.alert('Historial', 'Próximamente: historial completo de eventos.')} style={{ marginTop: 8, alignSelf: 'flex-end', backgroundColor: '#e0e7ff', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 16 }}>
+              <Text style={{ color: '#2563eb', fontWeight: 'bold' }}>Ver historial</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+          {/* Perfil y datos */}
           <LinearGradient colors={["#f0fdf4", "#f1f5f9"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
             <Text style={styles.sectionTitleModern}>Perfil del paciente</Text>
             <Text style={styles.profileItemModern}><Text style={styles.profileLabelModern}>Nombre:</Text> {selectedPatient.name}</Text>

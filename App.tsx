@@ -9,11 +9,17 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useNavigationContainerRef } from '@react-navigation/native';
 import { useCurrentUser } from './store/useCurrentUser';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useOffline } from './store/useOffline';
+import { useAutoSync } from './hooks/useAutoSync';
+import { Ionicons } from '@expo/vector-icons';
+import { setNotificationHandler, requestPermissions } from './lib/notifications';
+import { syncService } from './lib/syncService';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
   const { fetchProfile, profile, loading: loadingProfile } = useCurrentUser();
+  const { initializeOffline } = useOffline();
+  const autoSync = useAutoSync(); // Inicializar sincronización automática
   const navigationRef = useNavigationContainerRef();
   const [notiPerm, setNotiPerm] = React.useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [showPermModal, setShowPermModal] = React.useState(false);
@@ -22,36 +28,72 @@ export default function App() {
   useEffect(() => {
     loadToken();
     (async () => {
-      const { status } = await Notifications.requestPermissionsAsync();
-      setNotiPerm(status);
-      if (status !== 'granted') setShowPermModal(true);
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: false,
-        }),
-      });
+      // Configurar el manejador de notificaciones
+      setNotificationHandler();
+      
+      // Solicitar permisos usando la función del módulo de notificaciones
+      const permissionsGranted = await requestPermissions();
+      if (permissionsGranted) {
+        setNotiPerm('granted');
+      } else {
+        setNotiPerm('denied');
+        setShowPermModal(true);
+      }
+      
+      // Inicializar sistema offline
+      await initializeOffline();
+      
+      // Inicializar servicio de sincronización
+      await syncService.init();
     })();
+    
     // Listener para respuesta a notificaciones (cuando el usuario toca la notificación)
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data;
-      if (navigationRef.isReady()) {
-        navigationRef.navigate('AlarmScreen', { ...data });
+      console.log('[App] Notificación tocada:', data);
+      
+      // Navegar a la pantalla de alarma si es una notificación de medicamento o cita
+      if (data && (data.type === 'MEDICATION' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
+        if (navigationRef.isReady()) {
+          navigationRef.navigate('AlarmScreen', { 
+            kind: data.kind || 'MED',
+            refId: data.medicationId || data.appointmentId || data.refId,
+            scheduledFor: data.scheduledFor,
+            name: data.medicationName || data.doctorName || data.name,
+            dosage: data.dosage || '',
+            instructions: data.instructions || data.notes || '',
+            time: data.time,
+            location: data.location || ''
+          });
+        }
       }
     });
+    
     // Listener para notificaciones recibidas en primer plano
     const fgListener = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data;
       const receivedAt = new Date();
       console.log('[NOTIFICACIÓN RECIBIDA] Hora recibida:', receivedAt.toISOString(), 'Datos:', data);
-      // Si es de tipo alarma, navega automáticamente
-      if (data && data.kind && data.refId && data.scheduledFor) {
+      
+      // Si es una alarma de medicamento o cita, navegar automáticamente a la pantalla de alarma
+      if (data && (data.type === 'MEDICATION' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
+        console.log('[App] Navegando a pantalla de alarma automáticamente');
         if (navigationRef.isReady()) {
-          navigationRef.navigate('AlarmScreen', { ...data });
+          // Navegar inmediatamente para mostrar la alarma
+          navigationRef.navigate('AlarmScreen', { 
+            kind: data.kind || 'MED',
+            refId: data.medicationId || data.appointmentId || data.refId,
+            scheduledFor: data.scheduledFor,
+            name: data.medicationName || data.doctorName || data.name,
+            dosage: data.dosage || '',
+            instructions: data.instructions || data.notes || '',
+            time: data.time,
+            location: data.location || ''
+          });
         }
       }
     });
+    
     return () => {
       subscription.remove();
       fgListener.remove();
@@ -61,9 +103,18 @@ export default function App() {
   // Cargar perfil automáticamente si hay token y no hay perfil
   useEffect(() => {
     if (isAuthenticated && userToken && !profile && !loadingProfile) {
-      fetchProfile();
+      console.log('[App] Cargando perfil automáticamente...');
+      // Agregar un flag para evitar llamadas repetidas
+      const loadProfileOnce = async () => {
+        try {
+          await fetchProfile();
+        } catch (error) {
+          console.log('[App] Error cargando perfil:', error);
+        }
+      };
+      loadProfileOnce();
     }
-  }, [isAuthenticated, userToken, profile, loadingProfile]);
+  }, [isAuthenticated, userToken]); // Solo depender de estos dos valores
 
   // Función para abrir configuración del sistema
   const openSettings = () => {

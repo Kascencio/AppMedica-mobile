@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { useCurrentUser } from './useCurrentUser';
 
 interface AuthState {
@@ -7,7 +8,7 @@ interface AuthState {
   isAuthenticated: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, role: 'PATIENT' | 'CAREGIVER') => Promise<void>;
+  register: (email: string, password: string, role: 'PATIENT' | 'CAREGIVER', inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   loadToken: () => Promise<void>;
 }
@@ -17,45 +18,71 @@ export const useAuth = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   loading: false,
 
-  login: async (email, password) => {
+  login: async (email: string, password: string) => {
+    console.log('[useAuth] Iniciando login...');
     set({ loading: true });
     try {
-      const res = await fetch('http://72.60.30.129:3001/api/auth/login', {
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.LOGIN), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: API_CONFIG.DEFAULT_HEADERS,
         body: JSON.stringify({ email, password }),
       });
+      console.log('[useAuth] Respuesta login:', res.status, res.ok);
+      
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Error de autenticación');
       }
+      
       const data = await res.json();
+      console.log('[useAuth] Login exitoso, token recibido:', data.token ? 'SÍ' : 'NO');
+      
       await AsyncStorage.setItem('userToken', data.token);
       set({ userToken: data.token, isAuthenticated: true });
-      // Cargar perfil tras login
-      await useCurrentUser.getState().fetchProfile();
+      
+      // NO llamar fetchProfile aquí para evitar ciclo de dependencias
+      console.log('[useAuth] Login completado, perfil se cargará por separado');
+    } catch (error) {
+      console.log('[useAuth] Error en login:', error);
+      throw error;
     } finally {
       set({ loading: false });
     }
   },
 
-  register: async (email, password, role) => {
+  register: async (email: string, password: string, role: 'PATIENT' | 'CAREGIVER', inviteCode?: string) => {
+    console.log('[useAuth] Iniciando registro...');
+    console.log('[useAuth] Datos de registro:', { email, role, inviteCode: inviteCode ? 'PRESENTE' : 'NO' });
     set({ loading: true });
     try {
-      const res = await fetch('http://72.60.30.129:3001/api/auth/register', {
+      const bodyData: any = { email, password, role };
+      if (inviteCode && inviteCode.trim()) {
+        bodyData.inviteCode = inviteCode.trim();
+      }
+      
+      const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.REGISTER), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, role }),
+        headers: API_CONFIG.DEFAULT_HEADERS,
+        body: JSON.stringify(bodyData),
       });
+      console.log('[useAuth] Respuesta registro:', res.status, res.ok);
+      
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Error de registro');
       }
+      
       const data = await res.json();
+      console.log('[useAuth] Registro exitoso, token recibido:', data.token ? 'SÍ' : 'NO');
+      
       await AsyncStorage.setItem('userToken', data.token);
       set({ userToken: data.token, isAuthenticated: true });
-      // Cargar perfil tras registro
-      await useCurrentUser.getState().fetchProfile();
+      
+      // NO llamar fetchProfile aquí para evitar ciclo de dependencias
+      console.log('[useAuth] Registro completado, perfil se cargará por separado');
+    } catch (error) {
+      console.log('[useAuth] Error en registro:', error);
+      throw error;
     } finally {
       set({ loading: false });
     }

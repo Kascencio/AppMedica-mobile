@@ -48,7 +48,7 @@ export default function RegisterScreen({ navigation }: any) {
   const onSubmit = async (data: RegisterForm) => {
     setError(null);
     try {
-      await register(data.email, data.password, data.role);
+      await register(data.email, data.password, data.role, data.inviteCode);
       await fetchProfile();
       // No navigation.replace ni navigation.reset: el flujo lo maneja App.tsx
     } catch (err: any) {

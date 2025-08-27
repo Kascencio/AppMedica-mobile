@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Modal, TextInput, StyleSheet, ActivityIndicator, Platform, Alert, Dimensions, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,10 @@ import { useCurrentUser } from '../../store/useCurrentUser';
 import { useState } from 'react';
 import { scheduleNotification, cancelNotification } from '../../lib/notifications';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useCaregiver } from '../../store/useCaregiver';
+import OfflineIndicator from '../../components/OfflineIndicator';
+import COLORS from '../../constants/colors';
+import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
 const appointmentSchema = z.object({
   doctorName: z.string().min(1, 'Obligatorio'),
@@ -25,6 +29,13 @@ type AppointmentForm = z.infer<typeof appointmentSchema>;
 export default function AppointmentsScreen() {
   const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment } = useAppointments();
   const { profile } = useCurrentUser();
+  const { selectedPatientId, patients } = useCaregiver();
+  const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
+  
+  // Sistema responsive
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  const isTablet = dimensions.width > 768;
+  const isLandscape = dimensions.width > dimensions.height;
   const [modalVisible, setModalVisible] = React.useState(false);
   const [showDatePicker, setShowDatePicker] = React.useState(false);
   const [showTimePicker, setShowTimePicker] = React.useState(false);
@@ -40,7 +51,7 @@ export default function AppointmentsScreen() {
   const [everyXHours, setEveryXHours] = useState('8');
   const notificationIdsRef = React.useRef<{ [apptId: string]: string }>({});
 
-  const perfilIncompleto = !profile || !profile.name || !profile.age;
+  const perfilIncompleto = !profile?.patientProfileId && !profile?.id;
 
   const {
     control,
@@ -60,8 +71,22 @@ export default function AppointmentsScreen() {
     },
   });
 
-  React.useEffect(() => {
-    getAppointments();
+  useEffect(() => {
+    if (profile?.patientProfileId) {
+      console.log('[CITAS] Cargando citas para perfil:', profile.patientProfileId);
+      getAppointments().catch((e) => {
+        console.log('[CITAS] Error:', e.message || e);
+      });
+    } else {
+      console.log('[CITAS] No hay patientProfileId disponible:', profile);
+    }
+  }, [profile?.patientProfileId]);
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
   }, []);
 
   // Handlers para fecha y hora
@@ -163,7 +188,7 @@ export default function AppointmentsScreen() {
                 instructions: data.notes,
                 time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { type: 'date', date: firstDate },
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
             });
             const id = await scheduleNotification({
               title: `Recordatorio de cita: ${data.doctorName}`,
@@ -177,7 +202,11 @@ export default function AppointmentsScreen() {
                 instructions: data.notes,
                 time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { hour: t.getHours(), minute: t.getMinutes(), repeats: true },
+              trigger: { 
+                type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                hour: t.getHours(), 
+                minute: t.getMinutes() 
+              },
             });
             notificationIdsRef.current[`${apptId}_${t.getHours()}_${t.getMinutes()}`] = id;
           }
@@ -203,7 +232,7 @@ export default function AppointmentsScreen() {
                   instructions: data.notes,
                   time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 },
-                trigger: { type: 'date', date: firstDate },
+                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
               });
               const id = await scheduleNotification({
                 title: `Recordatorio de cita: ${data.doctorName}`,
@@ -217,7 +246,12 @@ export default function AppointmentsScreen() {
                   instructions: data.notes,
                   time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 },
-                trigger: { weekday: day + 1, hour: t.getHours(), minute: t.getMinutes(), repeats: true },
+                trigger: { 
+                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+                  weekday: day + 1, 
+                  hour: t.getHours(), 
+                  minute: t.getMinutes() 
+                },
               });
               notificationIdsRef.current[`${apptId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
             }
@@ -243,7 +277,7 @@ export default function AppointmentsScreen() {
                 instructions: data.notes,
                 time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { type: 'date', date: firstDate },
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
             });
             const id = await scheduleNotification({
               title: `Recordatorio de cita: ${data.doctorName}`,
@@ -257,7 +291,10 @@ export default function AppointmentsScreen() {
                 instructions: data.notes,
                 time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { hour: base.getHours(), minute: base.getMinutes(), repeats: true, interval: interval * 60 },
+              trigger: { 
+                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+                seconds: interval * 60 * 60 
+              },
             });
             notificationIdsRef.current[`${apptId}_every${interval}h`] = id;
           }
@@ -285,39 +322,91 @@ export default function AppointmentsScreen() {
   };
 
   const renderItem = ({ item }: { item: any }) => (
-    <LinearGradient colors={["#d1fae5", "#f0fdfa"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
-      <View style={styles.cardHeaderModern}>
-        <MaterialIcons name="event" size={24} color="#34d399" style={{ marginRight: 10 }} />
-        <Text style={styles.cardTitleModern}>{item.title}</Text>
-        <View style={styles.cardActionsModern}>
-          <TouchableOpacity style={styles.iconBtnModern} onPress={() => openEditModal(item)}>
-            <MaterialIcons name="edit" size={20} color="#2563eb" />
+    <View style={MEDICAL_STYLES.appointmentCard}>
+      <View style={GLOBAL_STYLES.rowSpaced}>
+        <View style={GLOBAL_STYLES.row}>
+          <MaterialIcons name="event" size={24} color={COLORS.medical.appointment} style={GLOBAL_STYLES.icon} />
+          <Text style={[GLOBAL_STYLES.sectionTitle, { marginBottom: 0 }]}>{item.title}</Text>
+        </View>
+        <View style={GLOBAL_STYLES.row}>
+          <TouchableOpacity 
+            style={MEDICAL_STYLES.actionButton} 
+            onPress={() => openEditModal(item)}
+            accessibilityRole="button"
+            accessibilityLabel={`Editar cita con ${item.title}`}
+          >
+            <MaterialIcons name="edit" size={20} color={COLORS.text.inverse} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtnModern} onPress={() => onDelete(item.id)}>
-            <MaterialIcons name="delete" size={20} color="#ef4444" />
+          <TouchableOpacity 
+            style={[MEDICAL_STYLES.actionButton, { backgroundColor: COLORS.error }]} 
+            onPress={() => onDelete(item.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Eliminar cita con ${item.title}`}
+          >
+            <MaterialIcons name="delete" size={20} color={COLORS.text.inverse} />
           </TouchableOpacity>
         </View>
       </View>
-      <Text style={styles.cardInfoModern}>{item.location}</Text>
-      <Text style={styles.cardInfoModern}>{item.dateTime ? new Date(item.dateTime).toLocaleString() : '-'}</Text>
-      <Text style={styles.cardInfoModern}>{item.description}</Text>
-    </LinearGradient>
+      <View style={[GLOBAL_STYLES.row, { marginTop: 8 }]}>
+        <MaterialIcons name="location-on" size={16} color={COLORS.text.secondary} style={GLOBAL_STYLES.icon} />
+        <Text style={GLOBAL_STYLES.bodyText}>{item.location}</Text>
+      </View>
+      <View style={GLOBAL_STYLES.row}>
+        <MaterialIcons name="schedule" size={16} color={COLORS.text.secondary} style={GLOBAL_STYLES.icon} />
+        <Text style={GLOBAL_STYLES.bodyText}>
+          {item.dateTime ? new Date(item.dateTime).toLocaleString() : '-'}
+        </Text>
+      </View>
+      {item.description && (
+        <View style={[GLOBAL_STYLES.card, { marginTop: 12, marginBottom: 0, padding: 12 }]}>
+          <Text style={GLOBAL_STYLES.caption}>{item.description}</Text>
+        </View>
+      )}
+    </View>
   );
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.headerTitle}>Mis Citas</Text>
-        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={perfilIncompleto} activeOpacity={0.85}>
-          <Ionicons name="add-circle" size={28} color="#34d399" />
-          <Text style={styles.addBtnTextModern}>Nueva cita</Text>
-        </TouchableOpacity>
+  if (perfilIncompleto) {
+    return (
+      <View style={styles.centered}>
+        <MaterialIcons name="account-heart" size={64} color="#2563eb" />
+        <Text style={styles.title}>Completa tu perfil</Text>
+        <Text style={styles.subtitle}>Por favor, completa tu perfil para poder agregar citas.</Text>
       </View>
-      {perfilIncompleto && (
-        <Text style={{ color: '#ef4444', marginBottom: 8, textAlign: 'center' }}>
-          Completa tu perfil para poder agregar citas.
-        </Text>
-      )}
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.centered}>
+        <MaterialIcons name="alert-circle" size={64} color="#ef4444" />
+        <Text style={styles.title}>Error</Text>
+        <Text style={styles.subtitle}>{error}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <LinearGradient colors={COLORS.gradients.primary as [string, string, string]} style={{ flex: 1 }}>
+      <View style={GLOBAL_STYLES.screenContainer}>
+        <OfflineIndicator />
+        <View style={GLOBAL_STYLES.rowSpaced}>
+          <Text style={GLOBAL_STYLES.sectionHeader}>Mis Citas</Text>
+          <TouchableOpacity 
+            style={[
+              GLOBAL_STYLES.buttonPrimary, 
+              perfilIncompleto && { opacity: 0.6 }
+            ]} 
+            onPress={openCreateModal} 
+            disabled={perfilIncompleto} 
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Agregar nueva cita"
+            accessibilityHint={perfilIncompleto ? "Completa tu perfil primero" : "Abre el formulario para agregar una cita"}
+          >
+            <Ionicons name="add-circle" size={28} color={COLORS.text.inverse} />
+            <Text style={GLOBAL_STYLES.buttonText}>Nueva cita</Text>
+          </TouchableOpacity>
+        </View>
       {loading ? (
         <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
       ) : error ? (
@@ -339,8 +428,23 @@ export default function AppointmentsScreen() {
         onRequestClose={() => { setModalVisible(false); setEditingAppointment(null); }}
       >
         <View style={styles.modalOverlayModern}>
-          <View style={styles.modalContentModern}>
-            <Text style={styles.modalTitle}>{editingAppointment ? 'Editar Cita Médica' : 'Agregar Cita Médica'}</Text>
+          <View style={[
+            styles.modalContentModern,
+            isTablet && styles.modalContentTablet,
+            isLandscape && styles.modalContentLandscape
+          ]}>
+            <ScrollView 
+              showsVerticalScrollIndicator={true}
+              indicatorStyle="black"
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+            >
+              <Text style={[
+                styles.modalTitle,
+                isTablet && styles.modalTitleTablet,
+                isLandscape && styles.modalTitleLandscape
+              ]}>{editingAppointment ? 'Editar Cita Médica' : 'Agregar Cita Médica'}</Text>
             <Controller
               control={control}
               name="doctorName"
@@ -516,26 +620,49 @@ export default function AppointmentsScreen() {
                 </View>
               )}
             />
-            <View style={styles.modalActions}>
+            </ScrollView>
+            {/* Botones de acción fuera del scroll para que siempre sean visibles */}
+            <View style={[
+              styles.modalActions,
+              isTablet && styles.modalActionsTablet,
+              isLandscape && styles.modalActionsLandscape
+            ]}>
               {formError && <Text style={{ color: '#ef4444', textAlign: 'center', marginBottom: 8 }}>{formError}</Text>}
               <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#2563eb' }]}
+                style={[
+                  styles.button, 
+                  { backgroundColor: '#10b981' },
+                  isTablet && styles.buttonTablet,
+                  isLandscape && styles.buttonLandscape
+                ]}
                 onPress={handleSubmit(onSubmit)}
                 disabled={isSubmitting || loading}
               >
-                <Text style={styles.buttonText}>{editingAppointment ? 'Guardar cambios' : 'Guardar'}</Text>
+                <Text style={[
+                  styles.buttonText,
+                  isTablet && styles.buttonTextTablet
+                ]}>{editingAppointment ? 'Guardar cambios' : 'Guardar'}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.button, { backgroundColor: '#64748b' }]}
+                style={[
+                  styles.button, 
+                  { backgroundColor: '#ef4444' },
+                  isTablet && styles.buttonTablet,
+                  isLandscape && styles.buttonLandscape
+                ]}
                 onPress={() => { setModalVisible(false); setEditingAppointment(null); reset(); }}
               >
-                <Text style={styles.buttonText}>Cancelar</Text>
+                <Text style={[
+                  styles.buttonText,
+                  isTablet && styles.buttonTextTablet
+                ]}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+      </View>
+    </LinearGradient>
   );
 }
 
@@ -683,6 +810,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 10,
   },
+  modalActionsTablet: {
+    marginTop: 16,
+    gap: 16,
+  },
+  modalActionsLandscape: {
+    marginTop: 12,
+  },
   button: {
     flex: 1,
     alignItems: 'center',
@@ -690,10 +824,22 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginHorizontal: 4,
   },
+  buttonTablet: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  buttonLandscape: {
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+  },
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  buttonTextTablet: {
+    fontSize: 17,
   },
   // Nuevos estilos modernos
   addBtnModern: {
@@ -765,10 +911,52 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 24,
     width: '95%',
+    maxHeight: '90%',
     elevation: 6,
     shadowColor: '#34d399',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.10,
     shadowRadius: 8,
+  },
+  modalContentTablet: {
+    width: '70%',
+    maxWidth: 600,
+    maxHeight: '85%',
+    padding: 32,
+  },
+  modalContentLandscape: {
+    width: '80%',
+    maxHeight: '85%',
+    padding: 20,
+  },
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  modalTitleTablet: {
+    fontSize: 24,
+    marginBottom: 20,
+  },
+  modalTitleLandscape: {
+    fontSize: 22,
+    marginBottom: 18,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0fdfa',
+    padding: 20,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2563eb',
+    marginTop: 15,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 5,
   },
 });

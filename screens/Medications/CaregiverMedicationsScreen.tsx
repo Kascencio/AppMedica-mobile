@@ -9,10 +9,13 @@ import { useMedications } from '../../store/useMedications';
 import { scheduleNotification, cancelNotification } from '../../lib/notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useCaregiver } from '../../store/useCaregiver';
 
 export default function CaregiverMedicationsScreen({ navigation }: any) {
   const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication } = useMedications();
   const { profile } = useCurrentUser();
+  const { selectedPatientId, patients } = useCaregiver();
+  const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
   const [modalVisible, setModalVisible] = React.useState(false);
   const [editingMed, setEditingMed] = React.useState<any>(null);
   const [showStartPicker, setShowStartPicker] = React.useState(false);
@@ -27,7 +30,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]); // 0=Domingo
   const [everyXHours, setEveryXHours] = useState('8');
 
-  const perfilIncompleto = !profile || !profile.name || !profile.age;
+  const perfilIncompleto = !selectedPatient || !selectedPatient.name || !selectedPatient.age;
 
   const medicationSchema = z.object({
     name: z.string().min(1, 'Obligatorio'),
@@ -60,8 +63,12 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   });
 
   useEffect(() => {
-    getMedications();
-  }, []);
+    if (selectedPatientId) {
+      getMedications().catch((e) => {
+        console.log('[MEDICAMENTOS] Error:', e.message || e);
+      });
+    }
+  }, [selectedPatientId]);
 
   const onStartChange = (event: any, date?: Date) => {
     setShowStartPicker(false);
@@ -193,7 +200,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 instructions: data.notes,
                 time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { type: 'date', date: firstDate },
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
             });
             const id = await scheduleNotification({
               title: `Toma tu medicamento: ${data.name}`,
@@ -207,7 +214,11 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 instructions: data.notes,
                 time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { hour: t.getHours(), minute: t.getMinutes(), repeats: true },
+              trigger: { 
+                type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                hour: t.getHours(), 
+                minute: t.getMinutes() 
+              },
             });
             notificationIdsRef.current[`${medId}_${t.getHours()}_${t.getMinutes()}`] = id;
           }
@@ -234,7 +245,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                   instructions: data.notes,
                   time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 },
-                trigger: { type: 'date', date: firstDate },
+                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
               });
               const id = await scheduleNotification({
                 title: `Toma tu medicamento: ${data.name}`,
@@ -248,7 +259,12 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                   instructions: data.notes,
                   time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 },
-                trigger: { weekday: day + 1, hour: t.getHours(), minute: t.getMinutes(), repeats: true },
+                trigger: { 
+                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+                  weekday: day + 1, 
+                  hour: t.getHours(), 
+                  minute: t.getMinutes() 
+                },
               });
               notificationIdsRef.current[`${medId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
             }
@@ -275,9 +291,9 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 instructions: data.notes,
                 time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { type: 'date', date: firstDate },
-            });
-            const id = await scheduleNotification({
+                              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+              });
+              const id = await scheduleNotification({
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
@@ -289,7 +305,10 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 instructions: data.notes,
                 time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               },
-              trigger: { hour: base.getHours(), minute: base.getMinutes(), repeats: true, interval: interval * 60 },
+              trigger: { 
+                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+                seconds: interval * 60 * 60 
+              },
             });
             notificationIdsRef.current[`${medId}_every${interval}h`] = id;
           }
@@ -316,6 +335,16 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
       ]
     );
   };
+
+  if (!selectedPatientId) {
+    return (
+      <View style={styles.centered}>
+        <MaterialCommunityIcons name="account-heart" size={64} color="#2563eb" />
+        <Text style={styles.title}>Selecciona un paciente</Text>
+        <Text style={styles.subtitle}>Debes seleccionar un paciente asignado para ver sus medicamentos.</Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -358,7 +387,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         medications.map((med) => (
           <LinearGradient key={med.id} colors={["#e0f2fe", "#f0fdfa"]} style={styles.cardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
             <View style={styles.cardHeaderModern}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <Ionicons name="medkit" size={24} color="#38bdf8" style={{ marginRight: 10 }} />
                 <Text style={styles.cardTitleModern}>{med.name}</Text>
               </View>
@@ -545,12 +574,12 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                     <TouchableOpacity onPress={() => removeTime(idx)}>
                       <Ionicons name="close-circle" size={18} color="#ef4444" />
                     </TouchableOpacity>
-                  </View>
+          </View>
                 ))}
                 <TouchableOpacity onPress={() => setShowTimePicker(true)} style={{ backgroundColor: '#2563eb', borderRadius: 6, padding: 8 }}>
                   <Ionicons name="add" size={18} color="#fff" />
                 </TouchableOpacity>
-              </View>
+          </View>
               {showTimePicker && (
                 <DateTimePicker
                   value={new Date()}
@@ -559,7 +588,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                   onChange={(event, date) => { if (date) addTime(date); else setShowTimePicker(false); }}
                 />
               )}
-            </View>
+          </View>
             <Controller
               control={control}
               name="notes"
@@ -573,7 +602,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                     onChangeText={onChange}
                     multiline
                   />
-                </View>
+          </View>
               )}
             />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
