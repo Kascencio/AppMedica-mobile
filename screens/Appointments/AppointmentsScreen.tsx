@@ -187,7 +187,8 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
             });
@@ -201,7 +202,8 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { 
                 type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -227,29 +229,31 @@ export default function AppointmentsScreen() {
               await scheduleNotification({
                 title: `Recordatorio de cita: ${data.doctorName}`,
                 body: `Ubicación: ${data.location}`,
-                data: {
-                  kind: 'APPOINTMENT',
-                  refId: apptId,
-                  scheduledFor: firstDate.toISOString(),
-                  name: data.doctorName,
-                  dosage: '',
-                  instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                },
+              data: {
+                kind: 'APPOINTMENT',
+                refId: apptId,
+                scheduledFor: firstDate.toISOString(),
+                name: data.doctorName,
+                dosage: '',
+                instructions: data.notes,
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                patientProfileId: profile?.patientProfileId || profile?.id,
+              },
                 trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
               });
               const id = await scheduleNotification({
                 title: `Recordatorio de cita: ${data.doctorName}`,
                 body: `Ubicación: ${data.location}`,
-                data: {
-                  kind: 'APPOINTMENT',
-                  refId: apptId,
-                  scheduledFor: t.toISOString(),
-                  name: data.doctorName,
-                  dosage: '',
-                  instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                },
+              data: {
+                kind: 'APPOINTMENT',
+                refId: apptId,
+                scheduledFor: t.toISOString(),
+                name: data.doctorName,
+                dosage: '',
+                instructions: data.notes,
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                patientProfileId: profile?.patientProfileId || profile?.id,
+              },
                 trigger: { 
                   type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
                   weekday: day + 1, 
@@ -282,7 +286,8 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
             });
@@ -296,7 +301,8 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { 
                 type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,

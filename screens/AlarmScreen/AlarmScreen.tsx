@@ -5,6 +5,7 @@ import { useRoute } from '@react-navigation/native';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import { useKeepAwake } from 'expo-keep-awake';
 import { scheduleNotification } from '../../lib/notifications';
+import { useCurrentUser } from '../../store/useCurrentUser';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,6 +28,7 @@ export default function AlarmScreen({ navigation }: any) {
   const { registerEvent } = useIntakeEvents();
   const [loading, setLoading] = React.useState(false);
   const [paramError, setParamError] = React.useState<string | null>(null);
+  const { profile } = useCurrentUser();
 
   useEffect(() => {
     console.log('AlarmScreen params:', { kind, refId, scheduledFor, name, dosage, instructions, time });
@@ -49,29 +51,29 @@ export default function AlarmScreen({ navigation }: any) {
   useEffect(() => {
     // Vibración más intensa para alarmas
     Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
-    
-    // Reproducir sonido de alarma
+
+    let sound: Audio.Sound | null = null;
     (async () => {
       try {
-        const { sound } = await Audio.Sound.createAsync(
+        const result = await Audio.Sound.createAsync(
           require('../../assets/alarm.mp3'),
-          { 
+          {
             shouldPlay: true,
             isLooping: true, // Repetir el sonido hasta que el usuario tome acción
             volume: 1.0,
           }
         );
-        
-        // Guardar referencia para poder detenerlo después
-        return () => {
-          sound?.unloadAsync();
-        };
+        sound = result.sound;
       } catch (error) {
         console.error('[AlarmScreen] Error reproduciendo audio:', error);
         // Si no se puede reproducir el archivo, usar vibración más intensa
         Vibration.vibrate([0, 1000, 500, 1000, 500, 1000]);
       }
     })();
+
+    return () => {
+      sound?.unloadAsync();
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -95,27 +97,26 @@ export default function AlarmScreen({ navigation }: any) {
         try {
           const snoozeDate = new Date();
           snoozeDate.setMinutes(snoozeDate.getMinutes() + 10);
-          
-          // Importar la función de notificaciones
-          const { scheduleNotification } = await import('../../lib/notificationTest');
-          
+
           await scheduleNotification({
             title: `Recordatorio: ${name || 'Medicamento'}`,
             body: `Dosis: ${dosage || ''}`,
-            data: { 
-              kind, 
-              refId, 
-              scheduledFor: snoozeDate.toISOString(), 
-              name, 
-              dosage, 
-              instructions, 
-              time: snoozeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+            data: {
+              kind,
+              refId,
+              scheduledFor: snoozeDate.toISOString(),
+              name,
+              dosage,
+              instructions,
+              time: snoozeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              patientProfileId: profile?.patientProfileId || profile?.id,
             },
-            trigger: { 
+            trigger: {
               type: Notifications.SchedulableTriggerInputTypes.DATE,
-              date: snoozeDate 
+              date: snoozeDate,
             },
             identifier: `snooze_${refId}_${Date.now()}`,
+            channelId: kind === 'APPOINTMENT' ? 'appointments' : 'medications',
           });
         } catch (snoozeError) {
           console.error('[AlarmScreen] Error programando posponer:', snoozeError);
