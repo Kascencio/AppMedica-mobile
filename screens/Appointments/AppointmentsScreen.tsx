@@ -11,7 +11,6 @@ import { useState } from 'react';
 import { scheduleNotification, cancelAppointmentNotifications } from '../../lib/notifications';
 import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useCaregiver } from '../../store/useCaregiver';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
@@ -30,8 +29,6 @@ type AppointmentForm = z.infer<typeof appointmentSchema>;
 export default function AppointmentsScreen() {
   const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment } = useAppointments();
   const { profile } = useCurrentUser();
-  const { selectedPatientId, patients } = useCaregiver();
-  const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
   
   // Sistema responsive
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
