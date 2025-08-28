@@ -1,65 +1,17 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Image, Alert, Dimensions } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Image, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMedications } from '../../store/useMedications';
 import { useAppointments } from '../../store/useAppointments';
-import { useTreatments } from '../../store/useTreatments';
 import { useAuth } from '../../store/useAuth';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import OfflineIndicator from '../../components/OfflineIndicator';
-import { LinearGradient } from 'expo-linear-gradient';
 import logo from '../../assets/logo.webp';
 import { useNavigation } from '@react-navigation/native';
-import SyncStatusBar from '../../components/SyncStatusBar';
 import AlarmStatus from '../../components/AlarmStatus';
 import COLORS from '../../constants/colors';
-import { scheduleNotification, testNotification, testMedicationAlarm, testAppointmentAlarm } from '../../lib/notificationTest';
-import * as Notifications from 'expo-notifications';
-
-const { width } = Dimensions.get('window');
-
-function getNextEvents(meds: any[], appts: any[], trts: any[]) {
-  const now = new Date();
-  const events: any[] = [];
-  if (Array.isArray(meds)) {
-    meds.forEach(m => {
-      if (m.startDate) events.push({
-        type: 'Medicamento',
-        name: m.name,
-        date: new Date(m.startDate),
-        icon: <Ionicons name="medkit" size={22} color={COLORS.medical.medication} />,
-        color: COLORS.medical.medication,
-      });
-    });
-  }
-  if (Array.isArray(appts)) {
-    appts.forEach(a => {
-      if (a.dateTime) events.push({
-        type: 'Cita',
-        name: a.title,
-        date: new Date(a.dateTime),
-        icon: <MaterialCommunityIcons name="calendar-check" size={22} color={COLORS.medical.appointment} />,
-        color: COLORS.medical.appointment,
-      });
-    });
-  }
-  if (Array.isArray(trts)) {
-    trts.forEach(t => {
-      if (t.startDate) events.push({
-        type: 'Tratamiento',
-        name: t.title,
-        date: new Date(t.startDate),
-        icon: <MaterialCommunityIcons name="leaf" size={22} color={COLORS.medical.treatment} />,
-        color: COLORS.medical.treatment,
-      });
-    });
-  }
-  return events
-    .filter(e => e.date > now)
-    .sort((a, b) => a.date.getTime() - b.date.getTime())
-    .slice(0, 3);
-}
+import { scheduleSnoozeMedication } from '../../lib/notifications';
 
 const HEALTH_TIPS = [
   'Bebe suficiente agua durante el día.',
@@ -85,16 +37,9 @@ function getAdherence(events: any[]) {
   return { percent: total ? Math.round((taken / total) * 100) : 0, total, taken };
 }
 
-function getLastIntakeEvents(events: any[]) {
-  return Array.isArray(events)
-    ? [...events].sort((a, b) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime()).slice(0, 5)
-    : [];
-}
-
 export default function HomeScreen() {
   const { medications, getMedications } = useMedications();
   const { appointments } = useAppointments();
-  const { treatments } = useTreatments();
   const { logout } = useAuth();
   const { profile, fetchProfile, loading, error } = useCurrentUser();
   const { events: intakeEvents, registerEvent, getEvents } = useIntakeEvents();
@@ -162,27 +107,16 @@ export default function HomeScreen() {
 
       // Usar el store de eventos de adherencia
       await registerEvent(adherenceEvent);
-      
+
       // Programar notificación para 10 minutos
-      const snoozeTime = new Date(Date.now() + 10 * 60 * 1000);
-      await scheduleNotification({
-        title: `⏰ ${nextMed.name} - Recordatorio pospuesto`,
-        body: `Es hora de tomar ${nextMed.dosage} (pospuesto 10 minutos)`,
-        data: {
-          type: 'MEDICATION_SNOOZE',
-          medicationId: nextMed.id,
-          medicationName: nextMed.name,
-          dosage: nextMed.dosage,
-          snoozeMinutes: 10,
-          patientProfileId: profile?.id,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: snoozeTime,
-        },
-        identifier: `med_${nextMed.id}_snooze_${Date.now()}`,
+      await scheduleSnoozeMedication({
+        id: nextMed.id,
+        name: nextMed.name,
+        dosage: nextMed.dosage,
+        snoozeMinutes: 10,
+        patientProfileId: profile?.id,
       });
-      
+
       // Mostrar confirmación
       Alert.alert(
         '⏰ Toma pospuesta',
@@ -200,87 +134,6 @@ export default function HomeScreen() {
       Alert.alert(
         '❌ Error',
         'No se pudo posponer la toma. Inténtalo de nuevo.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  // Función para probar notificaciones
-  const handleTestNotification = async () => {
-    try {
-      const success = await testNotification();
-      if (success) {
-        Alert.alert(
-          '🧪 Prueba de Notificación',
-          'Se ha programado una notificación de prueba que aparecerá en 2 segundos.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          '❌ Error',
-          'No se pudo programar la notificación de prueba.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('[HomeScreen] Error probando notificación:', error);
-      Alert.alert(
-        '❌ Error',
-        'Error al probar la notificación.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  // Función para probar alarma de medicamento
-  const handleTestMedicationAlarm = async () => {
-    try {
-      const success = await testMedicationAlarm();
-      if (success) {
-        Alert.alert(
-          '💊 Prueba de Alarma de Medicamento',
-          'Se ha programado una alarma de medicamento que aparecerá en 3 segundos y debería navegar automáticamente a la pantalla de alarma.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          '❌ Error',
-          'No se pudo programar la alarma de medicamento.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('[HomeScreen] Error probando alarma de medicamento:', error);
-      Alert.alert(
-        '❌ Error',
-        'Error al probar la alarma de medicamento.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  // Función para probar alarma de cita
-  const handleTestAppointmentAlarm = async () => {
-    try {
-      const success = await testAppointmentAlarm();
-      if (success) {
-        Alert.alert(
-          '📅 Prueba de Alarma de Cita',
-          'Se ha programado una alarma de cita que aparecerá en 3 segundos y debería navegar automáticamente a la pantalla de alarma.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          '❌ Error',
-          'No se pudo programar la alarma de cita.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      console.error('[HomeScreen] Error probando alarma de cita:', error);
-      Alert.alert(
-        '❌ Error',
-        'Error al probar la alarma de cita.',
         [{ text: 'OK' }]
       );
     }
@@ -312,10 +165,10 @@ export default function HomeScreen() {
     return nextMed.time;
   };
 
-  const getNextAppointment = () => {
+  const getNextAppointment = (): any => {
     if (!appointments || appointments.length === 0) return null;
     const now = new Date();
-    const futureAppointments = appointments.filter(apt => {
+    const futureAppointments = appointments.filter((apt: any) => {
       if (!apt.dateTime) return false;
       const aptDate = new Date(apt.dateTime);
       return aptDate > now;
@@ -343,7 +196,7 @@ export default function HomeScreen() {
   };
 
   const getTodayTimeline = () => {
-    const timeline = [];
+    const timeline: any[] = [];
     
     // Agregar medicamentos del día
     if (medications && medications.length > 0) {
@@ -362,7 +215,7 @@ export default function HomeScreen() {
     
     // Agregar citas del día
     if (appointments && appointments.length > 0) {
-      appointments.forEach(apt => {
+      appointments.forEach((apt: any) => {
         if (apt.dateTime) {
           const aptDate = new Date(apt.dateTime);
           const today = new Date();
@@ -408,9 +261,7 @@ export default function HomeScreen() {
     );
   }
 
-  const nextEvents = getNextEvents(medications, appointments, treatments);
   const adherence = getAdherence(intakeEvents);
-  const lastEvents = getLastIntakeEvents(intakeEvents);
   const healthTip = HEALTH_TIPS[new Date().getDate() % HEALTH_TIPS.length];
 
   return (
@@ -427,7 +278,8 @@ export default function HomeScreen() {
           <View style={styles.logoContainer}>
             <Image source={logo} style={styles.logo} resizeMode="contain" />
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Notifications' as never)}
             style={styles.notificationBtn}
             accessibilityRole="button"
             accessibilityLabel="Ver notificaciones"
@@ -531,8 +383,8 @@ export default function HomeScreen() {
         >
           <Text style={styles.sectionTitle}>Acciones rápidas</Text>
           <View style={styles.quickActionsRow}>
-            <TouchableOpacity 
-              style={styles.quickActionBtn} 
+            <TouchableOpacity
+              style={styles.quickActionBtn}
               onPress={() => navigation.navigate('Medications' as never)}
               accessibilityRole="button"
               accessibilityLabel="Agregar medicamento"
@@ -541,8 +393,8 @@ export default function HomeScreen() {
               <Ionicons name="add-circle" size={24} color={COLORS.primary} />
               <Text style={styles.quickActionText}>Agregar medicamento</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.quickActionBtn} 
+            <TouchableOpacity
+              style={styles.quickActionBtn}
               onPress={() => navigation.navigate('Appointments' as never)}
               accessibilityRole="button"
               accessibilityLabel="Agendar cita"
@@ -550,45 +402,6 @@ export default function HomeScreen() {
             >
               <Ionicons name="calendar-outline" size={24} color={COLORS.medical.appointment} />
               <Text style={styles.quickActionText}>Agendar cita</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.quickActionBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Registrar síntoma"
-              accessibilityHint="Registra un síntoma o nota médica"
-            >
-              <Ionicons name="medical" size={24} color={COLORS.medical.treatment} />
-              <Text style={styles.quickActionText}>Registrar síntoma</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.quickActionBtn}
-              onPress={handleTestNotification}
-              accessibilityRole="button"
-              accessibilityLabel="Probar notificación"
-              accessibilityHint="Prueba el sistema de notificaciones"
-            >
-              <Ionicons name="notifications" size={24} color={COLORS.accent} />
-              <Text style={styles.quickActionText}>Probar notificación</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.quickActionBtn}
-              onPress={handleTestMedicationAlarm}
-              accessibilityRole="button"
-              accessibilityLabel="Probar alarma de medicamento"
-              accessibilityHint="Prueba la alarma de medicamento que navega a la pantalla de alarma"
-            >
-              <Ionicons name="medical" size={24} color={COLORS.medical.medication} />
-              <Text style={styles.quickActionText}>Probar alarma medicamento</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.quickActionBtn}
-              onPress={handleTestAppointmentAlarm}
-              accessibilityRole="button"
-              accessibilityLabel="Probar alarma de cita"
-              accessibilityHint="Prueba la alarma de cita que navega a la pantalla de alarma"
-            >
-              <Ionicons name="calendar" size={24} color={COLORS.medical.appointment} />
-              <Text style={styles.quickActionText}>Probar alarma cita</Text>
             </TouchableOpacity>
           </View>
         </View>
