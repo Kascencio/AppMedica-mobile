@@ -101,31 +101,33 @@ export async function scheduleNotification({
   try {
     // Generar ID único si no se proporciona
     const notificationId = identifier || `notification_${Date.now()}_${Math.random()}`;
-    
+    const createdAt = new Date().toISOString();
+    const notificationData = { ...data, createdAt };
+
     // Programar notificación
     const scheduledId = await Notifications.scheduleNotificationAsync({
       identifier: notificationId,
       content: {
         title,
         body,
-        data,
+        data: notificationData,
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.HIGH,
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
-        categoryIdentifier: channelId, // Usar categoryIdentifier para el canal
+        channelId, // Canal correcto para Android
       },
       trigger,
     });
-    
+
     // Guardar en almacenamiento local para persistencia
     await saveNotificationToStorage(notificationId, {
       title,
       body,
-      data,
+      data: notificationData,
       trigger,
       scheduledId,
       channelId,
-      createdAt: new Date().toISOString(),
+      createdAt,
     });
     
     console.log(`[Notifications] Notificación programada: ${notificationId} para ${JSON.stringify(trigger)}`);
@@ -412,6 +414,7 @@ export async function scheduleAppointmentReminder({
         body: `Tu cita es en ${reminderMinutes} minutos. Ubicación: ${location}`,
         data: {
           type: 'APPOINTMENT',
+          kind: 'APPOINTMENT',
           appointmentId: id,
           title,
           location,
@@ -436,6 +439,7 @@ export async function scheduleAppointmentReminder({
       body: `Es hora de tu cita. Ubicación: ${location}`,
       data: {
         type: 'APPOINTMENT',
+        kind: 'APPOINTMENT',
         appointmentId: id,
         title,
         location,
@@ -530,12 +534,12 @@ export async function cleanupOldNotifications() {
     const now = new Date();
     
     for (const notification of scheduledNotifications) {
-      // Buscar createdAt en el almacenamiento local
       const storedNotification = stored[notification.identifier];
-      if (storedNotification?.createdAt) {
-        const createdAt = new Date(storedNotification.createdAt);
+      const createdAtStr = notification.content.data?.createdAt || storedNotification?.createdAt;
+      if (createdAtStr) {
+        const createdAt = new Date(createdAtStr);
         const daysDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
-        
+
         if (daysDiff > 30) {
           await cancelNotification(notification.identifier);
           console.log(`[Notifications] Notificación antigua cancelada: ${notification.identifier}`);

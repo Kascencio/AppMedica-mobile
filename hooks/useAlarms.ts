@@ -103,7 +103,7 @@ export function useAlarms() {
         location: config.location,
         dateTime: config.dateTime,
         reminderMinutes: config.reminderMinutes || 60,
-        patientProfileId: profile.id,
+        patientProfileId: profile.patientProfileId || profile.id,
       });
 
       // Recargar alarmas
@@ -134,7 +134,7 @@ export function useAlarms() {
         name: config.name,
         dosage: config.dosage,
         snoozeMinutes: config.snoozeMinutes || 10,
-        patientProfileId: profile.id,
+        patientProfileId: profile.patientProfileId || profile.id,
       });
 
       // Recargar alarmas
