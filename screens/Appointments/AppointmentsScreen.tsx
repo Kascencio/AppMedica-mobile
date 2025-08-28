@@ -8,7 +8,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppointments } from '../../store/useAppointments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useState } from 'react';
-import { scheduleNotification, cancelNotification, cancelAppointmentNotifications } from '../../lib/notifications';
+import { scheduleNotification, cancelAppointmentNotifications } from '../../lib/notifications';
 import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
