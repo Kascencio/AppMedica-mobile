@@ -7,6 +7,7 @@ import * as z from 'zod';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMedications } from '../../store/useMedications';
 import { scheduleNotification, cancelNotification } from '../../lib/notifications';
+import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
@@ -124,21 +125,42 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
     const id = await scheduleNotification({
       title: `Toma tu medicamento: ${med.name}`,
       body: `Dosis: ${med.dosage}`,
-      data: { medId: med.id },
+      data: { 
+        type: 'MEDICATION',
+        kind: 'MED',
+        medId: med.id,
+        medicationId: med.id,
+        medicationName: med.name,
+        dosage: med.dosage,
+        instructions: med.notes,
+        scheduledFor: date.toISOString(),
+        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      },
       trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: date.getHours(),
         minute: date.getMinutes(),
-        repeats: true,
       },
     });
     notificationIdsRef.current[med.id] = id;
   };
   const cancelMedNotification = async (medId: string) => {
-    const notifId = notificationIdsRef.current[medId];
-    if (notifId) {
-      await cancelNotification(notifId);
-      delete notificationIdsRef.current[medId];
+    // Buscar todas las notificaciones relacionadas con este medicamento
+    const keysToDelete: string[] = [];
+    
+    for (const [key, notificationId] of Object.entries(notificationIdsRef.current)) {
+      if (key.includes(medId) || key.startsWith(`med_${medId}`)) {
+        await cancelNotification(notificationId);
+        keysToDelete.push(key);
+      }
     }
+    
+    // Eliminar las claves del objeto
+    keysToDelete.forEach(key => {
+      delete notificationIdsRef.current[key];
+    });
+    
+    console.log(`[CaregiverMedicationsScreen] Canceladas ${keysToDelete.length} notificaciones para medicamento ${medId}`);
   };
   // Modifica onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
@@ -184,7 +206,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
             firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
             if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
             // Margen de seguridad de 1 minuto
-            if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             const nowLog = new Date();
             console.log('[MEDICAMENTO] Hora actual:', nowLog.toISOString());
             console.log('[MEDICAMENTO] Programando notificación para:', firstDate.toISOString());
@@ -192,7 +214,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: firstDate.toISOString(),
                 name: data.name,
@@ -206,7 +228,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: t.toISOString(),
                 name: data.name,
@@ -231,13 +253,13 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
               if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
               // Margen de seguridad de 1 minuto
-              if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+              if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
               console.log('Programando notificación MEDICAMENTO para:', firstDate.toISOString());
               await scheduleNotification({
                 title: `Toma tu medicamento: ${data.name}`,
                 body: `Dosis: ${data.dosage}`,
                 data: {
-                  kind: 'MEDICATION',
+                  kind: 'MED',
                   refId: medId,
                   scheduledFor: firstDate.toISOString(),
                   name: data.name,
@@ -251,7 +273,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 title: `Toma tu medicamento: ${data.name}`,
                 body: `Dosis: ${data.dosage}`,
                 data: {
-                  kind: 'MEDICATION',
+                  kind: 'MED',
                   refId: medId,
                   scheduledFor: t.toISOString(),
                   name: data.name,
@@ -277,13 +299,13 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
             firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
             if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
             // Margen de seguridad de 1 minuto
-            if ((firstDate - new Date()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             console.log('Programando notificación MEDICAMENTO para:', firstDate.toISOString());
             await scheduleNotification({
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: firstDate.toISOString(),
                 name: data.name,
@@ -297,7 +319,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: base.toISOString(),
                 name: data.name,
@@ -307,7 +329,8 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               },
               trigger: { 
                 type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60 
+                seconds: interval * 60 * 60,
+                repeats: true
               },
             });
             notificationIdsRef.current[`${medId}_every${interval}h`] = id;

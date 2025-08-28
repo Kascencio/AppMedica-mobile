@@ -228,7 +228,7 @@ export async function scheduleNotification({
         title,
         body,
         data,
-        sound: sound ? 'default' : null,
+        sound: sound ? 'default' : false,
         priority: Notifications.AndroidNotificationPriority.HIGH,
         vibrate: [0, 500, 250, 500, 250, 500],
         // Configurar sonido personalizado para Android

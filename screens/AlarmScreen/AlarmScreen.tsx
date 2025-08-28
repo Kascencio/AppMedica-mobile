@@ -23,7 +23,7 @@ const mockAlarm = {
 export default function AlarmScreen({ navigation }: any) {
   useKeepAwake();
   const route = useRoute();
-  const { kind, refId, scheduledFor, name, dosage, instructions, time } = route.params || {};
+  const { kind, refId, scheduledFor, name, dosage, instructions, time } = route.params as any || {};
   const { registerEvent } = useIntakeEvents();
   const [loading, setLoading] = React.useState(false);
   const [paramError, setParamError] = React.useState<string | null>(null);
@@ -194,7 +194,7 @@ export default function AlarmScreen({ navigation }: any) {
           <View style={styles.medicationInfo}>
             <Text style={styles.medicationName}>{name || (kind === 'APPOINTMENT' ? 'Cita' : 'Medicamento')}</Text>
             <Text style={styles.medicationDosage}>
-              {kind === 'APPOINTMENT' ? (route.params?.location || 'Sin ubicación') : (dosage || '')}
+              {kind === 'APPOINTMENT' ? ((route.params as any)?.location || 'Sin ubicación') : (dosage || '')}
             </Text>
           </View>
         </View>

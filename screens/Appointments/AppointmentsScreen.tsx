@@ -8,7 +8,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppointments } from '../../store/useAppointments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useState } from 'react';
-import { scheduleNotification, cancelNotification } from '../../lib/notifications';
+import { scheduleNotification, cancelNotification, cancelAppointmentNotifications } from '../../lib/notifications';
+import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
 import OfflineIndicator from '../../components/OfflineIndicator';
@@ -149,8 +150,8 @@ export default function AppointmentsScreen() {
           description: data.notes,
         });
         apptId = editingAppointment.id;
-        // Cancelar notificaciones anteriores
-        await cancelNotification(apptId);
+        // Cancelar notificaciones anteriores usando el ID de la cita
+        await cancelAppointmentNotifications(apptId);
       } else {
         await createAppointment({
           title: data.doctorName,
@@ -172,7 +173,7 @@ export default function AppointmentsScreen() {
             let firstDate = new Date(now);
             firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
             if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
-            if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             const nowLog = new Date();
             console.log('[CITA] Hora actual:', nowLog.toISOString());
             console.log('[CITA] Programando notificación para:', firstDate.toISOString());
@@ -208,6 +209,9 @@ export default function AppointmentsScreen() {
                 minute: t.getMinutes() 
               },
             });
+            // Guardar tanto la notificación inicial como la repetitiva
+            const firstNotificationId = `appt_${apptId}_first_${t.getHours()}_${t.getMinutes()}`;
+            notificationIdsRef.current[firstNotificationId] = id;
             notificationIdsRef.current[`${apptId}_${t.getHours()}_${t.getMinutes()}`] = id;
           }
         } else if (frequencyType === 'daysOfWeek') {
@@ -218,7 +222,7 @@ export default function AppointmentsScreen() {
               firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
               firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
               if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
-              if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+              if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
               console.log('Programando notificación CITA para:', firstDate.toISOString());
               await scheduleNotification({
                 title: `Recordatorio de cita: ${data.doctorName}`,
@@ -253,6 +257,9 @@ export default function AppointmentsScreen() {
                   minute: t.getMinutes() 
                 },
               });
+              // Guardar tanto la notificación inicial como la repetitiva
+              const firstNotificationId = `appt_${apptId}_first_${day}_${t.getHours()}_${t.getMinutes()}`;
+              notificationIdsRef.current[firstNotificationId] = id;
               notificationIdsRef.current[`${apptId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
             }
           }
@@ -263,7 +270,7 @@ export default function AppointmentsScreen() {
             let firstDate = new Date();
             firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
             if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
-            if ((firstDate - new Date()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             console.log('Programando notificación CITA para:', firstDate.toISOString());
             await scheduleNotification({
               title: `Recordatorio de cita: ${data.doctorName}`,
@@ -293,7 +300,8 @@ export default function AppointmentsScreen() {
               },
               trigger: { 
                 type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60 
+                seconds: interval * 60 * 60,
+                repeats: true
               },
             });
             notificationIdsRef.current[`${apptId}_every${interval}h`] = id;
@@ -315,6 +323,8 @@ export default function AppointmentsScreen() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Eliminar', style: 'destructive', onPress: async () => {
             await deleteAppointment(id);
+            // Cancelar todas las notificaciones de esta cita
+            await cancelAppointmentNotifications(id);
           }
         },
       ]

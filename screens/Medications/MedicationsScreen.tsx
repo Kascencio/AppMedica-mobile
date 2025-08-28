@@ -7,6 +7,7 @@ import * as z from 'zod';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMedications } from '../../store/useMedications';
 import { scheduleNotification, cancelNotification } from '../../lib/notifications';
+import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
 import OfflineIndicator from '../../components/OfflineIndicator';
@@ -131,21 +132,42 @@ export default function MedicationsScreen() {
     const id = await scheduleNotification({
       title: `Toma tu medicamento: ${med.name}`,
       body: `Dosis: ${med.dosage}`,
-      data: { medId: med.id },
+      data: { 
+        type: 'MEDICATION',
+        kind: 'MED',
+        medId: med.id,
+        medicationId: med.id,
+        medicationName: med.name,
+        dosage: med.dosage,
+        instructions: med.notes,
+        scheduledFor: date.toISOString(),
+        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      },
       trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
         hour: date.getHours(),
         minute: date.getMinutes(),
-        repeats: true,
       },
     });
     notificationIdsRef.current[med.id] = id;
   };
   const cancelMedNotification = async (medId: string) => {
-    const notifId = notificationIdsRef.current[medId];
-    if (notifId) {
-      await cancelNotification(notifId);
-      delete notificationIdsRef.current[medId];
+    // Buscar todas las notificaciones relacionadas con este medicamento
+    const keysToDelete: string[] = [];
+    
+    for (const [key, notificationId] of Object.entries(notificationIdsRef.current)) {
+      if (key.includes(medId) || key.startsWith(`med_${medId}`)) {
+        await cancelNotification(notificationId);
+        keysToDelete.push(key);
+      }
     }
+    
+    // Eliminar las claves del objeto
+    keysToDelete.forEach(key => {
+      delete notificationIdsRef.current[key];
+    });
+    
+    console.log(`[MedicationsScreen] Canceladas ${keysToDelete.length} notificaciones para medicamento ${medId}`);
   };
   // onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
@@ -185,12 +207,12 @@ export default function MedicationsScreen() {
             let firstDate = new Date(now);
             firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
             if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
-            if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             await scheduleNotification({
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: firstDate.toISOString(),
                 name: data.name,
@@ -204,7 +226,7 @@ export default function MedicationsScreen() {
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: t.toISOString(),
                 name: data.name,
@@ -218,6 +240,9 @@ export default function MedicationsScreen() {
                 minute: t.getMinutes() 
               },
             });
+            // Guardar tanto la notificación inicial como la repetitiva
+            const firstNotificationId = `med_${medId}_first_${t.getHours()}_${t.getMinutes()}`;
+            notificationIdsRef.current[firstNotificationId] = id;
             notificationIdsRef.current[`${medId}_${t.getHours()}_${t.getMinutes()}`] = id;
           }
         } else if (frequencyType === 'daysOfWeek') {
@@ -228,12 +253,12 @@ export default function MedicationsScreen() {
               firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
               firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
               if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
-              if ((firstDate - now) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+              if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
               await scheduleNotification({
                 title: `Toma tu medicamento: ${data.name}`,
                 body: `Dosis: ${data.dosage}`,
                 data: {
-                  kind: 'MEDICATION',
+                  kind: 'MED',
                   refId: medId,
                   scheduledFor: firstDate.toISOString(),
                   name: data.name,
@@ -247,7 +272,7 @@ export default function MedicationsScreen() {
                 title: `Toma tu medicamento: ${data.name}`,
                 body: `Dosis: ${data.dosage}`,
                 data: {
-                  kind: 'MEDICATION',
+                  kind: 'MED',
                   refId: medId,
                   scheduledFor: t.toISOString(),
                   name: data.name,
@@ -262,6 +287,9 @@ export default function MedicationsScreen() {
                   minute: t.getMinutes() 
                 },
               });
+              // Guardar tanto la notificación inicial como la repetitiva
+              const firstNotificationId = `med_${medId}_first_${day}_${t.getHours()}_${t.getMinutes()}`;
+              notificationIdsRef.current[firstNotificationId] = id;
               notificationIdsRef.current[`${medId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
             }
           }
@@ -272,12 +300,12 @@ export default function MedicationsScreen() {
             let firstDate = new Date();
             firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
             if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
-            if ((firstDate - new Date()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             await scheduleNotification({
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: firstDate.toISOString(),
                 name: data.name,
@@ -291,7 +319,7 @@ export default function MedicationsScreen() {
               title: `Toma tu medicamento: ${data.name}`,
               body: `Dosis: ${data.dosage}`,
               data: {
-                kind: 'MEDICATION',
+                kind: 'MED',
                 refId: medId,
                 scheduledFor: base.toISOString(),
                 name: data.name,
@@ -301,9 +329,13 @@ export default function MedicationsScreen() {
               },
               trigger: { 
                 type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60 
+                seconds: interval * 60 * 60,
+                repeats: true
               },
             });
+            // Guardar tanto la notificación inicial como la repetitiva
+            const firstNotificationId = `med_${medId}_first_every${interval}h`;
+            notificationIdsRef.current[firstNotificationId] = id;
             notificationIdsRef.current[`${medId}_every${interval}h`] = id;
           }
         }

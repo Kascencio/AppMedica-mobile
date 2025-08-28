@@ -112,6 +112,7 @@ export async function scheduleNotification({
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.HIGH,
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
+        categoryIdentifier: channelId, // Usar categoryIdentifier para el canal
       },
       trigger,
     });
@@ -497,6 +498,7 @@ export async function scheduleSnoozeMedication({
       body: `Es hora de tomar ${dosage} (pospuesto ${snoozeMinutes} minutos)`,
       data: {
         type: 'MEDICATION_SNOOZE',
+        kind: 'MED', // Agregar kind para que App.tsx lo reconozca
         medicationId: id,
         medicationName: name,
         dosage,
@@ -523,12 +525,15 @@ export async function scheduleSnoozeMedication({
 export async function cleanupOldNotifications() {
   try {
     const scheduledNotifications = await getScheduledNotifications();
+    const storedNotifications = await AsyncStorage.getItem('scheduledNotifications');
+    const stored = storedNotifications ? JSON.parse(storedNotifications) : {};
     const now = new Date();
     
     for (const notification of scheduledNotifications) {
-      // Verificar si la notificación es muy antigua (más de 30 días)
-      if (notification.content.data?.createdAt) {
-        const createdAt = new Date(notification.content.data.createdAt);
+      // Buscar createdAt en el almacenamiento local
+      const storedNotification = stored[notification.identifier];
+      if (storedNotification?.createdAt) {
+        const createdAt = new Date(storedNotification.createdAt);
         const daysDiff = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
         
         if (daysDiff > 30) {
@@ -583,7 +588,7 @@ export async function syncNotificationsWithBackend() {
           data: notification.content.data,
           trigger: notification.trigger,
           scheduledId: notification.identifier,
-          channelId: notification.content.channelId,
+          channelId: notification.content.categoryIdentifier || 'default',
           createdAt: new Date().toISOString(),
         });
       }
