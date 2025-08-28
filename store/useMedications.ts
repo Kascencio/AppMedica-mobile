@@ -4,7 +4,7 @@ import { useCurrentUser } from './useCurrentUser';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { localDB, LocalMedication } from '../data/db';
 import { syncService } from '../lib/syncService';
-import { scheduleMedicationReminder } from '../lib/notificationTest';
+import { scheduleMedicationReminder } from '../lib/notifications';
 
 interface Medication {
   id: string;

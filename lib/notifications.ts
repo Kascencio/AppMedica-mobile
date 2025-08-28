@@ -592,7 +592,7 @@ export async function syncNotificationsWithBackend() {
           data: notification.content.data,
           trigger: notification.trigger,
           scheduledId: notification.identifier,
-          channelId: notification.content.categoryIdentifier || 'default',
+          channelId: (notification.content as any).channelId || 'default',
           createdAt: new Date().toISOString(),
         });
       }

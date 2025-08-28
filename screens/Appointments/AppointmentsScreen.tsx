@@ -177,11 +177,14 @@ export default function AppointmentsScreen() {
             const nowLog = new Date();
             console.log('[CITA] Hora actual:', nowLog.toISOString());
             console.log('[CITA] Programando notificación para:', firstDate.toISOString());
+            const firstNotificationId = `appt_${apptId}_first_${t.getHours()}_${t.getMinutes()}`;
             await scheduleNotification({
               title: `Recordatorio de cita: ${data.doctorName}`,
               body: `Ubicación: ${data.location}`,
               data: {
+                type: 'APPOINTMENT',
                 kind: 'APPOINTMENT',
+                appointmentId: apptId,
                 refId: apptId,
                 scheduledFor: firstDate.toISOString(),
                 name: data.doctorName,
@@ -191,12 +194,17 @@ export default function AppointmentsScreen() {
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+              identifier: firstNotificationId,
+              channelId: 'appointments',
             });
-            const id = await scheduleNotification({
+            const recurringId = `appt_${apptId}_${t.getHours()}_${t.getMinutes()}`;
+            await scheduleNotification({
               title: `Recordatorio de cita: ${data.doctorName}`,
               body: `Ubicación: ${data.location}`,
               data: {
+                type: 'APPOINTMENT',
                 kind: 'APPOINTMENT',
+                appointmentId: apptId,
                 refId: apptId,
                 scheduledFor: t.toISOString(),
                 name: data.doctorName,
@@ -205,16 +213,17 @@ export default function AppointmentsScreen() {
                 time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
-              trigger: { 
+              trigger: {
                 type: Notifications.SchedulableTriggerInputTypes.DAILY,
-                hour: t.getHours(), 
-                minute: t.getMinutes() 
+                hour: t.getHours(),
+                minute: t.getMinutes()
               },
+              identifier: recurringId,
+              channelId: 'appointments',
             });
-            // Guardar tanto la notificación inicial como la repetitiva
-            const firstNotificationId = `appt_${apptId}_first_${t.getHours()}_${t.getMinutes()}`;
-            notificationIdsRef.current[firstNotificationId] = id;
-            notificationIdsRef.current[`${apptId}_${t.getHours()}_${t.getMinutes()}`] = id;
+            // Guardar IDs de ambas notificaciones
+            notificationIdsRef.current[firstNotificationId] = firstNotificationId;
+            notificationIdsRef.current[recurringId] = recurringId;
           }
         } else if (frequencyType === 'daysOfWeek') {
           for (const t of selectedTimes) {
@@ -226,45 +235,54 @@ export default function AppointmentsScreen() {
               if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
               if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
               console.log('Programando notificación CITA para:', firstDate.toISOString());
-              await scheduleNotification({
-                title: `Recordatorio de cita: ${data.doctorName}`,
-                body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-              });
-              const id = await scheduleNotification({
-                title: `Recordatorio de cita: ${data.doctorName}`,
-                body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: t.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-                trigger: { 
-                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-                  weekday: day + 1, 
-                  hour: t.getHours(), 
-                  minute: t.getMinutes() 
-                },
-              });
-              // Guardar tanto la notificación inicial como la repetitiva
-              const firstNotificationId = `appt_${apptId}_first_${day}_${t.getHours()}_${t.getMinutes()}`;
-              notificationIdsRef.current[firstNotificationId] = id;
-              notificationIdsRef.current[`${apptId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
+                const firstNotificationId = `appt_${apptId}_first_${day}_${t.getHours()}_${t.getMinutes()}`;
+                await scheduleNotification({
+                  title: `Recordatorio de cita: ${data.doctorName}`,
+                  body: `Ubicación: ${data.location}`,
+                  data: {
+                    type: 'APPOINTMENT',
+                    kind: 'APPOINTMENT',
+                    appointmentId: apptId,
+                    refId: apptId,
+                    scheduledFor: firstDate.toISOString(),
+                    name: data.doctorName,
+                    dosage: '',
+                    instructions: data.notes,
+                    time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    patientProfileId: profile?.patientProfileId || profile?.id,
+                  },
+                  trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+                  identifier: firstNotificationId,
+                  channelId: 'appointments',
+                });
+                const recurringId = `appt_${apptId}_${day}_${t.getHours()}_${t.getMinutes()}`;
+                await scheduleNotification({
+                  title: `Recordatorio de cita: ${data.doctorName}`,
+                  body: `Ubicación: ${data.location}`,
+                  data: {
+                    type: 'APPOINTMENT',
+                    kind: 'APPOINTMENT',
+                    appointmentId: apptId,
+                    refId: apptId,
+                    scheduledFor: t.toISOString(),
+                    name: data.doctorName,
+                    dosage: '',
+                    instructions: data.notes,
+                    time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    patientProfileId: profile?.patientProfileId || profile?.id,
+                  },
+                  trigger: {
+                    type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+                    weekday: day + 1,
+                    hour: t.getHours(),
+                    minute: t.getMinutes()
+                  },
+                  identifier: recurringId,
+                  channelId: 'appointments',
+                });
+                // Guardar IDs de ambas notificaciones
+                notificationIdsRef.current[firstNotificationId] = firstNotificationId;
+                notificationIdsRef.current[recurringId] = recurringId;
             }
           }
         } else if (frequencyType === 'everyXHours') {
@@ -276,41 +294,52 @@ export default function AppointmentsScreen() {
             if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
             if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
             console.log('Programando notificación CITA para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Recordatorio de cita: ${data.doctorName}`,
-              body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-            });
-            const id = await scheduleNotification({
-              title: `Recordatorio de cita: ${data.doctorName}`,
-              body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: base.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60,
-                repeats: true
-              },
-            });
-            notificationIdsRef.current[`${apptId}_every${interval}h`] = id;
+              const firstNotificationId = `appt_${apptId}_first_every${interval}h`;
+              await scheduleNotification({
+                title: `Recordatorio de cita: ${data.doctorName}`,
+                body: `Ubicación: ${data.location}`,
+                data: {
+                  type: 'APPOINTMENT',
+                  kind: 'APPOINTMENT',
+                  appointmentId: apptId,
+                  refId: apptId,
+                  scheduledFor: firstDate.toISOString(),
+                  name: data.doctorName,
+                  dosage: '',
+                  instructions: data.notes,
+                  time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  patientProfileId: profile?.patientProfileId || profile?.id,
+                },
+                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+                identifier: firstNotificationId,
+                channelId: 'appointments',
+              });
+              const recurringId = `appt_${apptId}_every${interval}h`;
+              await scheduleNotification({
+                title: `Recordatorio de cita: ${data.doctorName}`,
+                body: `Ubicación: ${data.location}`,
+                data: {
+                  type: 'APPOINTMENT',
+                  kind: 'APPOINTMENT',
+                  appointmentId: apptId,
+                  refId: apptId,
+                  scheduledFor: base.toISOString(),
+                  name: data.doctorName,
+                  dosage: '',
+                  instructions: data.notes,
+                  time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  patientProfileId: profile?.patientProfileId || profile?.id,
+                },
+                trigger: {
+                  type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+                  seconds: interval * 60 * 60,
+                  repeats: true
+                },
+                identifier: recurringId,
+                channelId: 'appointments',
+              });
+              notificationIdsRef.current[firstNotificationId] = firstNotificationId;
+              notificationIdsRef.current[recurringId] = recurringId;
           }
         }
       }
