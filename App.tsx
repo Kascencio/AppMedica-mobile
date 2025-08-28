@@ -55,7 +55,7 @@ export default function App() {
       // Navegar a la pantalla de alarma si es una notificación de medicamento o cita
       if (data && (data.type === 'MEDICATION' || data.type === 'APPOINTMENT' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
         if (navigationRef.isReady()) {
-          navigationRef.navigate('AlarmScreen' as never, { 
+          (navigationRef as any).navigate('AlarmScreen', { 
             kind: data.kind || 'MED',
             refId: data.medicationId || data.appointmentId || data.refId,
             scheduledFor: data.scheduledFor,
@@ -80,7 +80,7 @@ export default function App() {
         console.log('[App] Navegando a pantalla de alarma automáticamente');
         if (navigationRef.isReady()) {
           // Navegar inmediatamente para mostrar la alarma
-          navigationRef.navigate('AlarmScreen' as never, { 
+          (navigationRef as any).navigate('AlarmScreen', { 
             kind: data.kind || 'MED',
             refId: data.medicationId || data.appointmentId || data.refId,
             scheduledFor: data.scheduledFor,

@@ -299,3 +299,13 @@ export const INTAKE_KINDS = {
   MED: 'MED',
   TRT: 'TRT',
 } as const;
+
+// Re-exportar tipos desde types/index.ts
+export type { 
+  Notification, 
+  NotificationFilters, 
+  NotificationStats, 
+  CreateNotificationData,
+  PaginatedResponse,
+  PaginationParams
+} from '../types';

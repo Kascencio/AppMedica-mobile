@@ -83,10 +83,16 @@ export default function TreatmentsScreen() {
       };
 
       if (editingTreatment) {
-        await updateTreatment(editingTreatment.id, treatmentData);
+        await updateTreatment(editingTreatment.id, {
+          ...treatmentData,
+          endDate: treatmentData.endDate || undefined
+        });
         Alert.alert('Éxito', 'Tratamiento actualizado correctamente');
       } else {
-        await createTreatment(treatmentData);
+        await createTreatment({
+          ...treatmentData,
+          endDate: treatmentData.endDate || undefined
+        });
         Alert.alert('Éxito', 'Tratamiento creado correctamente');
       }
 
@@ -251,7 +257,7 @@ export default function TreatmentsScreen() {
                     GLOBAL_STYLES.sectionTitle, 
                     { marginBottom: 0 },
                     isTablet && styles.treatmentTitleTablet
-                  ]}>{treatment.name}</Text>
+                  ]}>{treatment.description || 'Sin nombre'}</Text>
                 </View>
                 <View style={[
                   GLOBAL_STYLES.row,
@@ -264,7 +270,7 @@ export default function TreatmentsScreen() {
                     ]} 
                     onPress={() => openEditModal(treatment)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Editar tratamiento ${treatment.name}`}
+                    accessibilityLabel={`Editar tratamiento ${treatment.description || 'Sin nombre'}`}
                   >
                     <Ionicons 
                       name="create-outline" 
@@ -280,7 +286,7 @@ export default function TreatmentsScreen() {
                     ]} 
                     onPress={() => handleDelete(treatment.id)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Eliminar tratamiento ${treatment.name}`}
+                    accessibilityLabel={`Eliminar tratamiento ${treatment.description || 'Sin nombre'}`}
                   >
                     <Ionicons 
                       name="trash-outline" 
@@ -311,9 +317,7 @@ export default function TreatmentsScreen() {
                   { fontWeight: '600', color: COLORS.text.primary },
                   isTablet && styles.valueTextTablet
                 ]}>
-                  {treatment.frequency === 'daily' ? 'Diario' : 
-                   treatment.frequency === 'weekly' ? 'Semanal' : 
-                   treatment.frequency === 'monthly' ? 'Mensual' : 'Personalizado'}
+                                    {'Personalizado'}
                 </Text>
               </View>
               
@@ -353,7 +357,7 @@ export default function TreatmentsScreen() {
                 </View>
               )}
               
-              {treatment.notes && (
+              {treatment.description && (
                 <View style={[
                   GLOBAL_STYLES.card, 
                   { marginTop: 12, marginBottom: 0, padding: 12 },
@@ -362,7 +366,7 @@ export default function TreatmentsScreen() {
                   <Text style={[
                     GLOBAL_STYLES.caption,
                     isTablet && styles.notesTextTablet
-                  ]}>{treatment.notes}</Text>
+                  ]}>{treatment.description}</Text>
                 </View>
               )}
             </View>

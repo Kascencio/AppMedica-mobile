@@ -7,7 +7,7 @@ import { useAuth } from '../../store/useAuth';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import OfflineIndicator from '../../components/OfflineIndicator';
-import logo from '../../assets/logo.webp';
+// import logo from '../../assets/logo.webp';
 import { useNavigation } from '@react-navigation/native';
 import AlarmStatus from '../../components/AlarmStatus';
 import COLORS from '../../constants/colors';
@@ -134,6 +134,46 @@ export default function HomeScreen() {
       Alert.alert(
         '❌ Error',
         'No se pudo posponer la toma. Inténtalo de nuevo.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleSkipMedication = async () => {
+    const nextMed = getNextMedication();
+    if (!nextMed) return;
+
+    try {
+      // Crear evento de omitir
+      const adherenceEvent = {
+        refId: nextMed.id,
+        patientProfileId: profile?.id,
+        scheduledFor: new Date().toISOString(),
+        action: 'SKIPPED' as const,
+        kind: 'MED' as const,
+        notes: 'Omitido desde Home'
+      };
+
+      // Usar el store de eventos de adherencia
+      await registerEvent(adherenceEvent);
+      
+      // Mostrar confirmación
+      Alert.alert(
+        '⏭️ Toma omitida',
+        `${nextMed.name} ha sido marcado como omitido.`,
+        [{ text: 'OK' }]
+      );
+
+      // Actualizar datos
+      await Promise.all([
+        getMedications(),
+        getEvents()
+      ]);
+    } catch (error) {
+      console.error('[HomeScreen] Error al omitir toma:', error);
+      Alert.alert(
+        '❌ Error',
+        'No se pudo omitir la toma. Inténtalo de nuevo.',
         [{ text: 'OK' }]
       );
     }
@@ -267,96 +307,78 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Indicador de sincronización */}
-        <OfflineIndicator showDetails={true} />
-        
-        {/* Estado de las alarmas */}
-        <AlarmStatus />
-        
-        {/* Header con logo y notificaciones */}
-        <View style={styles.headerRow}>
+        {/* Header simple */}
+        <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <Image source={logo} style={styles.logo} resizeMode="contain" />
+            <Ionicons name="medical" size={32} color={COLORS.primary} />
           </View>
           <TouchableOpacity
-            onPress={() => navigation.navigate('Notifications' as never)}
-            style={styles.notificationBtn}
+                            onPress={() => (navigation as any).navigate('Notifications')}
+            style={styles.alarmBtn}
             accessibilityRole="button"
             accessibilityLabel="Ver notificaciones"
-            accessibilityHint="Toca para ver tus notificaciones y recordatorios"
           >
             <Ionicons name="notifications-outline" size={24} color={COLORS.text.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* Hero Section - Hoy */}
-        <View 
-          style={styles.heroSection}
-          accessibilityRole="summary"
-          accessibilityLabel={`Progreso de hoy: ${adherence.percent}% completado. ${adherence.total > 0 ? `${adherence.taken} de ${adherence.total} tomas realizadas` : 'No hay tomas programadas para hoy'}`}
-        >
-          <Text style={styles.heroTitle}>Hoy</Text>
-          <View 
-            style={styles.progressRing}
-            accessibilityRole="progressbar"
-            accessibilityValue={{ min: 0, max: 100, now: adherence.percent }}
-            accessibilityLabel={`Progreso diario: ${adherence.percent} por ciento completado`}
-          >
-            <Text style={styles.progressText}>{adherence.percent}%</Text>
-            <Text style={styles.progressSubtext}>Completado</Text>
+        {/* Hero "Tu día" con progreso diario */}
+        <View style={styles.heroSection}>
+          <Text style={styles.heroTitle}>Tu día</Text>
+          <View style={styles.progressContainer}>
+            <View style={styles.progressRing}>
+              <Text style={styles.progressText}>{adherence.percent}%</Text>
+            </View>
+            <Text style={styles.heroSubtitle}>
+              {adherence.total > 0 
+                ? `${adherence.taken} de ${adherence.total} tomas realizadas`
+                : 'No hay tomas programadas para hoy'
+              }
+            </Text>
           </View>
-          <Text style={styles.heroSubtitle}>
-            {adherence.total > 0 
-              ? `${adherence.taken} de ${adherence.total} tomas realizadas`
-              : 'No hay tomas programadas para hoy'
-            }
-          </Text>
         </View>
 
-        {/* Próxima Toma - PRIORIDAD ALTA */}
+        {/* Próxima toma con acciones */}
         {getNextMedication() && (
-          <View 
-            style={styles.nextMedicationCard}
-            accessibilityRole="summary"
-            accessibilityLabel={`Próxima toma: ${getNextMedication()?.name} a las ${getNextMedicationTime()}, dosis ${getNextMedication()?.dosage}`}
-          >
+          <View style={styles.nextMedCard}>
             <View style={styles.nextMedHeader}>
               <Ionicons name="time" size={20} color={COLORS.primary} />
               <Text style={styles.nextMedTitle}>Próxima toma</Text>
             </View>
             <View style={styles.nextMedContent}>
-              <Text style={styles.nextMedTime} accessibilityLabel={`Hora: ${getNextMedicationTime()}`}>{getNextMedicationTime()}</Text>
-              <Text style={styles.nextMedName} accessibilityLabel={`Medicamento: ${getNextMedication()?.name}`}>{getNextMedication()?.name}</Text>
-              <Text style={styles.nextMedDosage} accessibilityLabel={`Dosis: ${getNextMedication()?.dosage}`}>{getNextMedication()?.dosage}</Text>
+              <Text style={styles.nextMedTime}>{getNextMedicationTime()}</Text>
+              <Text style={styles.nextMedName}>{getNextMedication()?.name}</Text>
+              <Text style={styles.nextMedDosage}>{getNextMedication()?.dosage}</Text>
             </View>
             <View style={styles.nextMedActions}>
               <TouchableOpacity 
-                style={styles.actionButtonPrimary}
-                accessibilityRole="button"
-                accessibilityLabel="Registrar toma"
-                accessibilityHint={`Marca como tomado el medicamento ${getNextMedication()?.name}`}
+                style={styles.actionBtnPrimary}
                 onPress={handleTakeMedication}
               >
-                <Ionicons name="checkmark-circle" size={20} color={COLORS.text.inverse} />
-                <Text style={styles.actionButtonText}>Registrar toma</Text>
+                <Ionicons name="checkmark-circle" size={16} color={COLORS.text.inverse} />
+                <Text style={styles.actionBtnText}>Tomar ahora</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.actionButtonSecondary}
-                accessibilityRole="button"
-                accessibilityLabel="Posponer 10 minutos"
-                accessibilityHint={`Pospone la toma de ${getNextMedication()?.name} por 10 minutos`}
+                style={styles.actionBtnSecondary}
                 onPress={handleSnoozeMedication}
               >
-                <Ionicons name="time" size={20} color={COLORS.primary} />
-                <Text style={styles.actionButtonTextSecondary}>Posponer 10 min</Text>
+                <Ionicons name="time" size={16} color={COLORS.primary} />
+                <Text style={styles.actionBtnTextSecondary}>Posponer 10 min</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.actionBtnTertiary}
+                onPress={handleSkipMedication}
+              >
+                <Ionicons name="close-circle" size={16} color={COLORS.text.secondary} />
+                <Text style={styles.actionBtnTextTertiary}>Omitir</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* Siguiente Cita - PRIORIDAD ALTA */}
-        {getNextAppointment() && (
-          <View style={styles.nextAppointmentCard}>
+        {/* Siguiente cita o CTA */}
+        {getNextAppointment() ? (
+          <View style={styles.nextApptCard}>
             <View style={styles.nextApptHeader}>
               <Ionicons name="calendar" size={20} color={COLORS.medical.appointment} />
               <Text style={styles.nextApptTitle}>Siguiente cita</Text>
@@ -368,45 +390,54 @@ export default function HomeScreen() {
               <Text style={styles.nextApptDoctor}>{getNextAppointment()?.doctorName}</Text>
               <Text style={styles.nextApptLocation}>{getNextAppointment()?.location}</Text>
             </View>
-            <TouchableOpacity style={styles.viewAppointmentBtn}>
-              <Text style={styles.viewAppointmentText}>Ver detalles</Text>
+            <TouchableOpacity style={styles.viewApptBtn}>
+              <Text style={styles.viewApptText}>Ver detalles</Text>
               <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.ctaCard}>
+            <Ionicons name="calendar-outline" size={32} color={COLORS.text.tertiary} />
+            <Text style={styles.ctaTitle}>Agenda tu próxima cita</Text>
+            <Text style={styles.ctaSubtitle}>Mantén un seguimiento regular de tu salud</Text>
+            <TouchableOpacity 
+              style={styles.ctaBtn}
+              onPress={() => (navigation as any).navigate('Appointments')}
+            >
+              <Text style={styles.ctaBtnText}>Agendar cita</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Acciones Rápidas */}
-        <View 
-          style={styles.quickActionsSection}
-          accessibilityRole="summary"
-          accessibilityLabel="Acciones rápidas"
-        >
+        {/* Acciones rápidas */}
+        <View style={styles.quickActionsSection}>
           <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-          <View style={styles.quickActionsRow}>
+          <View style={styles.quickActionsGrid}>
             <TouchableOpacity
               style={styles.quickActionBtn}
-              onPress={() => navigation.navigate('Medications' as never)}
-              accessibilityRole="button"
-              accessibilityLabel="Agregar medicamento"
-              accessibilityHint="Navega a la pantalla de medicamentos para agregar uno nuevo"
+              onPress={() => (navigation as any).navigate('Medications')}
             >
               <Ionicons name="add-circle" size={24} color={COLORS.primary} />
-              <Text style={styles.quickActionText}>Agregar medicamento</Text>
+              <Text style={styles.quickActionText}>Agregar med</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickActionBtn}
-              onPress={() => navigation.navigate('Appointments' as never)}
-              accessibilityRole="button"
-              accessibilityLabel="Agendar cita"
-              accessibilityHint="Navega a la pantalla de citas para agendar una nueva"
+              onPress={() => (navigation as any).navigate('Appointments')}
             >
               <Ionicons name="calendar-outline" size={24} color={COLORS.medical.appointment} />
               <Text style={styles.quickActionText}>Agendar cita</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickActionBtn}
+              onPress={() => (navigation as any).navigate('Notes')}
+            >
+              <Ionicons name="document-text-outline" size={24} color={COLORS.medical.treatment} />
+              <Text style={styles.quickActionText}>Registrar síntoma</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Timeline de Hoy - Solo si hay eventos */}
+        {/* Timeline de hoy con estados */}
         {getTodayTimeline().length > 0 && (
           <View style={styles.timelineSection}>
             <Text style={styles.sectionTitle}>Timeline de hoy</Text>
@@ -422,6 +453,8 @@ export default function HomeScreen() {
                 <View style={styles.timelineStatus}>
                   {event.completed ? (
                     <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                  ) : event.skipped ? (
+                    <Ionicons name="close-circle" size={20} color={COLORS.error} />
                   ) : (
                     <Ionicons name="time" size={20} color={COLORS.text.tertiary} />
                   )}
@@ -431,22 +464,10 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* CTA si no hay eventos */}
-        {getTodayTimeline().length === 0 && (
-          <View style={styles.emptyStateCard}>
-            <Ionicons name="calendar-outline" size={48} color={COLORS.text.tertiary} />
-            <Text style={styles.emptyStateTitle}>No tienes eventos hoy</Text>
-            <Text style={styles.emptyStateSubtitle}>Agrega medicamentos o agenda citas para comenzar</Text>
-            <TouchableOpacity style={styles.emptyStateCTA} onPress={() => navigation.navigate('Medications' as never)}>
-              <Text style={styles.emptyStateCTAText}>Agregar medicamento</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Tip del día - Descartable y pequeño */}
+        {/* Tip del día descartable */}
         <View style={styles.tipCard}>
           <View style={styles.tipHeader}>
-            <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={COLORS.accent} />
+                          <MaterialCommunityIcons name="lightbulb-on-outline" size={20} color={COLORS.accent.orange} />
             <Text style={styles.tipTitle}>Tip del día</Text>
             <TouchableOpacity style={styles.dismissTipBtn}>
               <Ionicons name="close" size={16} color={COLORS.text.tertiary} />
@@ -454,12 +475,6 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.tipText}>{healthTip}</Text>
         </View>
-
-        {/* Botón de logout */}
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
-          <Ionicons name="log-out-outline" size={20} color={COLORS.text.inverse} />
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -512,7 +527,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  headerRow: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -534,7 +549,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 12,
   },
-  notificationBtn: {
+  alarmBtn: {
     padding: 12,
     borderRadius: 12,
     backgroundColor: COLORS.background.card,
@@ -917,4 +932,157 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     letterSpacing: 0.5,
   },
+  // Nuevos estilos para el diseño actualizado
+  progressContainer: {
+    alignItems: 'center',
+  },
+  nextMedCard: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    width: '92%',
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+
+  actionBtnPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  actionBtnText: {
+    color: COLORS.text.inverse,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  actionBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background.card,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  actionBtnTextSecondary: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  actionBtnTertiary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background.card,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.text.secondary,
+  },
+  actionBtnTextTertiary: {
+    color: COLORS.text.secondary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  nextApptCard: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    width: '92%',
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+
+  viewApptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.medical.appointment,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  viewApptText: {
+    color: COLORS.text.inverse,
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 6,
+  },
+  ctaCard: {
+    backgroundColor: COLORS.background.card,
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    width: '92%',
+    alignItems: 'center',
+    shadowColor: COLORS.shadow.light,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.border.light,
+  },
+  ctaTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginTop: 12,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  ctaSubtitle: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  ctaBtn: {
+    backgroundColor: COLORS.medical.appointment,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  ctaBtnText: {
+    color: COLORS.text.inverse,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
 });

@@ -220,7 +220,7 @@ export default function CalendarScreen() {
                   <Text style={styles.modalSection}>Tratamientos</Text>
                   {events.treatments.length > 0 ? events.treatments.map((t) => (
                     <View key={t.id} style={styles.eventCardModern}>
-                      <Ionicons name="clipboard-list" size={18} color="#f59e42" style={{ marginRight: 8 }} />
+                      <Ionicons name="list" size={18} color="#f59e42" style={{ marginRight: 8 }} />
                       <View>
                         <Text style={styles.eventTitle}>{t.title}</Text>
                         <Text style={styles.eventInfo}>{t.description}</Text>
@@ -476,18 +476,7 @@ const styles = StyleSheet.create({
     gap: 2,
     marginTop: 2,
   },
-  eventDotBlue: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#2563eb',
-  },
-  eventDotGreen: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#22c55e',
-  },
+
   eventDotOrange: {
     width: 7,
     height: 7,

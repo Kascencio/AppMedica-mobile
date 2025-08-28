@@ -9,6 +9,7 @@ import TreatmentsScreen from '../screens/Treatments/TreatmentsScreen';
 import AppointmentsScreen from '../screens/Appointments/AppointmentsScreen';
 import NotesScreen from '../screens/Notes/NotesScreen';
 import HistoryScreen from '../screens/History/HistoryScreen';
+import NotificationsScreen from '../screens/Notifications/NotificationsScreen';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { createStackNavigator } from '@react-navigation/stack';
 import AlarmScreen from '../screens/AlarmScreen/AlarmScreen';
@@ -162,6 +163,8 @@ export default function AppTabs() {
       <RootStack.Screen name="MainTabs" component={MainTabs} />
       <RootStack.Screen name="AlarmScreen" component={AlarmScreen} />
       <RootStack.Screen name="CaregiverDashboardScreen" component={CaregiverDashboardScreen} />
+      <RootStack.Screen name="Notes" component={NotesScreen} />
+      <RootStack.Screen name="Notifications" component={NotificationsScreen} />
       {/* <RootStack.Screen name="Home" component={HomeScreen} /> */}
     </RootStack.Navigator>
   );

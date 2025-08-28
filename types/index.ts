@@ -56,7 +56,9 @@ export interface CaregiverProfile {
 export interface UserProfile {
   id: string;
   userId: string;
+  patientProfileId?: string; // Agregado para compatibilidad
   name: string;
+  age?: number;
   birthDate?: string;
   gender?: string;
   weight?: number;
@@ -75,6 +77,7 @@ export interface UserProfile {
   phone?: string;
   relationship?: string;
   photoUrl?: string;
+  role?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,6 +121,8 @@ export interface Treatment {
   description?: string;
   startDate?: string;
   endDate?: string;
+  frequency?: string;
+  notes?: string;
   status: 'ACTIVE' | 'COMPLETED' | 'PAUSED';
   createdAt: string;
   updatedAt: string;
@@ -133,6 +138,18 @@ export interface IntakeEvent {
   scheduledFor: string;
   action: 'TAKEN' | 'SNOOZE' | 'SKIPPED';
   notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  isOffline?: boolean;
+}
+
+// Nota
+export interface Note {
+  id: string;
+  patientProfileId: string;
+  title: string;
+  content: string;
+  date: string;
   createdAt: string;
   updatedAt: string;
   isOffline?: boolean;

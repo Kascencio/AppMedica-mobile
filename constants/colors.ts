@@ -13,7 +13,11 @@ export const COLORS = {
   secondaryDark: '#1d4ed8', // Azul más oscuro
   
   // Colores de acento - Colores cálidos para elementos importantes
-  accent: '#f59e0b', // Naranja cálido
+  accent: {
+    orange: '#f59e0b', // Naranja cálido
+    green: '#10b981', // Verde
+    blue: '#3b82f6', // Azul
+  },
   accentLight: '#fbbf24', // Naranja más claro
   accentDark: '#d97706', // Naranja más oscuro
   
@@ -30,6 +34,8 @@ export const COLORS = {
     tertiary: '#ecfdf5', // Verde muy claro
     card: 'rgba(255, 255, 255, 0.95)', // Blanco translúcido
     modal: 'rgba(255, 255, 255, 0.98)', // Blanco casi opaco
+    neutral: '#f8fafc', // Gris neutro
+    white: '#ffffff', // Blanco puro
   },
   
   // Colores de texto
@@ -54,6 +60,7 @@ export const COLORS = {
     light: 'rgba(0, 0, 0, 0.05)',
     medium: 'rgba(0, 0, 0, 0.1)',
     dark: 'rgba(0, 0, 0, 0.15)',
+    color: 'rgba(0, 0, 0, 0.1)', // Color por defecto para sombras
   },
   
   // Colores específicos para elementos médicos
@@ -68,10 +75,10 @@ export const COLORS = {
   
   // Gradientes predefinidos
   gradients: {
-    primary: ['#fef7ed', '#fef3c7', '#ecfdf5'], // Gradiente principal cálido
-    card: ['#ffffff', '#f8fafc'], // Gradiente de tarjetas
-    button: ['#059669', '#047857'], // Gradiente de botones
-    header: ['#fef7ed', '#fef3c7'], // Gradiente de encabezados
+    primary: ['#fef7ed', '#fef3c7', '#ecfdf5'] as const, // Gradiente principal cálido
+    card: ['#ffffff', '#f8fafc'] as const, // Gradiente de tarjetas
+    button: ['#059669', '#047857'] as const, // Gradiente de botones
+    header: ['#fef7ed', '#fef3c7'] as const, // Gradiente de encabezados
   },
   
   // Colores de accesibilidad
@@ -106,7 +113,7 @@ export const getColorVariant = (baseColor: string, variant: 'lighter' | 'darker'
       lighter: COLORS.secondaryLight,
       darker: COLORS.secondaryDark
     },
-    [COLORS.accent]: {
+    [COLORS.accent.orange]: {
       lighter: COLORS.accentLight,
       darker: COLORS.accentDark
     }

@@ -40,7 +40,9 @@ export default function MedicationsScreen() {
     dosage: z.string().min(1, 'Obligatorio'),
     type: z.enum(['Oral', 'Inyectable', 'Tópico']).optional(),
     frequency: z.enum(['daily', 'weekly', 'custom']).optional(),
-    startDate: z.date({ required_error: 'Selecciona una fecha' }),
+    startDate: z.date().refine((date) => date !== undefined, {
+      message: 'Selecciona una fecha'
+    }),
     endDate: z.date().optional(),
     notes: z.string().optional(),
   });
@@ -109,8 +111,12 @@ export default function MedicationsScreen() {
     setValue('dosage', med.dosage);
     setValue('type', med.type || '');
     setValue('frequency', med.frequency || '');
-    setValue('startDate', med.startDate ? new Date(med.startDate) : undefined);
-    setValue('endDate', med.endDate ? new Date(med.endDate) : undefined);
+    if (med.startDate) {
+      setValue('startDate', new Date(med.startDate));
+    }
+    if (med.endDate) {
+      setValue('endDate', new Date(med.endDate));
+    }
     setValue('notes', med.notes || '');
     setSelectedTimes(med.times || []);
     setFrequencyType(med.frequencyType || 'daily');

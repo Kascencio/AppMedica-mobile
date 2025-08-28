@@ -164,9 +164,9 @@ export default function ProfileScreen() {
       const weightValue = form.weight ? parseFloat(form.weight) : undefined;
       const heightValue = form.height ? parseInt(form.height, 10) : undefined;
       
-      console.log('[ProfileScreen] Después de conversión - age:', ageValue, typeof ageValue, 'isNaN:', isNaN(ageValue));
-      console.log('[ProfileScreen] Después de conversión - weight:', weightValue, typeof weightValue, 'isNaN:', isNaN(weightValue));
-      console.log('[ProfileScreen] Después de conversión - height:', heightValue, typeof heightValue, 'isNaN:', isNaN(heightValue));
+      console.log('[ProfileScreen] Después de conversión - age:', ageValue, typeof ageValue, 'isNaN:', ageValue !== undefined ? isNaN(ageValue) : 'undefined');
+      console.log('[ProfileScreen] Después de conversión - weight:', weightValue, typeof weightValue, 'isNaN:', weightValue !== undefined ? isNaN(weightValue) : 'undefined');
+      console.log('[ProfileScreen] Después de conversión - height:', heightValue, typeof heightValue, 'isNaN:', heightValue !== undefined ? isNaN(heightValue) : 'undefined');
       
       const dataToSave = {
         name: cleanForm.name?.trim(),

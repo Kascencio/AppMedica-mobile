@@ -88,7 +88,7 @@ export function setupNetworkMonitoring(
   return NetInfo.addEventListener(state => {
     const isOnline = state.isConnected && state.isInternetReachable;
     console.log('[Network] Connectivity state changed:', isOnline);
-    onConnectivityChange(isOnline);
+    onConnectivityChange(isOnline || false);
   });
 }
 

@@ -85,9 +85,9 @@ export default function CaregiverDashboardScreen() {
   }, [patients, selectedPatientId, medsStore.medications, treatmentsStore.treatments, appointmentsStore.appointments, notesStore.notes, intakeEventsStore.events]);
 
   // Calcular adherencia del día
-  function getAdherence(events) {
+  function getAdherence(events: any[]) {
     const today = new Date();
-    const isToday = (d) => {
+    const isToday = (d: any) => {
       const dt = new Date(d);
       return dt.getFullYear() === today.getFullYear() && dt.getMonth() === today.getMonth() && dt.getDate() === today.getDate();
     };
@@ -98,14 +98,14 @@ export default function CaregiverDashboardScreen() {
   }
 
   // Últimos eventos
-  function getLastIntakeEvents(events) {
+  function getLastIntakeEvents(events: any[]) {
     return Array.isArray(events)
-      ? [...events].sort((a, b) => new Date(b.scheduledFor) - new Date(a.scheduledFor)).slice(0, 5)
+      ? [...events].sort((a: any, b: any) => new Date(b.scheduledFor).getTime() - new Date(a.scheduledFor).getTime()).slice(0, 5)
       : [];
   }
 
   // Alertas rápidas
-  function getAlerts(events, appointments) {
+  function getAlerts(events: any[], appointments: any[]) {
     const alerts = [];
     if (Array.isArray(events)) {
       const skipped = events.filter(e => e.action === 'SKIPPED' && new Date(e.scheduledFor) > new Date(Date.now() - 24*60*60*1000));
@@ -133,7 +133,7 @@ export default function CaregiverDashboardScreen() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={styles.subtitle}>Cargando panel…</Text>
+        <Text style={styles.sectionTitle}>Cargando panel…</Text>
       </View>
     );
   }
@@ -248,7 +248,7 @@ export default function CaregiverDashboardScreen() {
                     <Text style={styles.itemTitleModern}>{med.name}</Text>
                     <Text style={styles.itemInfoModern}>{med.dosage} - {med.type}</Text>
                     <Text style={styles.itemInfoModern}>Frecuencia: {med.frequency}</Text>
-                    <Text style={styles.itemInfoModern}>Inicio: {new Date(med.startDate).toLocaleDateString()}</Text>
+                    <Text style={styles.itemInfoModern}>Inicio: {med.startDate ? new Date(med.startDate).toLocaleDateString() : 'No definido'}</Text>
                     {med.notes && <Text style={styles.itemNotesModern}>{med.notes}</Text>}
                   </View>
                 </View>

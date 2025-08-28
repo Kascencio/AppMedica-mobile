@@ -92,7 +92,7 @@ export default function NotesScreen() {
           <TouchableOpacity style={styles.iconBtn} onPress={() => openEditModal(item)}>
             <Ionicons name="create-outline" size={20} color="#2563eb" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => onDelete(item.id)}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => onDelete(item.id.toString())}>
             <Ionicons name="trash-outline" size={20} color="#ef4444" />
           </TouchableOpacity>
         </View>
@@ -122,7 +122,7 @@ export default function NotesScreen() {
         </View>
       ) : (
         <FlatList
-          data={notes}
+          data={notes as any}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 32 }}

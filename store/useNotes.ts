@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useAuth } from './useAuth';
 import { useCurrentUser } from './useCurrentUser';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
-import { localDB, LocalNote } from '../data/db';
+import { localDB } from '../data/db';
 import { syncService } from '../lib/syncService';
 
 interface Note {
@@ -15,6 +15,18 @@ interface Note {
   updatedAt?: string;
   isOffline?: boolean;
   syncStatus?: 'pending' | 'synced' | 'failed';
+}
+
+interface LocalNote {
+  id: string;
+  title: string;
+  content: string;
+  date: string;
+  patientProfileId: string;
+  createdAt: string;
+  updatedAt: string;
+  isOffline: boolean;
+  syncStatus: 'pending' | 'synced' | 'failed';
 }
 
 interface NotesState {
@@ -92,7 +104,9 @@ export const useNotes = create<NotesState>((set, get) => ({
                 ...note,
                 isOffline: false,
                 syncStatus: 'synced',
-                updatedAt: note.updatedAt || note.createdAt || new Date().toISOString()
+                createdAt: note.createdAt || new Date().toISOString(),
+                updatedAt: note.updatedAt || note.createdAt || new Date().toISOString(),
+                patientProfileId: profile.id,
               };
               await localDB.saveNote(localNote);
             }
@@ -275,7 +289,9 @@ export const useNotes = create<NotesState>((set, get) => ({
         ...data,
         updatedAt: new Date().toISOString(),
         isOffline: true,
-        syncStatus: 'pending'
+        syncStatus: 'pending',
+        createdAt: noteToUpdate.createdAt || new Date().toISOString(),
+        patientProfileId: profile.id,
       };
       
       await localDB.saveNote(updatedNote);
@@ -308,7 +324,10 @@ export const useNotes = create<NotesState>((set, get) => ({
               ...updatedNote,
               ...responseData,
               isOffline: false,
-              syncStatus: 'synced'
+              syncStatus: 'synced',
+              createdAt: responseData.createdAt || updatedNote.createdAt,
+              updatedAt: responseData.updatedAt || updatedNote.updatedAt,
+              patientProfileId: profile.id,
             };
             await localDB.saveNote(syncedNote);
             

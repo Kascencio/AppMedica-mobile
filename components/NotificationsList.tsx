@@ -64,9 +64,7 @@ export default function NotificationsList({
     // Convertir filtros de estado para que coincidan con el backend
     const backendFilters = {
       ...filters,
-      status: filters.status === 'unread' ? 'UNREAD' : 
-              filters.status === 'read' ? 'READ' : 
-              filters.status === 'archived' ? 'ARCHIVED' : undefined,
+            status: filters.status,
       page: 1,
       pageSize: 20
     };

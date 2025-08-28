@@ -20,7 +20,9 @@ const appointmentSchema = z.object({
   doctorName: z.string().min(1, 'Obligatorio'),
   specialty: z.string().optional(),
   location: z.string().min(1, 'Obligatorio'),
-  date: z.date({ required_error: 'Selecciona una fecha' }),
+  date: z.date().refine((date) => date !== undefined, {
+    message: 'Selecciona una fecha'
+  }),
   time: z.string().min(1, 'Obligatorio'),
   notes: z.string().optional(),
 });
@@ -125,7 +127,9 @@ export default function AppointmentsScreen() {
     setValue('doctorName', appt.title);
     setValue('specialty', appt.specialty || '');
     setValue('location', appt.location);
-    setValue('date', appt.dateTime ? new Date(appt.dateTime) : undefined);
+    if (appt.dateTime) {
+      setValue('date', new Date(appt.dateTime));
+    }
     setValue('time', appt.dateTime ? new Date(appt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
     setValue('notes', appt.description || '');
   };
@@ -384,7 +388,7 @@ export default function AppointmentsScreen() {
   if (perfilIncompleto) {
     return (
       <View style={styles.centered}>
-        <MaterialIcons name="account-heart" size={64} color="#2563eb" />
+        <MaterialIcons name="favorite" size={64} color="#2563eb" />
         <Text style={styles.title}>Completa tu perfil</Text>
         <Text style={styles.subtitle}>Por favor, completa tu perfil para poder agregar citas.</Text>
       </View>
@@ -394,7 +398,7 @@ export default function AppointmentsScreen() {
   if (error) {
     return (
       <View style={styles.centered}>
-        <MaterialIcons name="alert-circle" size={64} color="#ef4444" />
+        <MaterialIcons name="error" size={64} color="#ef4444" />
         <Text style={styles.title}>Error</Text>
         <Text style={styles.subtitle}>{error}</Text>
       </View>

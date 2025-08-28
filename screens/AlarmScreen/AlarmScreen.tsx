@@ -259,7 +259,7 @@ export default function AlarmScreen({ navigation }: any) {
           accessibilityRole="button"
         >
           <LinearGradient
-            colors={[COLORS.warning, COLORS.accent]}
+            colors={[COLORS.warning, COLORS.accent.orange]}
             style={styles.actionButtonGradient}
           >
             <Ionicons name="time" size={32} color={COLORS.text.inverse} />

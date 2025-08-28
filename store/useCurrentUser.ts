@@ -1,25 +1,7 @@
 import { create } from 'zustand';
 import { useAuth } from './useAuth';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
-
-interface UserProfile {
-  id: string;
-  name: string;
-  age?: number;
-  weight?: number;
-  height?: number;
-  allergies?: string;
-  reactions?: string;
-  doctorName?: string;
-  doctorContact?: string;
-  photoUrl?: string;
-  userId?: string;
-  role?: string;
-  email?: string;
-  phone?: string; // <--- Agregado
-  relationship?: string; // <--- Agregado
-  // ...otros campos según API
-}
+import { UserProfile } from '../types';
 
 interface CurrentUserState {
   profile: UserProfile | null;
@@ -69,14 +51,13 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
           console.log('[useCurrentUser] Payload del token:', payload);
           
           // Crear perfil básico desde el token
-          const userProfile = {
+          const userProfile: UserProfile = {
             id: payload.profileId || payload.sub,
-            name: payload.patientName || 'Usuario',
-            role: payload.role || 'USER',
-            email: payload.email || '',
-            permissions: payload.permissions || {},
             userId: payload.sub,
             patientProfileId: payload.profileId,
+            name: payload.patientName || 'Usuario',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           };
           
           console.log('[useCurrentUser] Perfil básico creado desde token:', userProfile);

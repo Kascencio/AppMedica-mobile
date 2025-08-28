@@ -113,6 +113,13 @@ export const GLOBAL_STYLES = StyleSheet.create({
     letterSpacing: 0.5,
   },
   
+  buttonSecondaryText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  
   // Campos de entrada
   input: {
     backgroundColor: COLORS.background.card,
@@ -181,6 +188,33 @@ export const GLOBAL_STYLES = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  
+  // Encabezados
+  header: {
+    backgroundColor: COLORS.background.primary,
+    paddingTop: 20,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+  },
+  
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  
+  headerSubtitle: {
+    fontSize: 16,
+    color: COLORS.text.secondary,
+  },
+  
+  // Secciones
+  section: {
+    marginBottom: 24,
+  },
+  
+
   
   // Espaciado entre elementos
   rowSpaced: {
@@ -299,19 +333,17 @@ export const MEDICAL_STYLES = StyleSheet.create({
   },
   
   // Estados de salud
-  healthStatus: {
-    good: {
-      backgroundColor: COLORS.success,
-      color: COLORS.text.inverse,
-    },
-    warning: {
-      backgroundColor: COLORS.warning,
-      color: COLORS.text.inverse,
-    },
-    critical: {
-      backgroundColor: COLORS.error,
-      color: COLORS.text.inverse,
-    },
+  healthStatusGood: {
+    backgroundColor: COLORS.success,
+    color: COLORS.text.inverse,
+  },
+  healthStatusWarning: {
+    backgroundColor: COLORS.warning,
+    color: COLORS.text.inverse,
+  },
+  healthStatusCritical: {
+    backgroundColor: COLORS.error,
+    color: COLORS.text.inverse,
   },
 });
 

@@ -114,7 +114,7 @@ export async function scheduleNotification({
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.HIGH,
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
-        channelId, // Canal correcto para Android
+        // channelId removido para compatibilidad con expo-notifications
       },
       trigger,
     });
