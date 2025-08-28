@@ -39,12 +39,13 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     
     try {
       const profile = useCurrentUser.getState().profile;
-      if (!profile?.id) {
+      const patientId = profile?.patientProfileId || profile?.id;
+      if (!patientId) {
         console.log('[useAppointments] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente');
       }
-      
-      console.log('[useAppointments] ✅ Perfil válido encontrado:', profile.id);
+
+      console.log('[useAppointments] ✅ Perfil válido encontrado:', patientId);
       
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
@@ -54,7 +55,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         try {
           console.log('[useAppointments] Obteniendo citas desde servidor...');
           
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}?patientProfileId=${profile.id}`), {
+          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}?patientProfileId=${patientId}`), {
             headers: { Authorization: `Bearer ${token}` },
           });
           
@@ -85,7 +86,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
                 // Preservar doctorName si existe
                 doctorName: appointment.doctorName || appointment.title,
                 // Asegurar que patientProfileId sea string
-                patientProfileId: String(appointment.patientProfileId || profile.id),
+                patientProfileId: String(appointment.patientProfileId || patientId),
                 isOffline: false,
                 syncStatus: 'synced',
                 // Asegurar que createdAt y updatedAt estén presentes
@@ -96,7 +97,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             }
             
             // Combinar con citas offline
-            const offlineAppointments = await localDB.getAppointments(profile.id);
+            const offlineAppointments = await localDB.getAppointments(patientId);
             const offlineOnly = offlineAppointments.filter(apt => apt.isOffline);
             
             // Mapear las citas del servidor para que tengan el formato correcto
@@ -106,7 +107,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
               dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
               doctorName: appointment.doctorName || appointment.title,
               // Asegurar que patientProfileId sea string
-              patientProfileId: String(appointment.patientProfileId || profile.id),
+              patientProfileId: String(appointment.patientProfileId || patientId),
               // Asegurar que createdAt y updatedAt estén presentes
               createdAt: appointment.createdAt || new Date().toISOString(),
               updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString(),
@@ -119,7 +120,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           } else if (res.status === 404) {
             console.log('[useAppointments] No hay citas disponibles (404)');
             // Cargar solo datos offline
-            const offlineAppointments = await localDB.getAppointments(profile.id);
+            const offlineAppointments = await localDB.getAppointments(patientId);
             set({ appointments: offlineAppointments });
             return;
           } else {
@@ -134,7 +135,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       // Si estamos offline o falló el servidor, cargar desde base de datos local
       console.log('[useAppointments] Cargando citas desde base de datos local...');
       try {
-        const localAppointments = await localDB.getAppointments(profile.id);
+        const localAppointments = await localDB.getAppointments(patientId);
         set({ appointments: localAppointments });
       } catch (offlineError) {
         console.log('[useAppointments] Error cargando datos locales:', offlineError);
@@ -156,6 +157,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     
     try {
       const profile = useCurrentUser.getState().profile;
+      const patientId = profile?.patientProfileId || profile?.id;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -164,7 +166,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         throw new Error('Título y fecha/hora son requeridos');
       }
       
-      if (!profile?.id) {
+      if (!patientId) {
         throw new Error('No hay perfil de paciente disponible');
       }
       
@@ -183,7 +185,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         
         const bodyData = { 
           ...data, 
-          patientProfileId: profile.id 
+          patientProfileId: patientId
         };
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE);
         
@@ -217,7 +219,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             // Preservar doctorName si existe
             doctorName: responseData.doctorName || responseData.title,
             // Asegurar que patientProfileId sea string
-            patientProfileId: String(responseData.patientProfileId || profile.id),
+            patientProfileId: String(responseData.patientProfileId || patientId),
             isOffline: false,
             syncStatus: 'synced',
             // Asegurar que createdAt y updatedAt estén presentes
@@ -258,10 +260,11 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const profile = useCurrentUser.getState().profile;
+      const patientId = profile?.patientProfileId || profile?.id;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
-      if (!profile?.id) throw new Error('No hay perfil de paciente');
+      if (!patientId) throw new Error('No hay perfil de paciente');
       
       // Actualizar localmente primero
       const currentAppointments = get().appointments;
@@ -280,7 +283,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       // Guardar en base de datos local
       const localAppointment: LocalAppointment = {
         ...newAppointment,
-        patientProfileId: profile.id,
+        patientProfileId: patientId,
         createdAt: newAppointment.createdAt || new Date().toISOString(),
         isOffline: !isOnline,
         syncStatus: isOnline ? 'synced' : 'pending'
@@ -299,7 +302,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}/${id}`), {
             method: 'PUT',
             headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ ...data, patientProfileId: profile.id }),
+            body: JSON.stringify({ ...data, patientProfileId: patientId }),
           });
           
           if (res.ok) {
@@ -332,10 +335,11 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const profile = useCurrentUser.getState().profile;
+      const patientId = profile?.patientProfileId || profile?.id;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
-      if (!profile?.id) throw new Error('No hay perfil de paciente');
+      if (!patientId) throw new Error('No hay perfil de paciente');
       
       // Eliminar localmente primero
       const currentAppointments = get().appointments;
@@ -348,7 +352,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       // Si estamos online, intentar sincronizar
       if (isOnline && token) {
         try {
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}/${id}?patientProfileId=${profile.id}`), {
+          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}/${id}?patientProfileId=${patientId}`), {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` },
           });
