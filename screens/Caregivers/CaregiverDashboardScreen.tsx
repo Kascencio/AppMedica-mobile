@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import logo from '../../assets/logo.webp';
 import { Image } from 'react-native';
 import { useCaregiver } from '../../store/useCaregiver';
+import { useInviteCodes } from '../../store/useInviteCodes';
 import { useMedications } from '../../store/useMedications';
 import { useTreatments } from '../../store/useTreatments';
 import { useAppointments } from '../../store/useAppointments';
@@ -14,9 +15,8 @@ import { useIntakeEvents } from '../../store/useIntakeEvents';
 
 export default function CaregiverDashboardScreen() {
   const { patients, loading, error, fetchPatients, joinPatient, selectedPatientId, setSelectedPatientId } = useCaregiver();
+  const { joinAsCaregiver, loading: joining, error: joinError, clearError: clearJoinError } = useInviteCodes();
   const [joinCode, setJoinCode] = useState('');
-  const [joining, setJoining] = useState(false);
-  const [joinError, setJoinError] = useState<string | null>(null);
   const intakeEventsStore = useIntakeEvents();
 
   // Datos del paciente seleccionado
@@ -52,11 +52,9 @@ export default function CaregiverDashboardScreen() {
   }, [patients]);
 
   const handleJoin = async () => {
-    setJoining(true);
-    setJoinError(null);
-    const ok = await joinPatient(joinCode.trim());
-    setJoining(false);
-    if (ok) {
+    clearJoinError();
+    const success = await joinAsCaregiver(joinCode.trim());
+    if (success) {
       setJoinCode('');
       await fetchPatients(); // Forzar recarga
       // Seleccionar automáticamente el nuevo paciente (el último de la lista)
@@ -65,9 +63,10 @@ export default function CaregiverDashboardScreen() {
           setSelectedPatientId(patients[patients.length - 1].id);
         }
       }, 500);
-      Alert.alert('¡Éxito!', 'Te has unido al paciente correctamente.');
-    } else {
-      setJoinError('Código inválido o error al unirse.');
+      Alert.alert(
+        'Solicitud enviada', 
+        'Tu solicitud de acceso ha sido enviada. El paciente debe aprobarla para que puedas ver su información.'
+      );
     }
   };
 

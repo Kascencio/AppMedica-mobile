@@ -345,7 +345,7 @@ export default function AppointmentsScreen() {
     <View style={MEDICAL_STYLES.appointmentCard}>
       <View style={GLOBAL_STYLES.rowSpaced}>
         <View style={GLOBAL_STYLES.row}>
-          <MaterialIcons name="event" size={24} color={COLORS.medical.appointment} style={GLOBAL_STYLES.icon} />
+          <MaterialIcons name="event" size={15} color={COLORS.medical.appointment} style={GLOBAL_STYLES.icon} />
           <Text style={[GLOBAL_STYLES.sectionTitle, { marginBottom: 0 }]}>{item.title}</Text>
         </View>
         <View style={GLOBAL_STYLES.row}>
@@ -414,7 +414,8 @@ export default function AppointmentsScreen() {
           <TouchableOpacity 
             style={[
               GLOBAL_STYLES.buttonPrimary, 
-              perfilIncompleto && { opacity: 0.6 }
+              perfilIncompleto && { opacity: 0.6 },
+              { marginTop: 10 }
             ]} 
             onPress={openCreateModal} 
             disabled={perfilIncompleto} 
@@ -423,7 +424,7 @@ export default function AppointmentsScreen() {
             accessibilityLabel="Agregar nueva cita"
             accessibilityHint={perfilIncompleto ? "Completa tu perfil primero" : "Abre el formulario para agregar una cita"}
           >
-            <Ionicons name="add-circle" size={28} color={COLORS.text.inverse} />
+            <Ionicons name="add-circle" size={24} color={COLORS.text.inverse} />
             <Text style={GLOBAL_STYLES.buttonText}>Nueva cita</Text>
           </TouchableOpacity>
         </View>
@@ -690,6 +691,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+    marginBottom: 20,
     paddingHorizontal: 16,
     paddingTop: 24,
   },
@@ -697,7 +699,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 30,
   },
   headerTitle: {
     fontSize: 22,
@@ -722,6 +724,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     backgroundColor: '#f0fdf4',
     borderRadius: 12,
+    marginTop: 40,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,

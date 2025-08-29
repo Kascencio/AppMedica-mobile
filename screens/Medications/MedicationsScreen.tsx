@@ -399,7 +399,8 @@ export default function MedicationsScreen() {
         <TouchableOpacity 
           style={[
             GLOBAL_STYLES.buttonPrimary,
-            perfilIncompleto && { opacity: 0.6 }
+            perfilIncompleto && { opacity: 0.6 },
+            { marginTop: 20 }
           ]} 
           onPress={openCreateModal} 
           disabled={perfilIncompleto} 

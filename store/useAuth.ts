@@ -90,6 +90,7 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await AsyncStorage.removeItem('userToken');
+    await AsyncStorage.removeItem('userProfile'); // Limpiar perfil local
     set({ userToken: null, isAuthenticated: false });
   },
 

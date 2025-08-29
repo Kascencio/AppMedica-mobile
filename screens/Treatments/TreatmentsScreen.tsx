@@ -153,7 +153,7 @@ export default function TreatmentsScreen() {
   }
 
   return (
-    <LinearGradient colors={COLORS.gradients.primary as [string, string, string]} style={{ flex: 1 }}>
+    <LinearGradient colors={COLORS.gradients.primary as [string, string, string]} style={{ flex: 1, marginTop: 20}}>
       <ScrollView 
         style={[
           GLOBAL_STYLES.container,
@@ -596,6 +596,7 @@ export default function TreatmentsScreen() {
 const styles = StyleSheet.create({
   // Estilos para tablets
   containerTablet: {
+    marginTop: 10,
     paddingHorizontal: 24,
     paddingTop: 32,
   },

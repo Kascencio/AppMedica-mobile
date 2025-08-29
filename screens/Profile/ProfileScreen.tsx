@@ -7,6 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Image as RNImage } from 'react-native';
 import logo from '../../assets/logo.webp';
 import { useAuth } from '../../store/useAuth';
+import { useInviteCodes } from '../../store/useInviteCodes';
+import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
 import { buildApiUrl, API_CONFIG } from '../../constants/config';
 
@@ -15,25 +17,29 @@ export default function ProfileScreen() {
   
   const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError } = useCurrentUser();
   const { userToken } = useAuth();
+  const { inviteCode, loading: inviteLoading, error: inviteError, generateInviteCode, clearError: clearInviteError } = useInviteCodes();
+  const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus } = usePermissions();
   const [form, setForm] = useState({
     name: profile?.name || '',
-    age: profile?.age?.toString() || '',
+    birthDate: profile?.birthDate || '',
+    gender: profile?.gender || '',
     weight: profile?.weight?.toString() || '',
     height: profile?.height?.toString() || '',
+    bloodType: profile?.bloodType || '',
+    emergencyContactName: profile?.emergencyContactName || '',
+    emergencyContactRelation: profile?.emergencyContactRelation || '',
+    emergencyContactPhone: profile?.emergencyContactPhone || '',
     allergies: profile?.allergies || '',
+    chronicDiseases: profile?.chronicDiseases || '',
+    currentConditions: profile?.currentConditions || '',
     reactions: profile?.reactions || '',
     doctorName: profile?.doctorName || '',
     doctorContact: profile?.doctorContact || '',
+    hospitalReference: profile?.hospitalReference || '',
     photoUrl: profile?.photoUrl || '',
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [invite, setInvite] = useState<{ code: string; expiresAt: string } | null>(null);
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(false);
-  const [requestsError, setRequestsError] = useState<string | null>(null);
 
   // Cargar perfil cuando se monta la pantalla
   useEffect(() => {
@@ -59,13 +65,21 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
       setForm({
         name: profile.name || '',
-        age: profile.age?.toString() || '',
+        birthDate: profile.birthDate || '',
+        gender: profile.gender || '',
         weight: profile.weight?.toString() || '',
         height: profile.height?.toString() || '',
+        bloodType: profile.bloodType || '',
+        emergencyContactName: profile.emergencyContactName || '',
+        emergencyContactRelation: profile.emergencyContactRelation || '',
+        emergencyContactPhone: profile.emergencyContactPhone || '',
         allergies: profile.allergies || '',
+        chronicDiseases: profile.chronicDiseases || '',
+        currentConditions: profile.currentConditions || '',
         reactions: profile.reactions || '',
         doctorName: profile.doctorName || '',
         doctorContact: profile.doctorContact || '',
+        hospitalReference: profile.hospitalReference || '',
         photoUrl: profile.photoUrl || '',
       });
     }
@@ -80,53 +94,46 @@ export default function ProfileScreen() {
       return;
     }
     
-    const fetchRequests = async () => {
-      console.log('[ProfileScreen] Ejecutando fetchRequests...');
-      setLoadingRequests(true);
-      setRequestsError(null);
-      try {
-        // Como no existe el endpoint /permissions/by-patient, usamos un array vacío
-        // En el futuro, si se implementa este endpoint, se puede usar aquí
-        console.log('[ProfileScreen] Endpoint de permisos no implementado, usando array vacío');
-        setPendingRequests([]);
-      } catch (e: any) {
-        setRequestsError('Endpoint de permisos no implementado');
-      } finally {
-        setLoadingRequests(false);
-      }
-    };
-    fetchRequests();
+    console.log('[ProfileScreen] Cargando permisos para paciente...');
+    getPermissions();
   }, [profile?.id, profile?.role]);
 
   // Aceptar o rechazar solicitud
   const handleRequestAction = async (id: string, status: 'ACCEPTED' | 'REJECTED') => {
     try {
-      const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.PERMISSIONS}/${id}`), {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${userToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error('Error al actualizar solicitud');
-      // Recargar solicitudes
-      setPendingRequests((prev) => prev.filter((p) => p.id !== id));
-      Alert.alert('Solicitud actualizada', status === 'ACCEPTED' ? 'Cuidador aceptado.' : 'Solicitud rechazada.');
+      const success = await updatePermissionStatus(id, status);
+      if (success) {
+        Alert.alert('Solicitud actualizada', status === 'ACCEPTED' ? 'Cuidador aceptado.' : 'Solicitud rechazada.');
+      } else {
+        Alert.alert('Error', 'No se pudo actualizar la solicitud');
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo actualizar la solicitud');
     }
   };
 
   const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.5,
-    });
-    if (!result.canceled && result.assets && result.assets[0].uri) {
-      setForm({ ...form, photoUrl: result.assets[0].uri });
+    try {
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+      
+      if (!result.canceled && result.assets && result.assets[0].uri) {
+        console.log('[ProfileScreen] Imagen seleccionada:', result.assets[0].uri);
+        
+        // Subir la imagen al servidor (o guardar localmente por ahora)
+        const { uploadPhoto } = useCurrentUser.getState();
+        const uploadedUrl = await uploadPhoto(result.assets[0].uri);
+        
+        console.log('[ProfileScreen] URL de imagen subida:', uploadedUrl);
+        setForm({ ...form, photoUrl: uploadedUrl });
+      }
+    } catch (error) {
+      console.error('[ProfileScreen] Error al seleccionar/subir imagen:', error);
+      Alert.alert('Error', 'No se pudo procesar la imagen seleccionada');
     }
   };
 
@@ -141,7 +148,25 @@ export default function ProfileScreen() {
     setError(null);
     // Validar solo campos clave
     if (!form.name.trim()) return setError('El nombre es obligatorio');
-    if (!form.age.trim()) return setError('La edad es obligatoria');
+    if (!form.birthDate.trim()) return setError('La fecha de nacimiento es obligatoria');
+    if (!form.gender.trim()) return setError('El género es obligatorio');
+    
+    // Validar formato de fecha de nacimiento (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(form.birthDate)) {
+      return setError('La fecha de nacimiento debe tener el formato YYYY-MM-DD');
+    }
+    
+    // Validar que la fecha sea válida
+    const birthDate = new Date(form.birthDate);
+    if (isNaN(birthDate.getTime())) {
+      return setError('La fecha de nacimiento no es válida');
+    }
+    
+    // Validar que la fecha no sea en el futuro
+    if (birthDate > new Date()) {
+      return setError('La fecha de nacimiento no puede ser en el futuro');
+    }
     
     setSaving(true);
     try {
@@ -156,27 +181,34 @@ export default function ProfileScreen() {
       );
       
       // Convertir campos numéricos y limpiar datos
-      console.log('[ProfileScreen] Antes de conversión - form.age:', form.age, typeof form.age);
+      console.log('[ProfileScreen] Antes de conversión - form.birthDate:', form.birthDate, typeof form.birthDate);
       console.log('[ProfileScreen] Antes de conversión - form.weight:', form.weight, typeof form.weight);
       console.log('[ProfileScreen] Antes de conversión - form.height:', form.height, typeof form.height);
       
-      const ageValue = form.age ? parseInt(form.age, 10) : undefined;
       const weightValue = form.weight ? parseFloat(form.weight) : undefined;
       const heightValue = form.height ? parseInt(form.height, 10) : undefined;
       
-      console.log('[ProfileScreen] Después de conversión - age:', ageValue, typeof ageValue, 'isNaN:', ageValue !== undefined ? isNaN(ageValue) : 'undefined');
+      console.log('[ProfileScreen] Después de conversión - birthDate:', form.birthDate, typeof form.birthDate);
       console.log('[ProfileScreen] Después de conversión - weight:', weightValue, typeof weightValue, 'isNaN:', weightValue !== undefined ? isNaN(weightValue) : 'undefined');
       console.log('[ProfileScreen] Después de conversión - height:', heightValue, typeof heightValue, 'isNaN:', heightValue !== undefined ? isNaN(heightValue) : 'undefined');
       
       const dataToSave = {
         name: cleanForm.name?.trim(),
-        age: ageValue,
+        birthDate: cleanForm.birthDate?.trim(),
+        gender: cleanForm.gender?.trim(),
         weight: weightValue,
         height: heightValue,
+        bloodType: cleanForm.bloodType?.trim() || undefined,
+        emergencyContactName: cleanForm.emergencyContactName?.trim() || undefined,
+        emergencyContactRelation: cleanForm.emergencyContactRelation?.trim() || undefined,
+        emergencyContactPhone: cleanForm.emergencyContactPhone?.trim() || undefined,
         allergies: cleanForm.allergies?.trim() || undefined,
+        chronicDiseases: cleanForm.chronicDiseases?.trim() || undefined,
+        currentConditions: cleanForm.currentConditions?.trim() || undefined,
         reactions: cleanForm.reactions?.trim() || undefined,
         doctorName: cleanForm.doctorName?.trim() || undefined,
         doctorContact: cleanForm.doctorContact?.trim() || undefined,
+        hospitalReference: cleanForm.hospitalReference?.trim() || undefined,
         photoUrl: cleanForm.photoUrl || undefined,
       };
       
@@ -211,8 +243,8 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen] Datos finales filtrados:', finalData);
       
       // Validar que los campos numéricos sean válidos y realistas
-      if (finalData.age && typeof finalData.age === 'number' && (isNaN(finalData.age) || finalData.age <= 0 || finalData.age > 120)) {
-        throw new Error('La edad debe ser un número válido entre 1 y 120 años');
+      if (finalData.weight && typeof finalData.weight === 'number' && (isNaN(finalData.weight) || finalData.weight <= 0 || finalData.weight > 500)) {
+        throw new Error('El peso debe ser un número válido entre 1 y 500 kg');
       }
       if (finalData.weight && typeof finalData.weight === 'number' && (isNaN(finalData.weight) || finalData.weight <= 0 || finalData.weight > 500)) {
         throw new Error('El peso debe ser un número válido entre 1 y 500 kg');
@@ -229,7 +261,7 @@ export default function ProfileScreen() {
       setError(null);
       
       // Mostrar mensaje de éxito
-      Alert.alert('Éxito', 'Perfil actualizado correctamente');
+      Alert.alert('Éxito', 'Perfil actualizado correctamente y guardado localmente');
       
     } catch (e: any) {
       console.log('[ProfileScreen] Error al guardar:', e);
@@ -243,64 +275,10 @@ export default function ProfileScreen() {
 
   const handleGenerateInvite = async () => {
     console.log('[ProfileScreen] handleGenerateInvite llamado - generando código de invitación...');
-    setInviteLoading(true);
-    setInviteError(null);
-    try {
-      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.INVITE);
-      console.log('[ProfileScreen] Llamando a endpoint:', endpoint);
-      console.log('[ProfileScreen] Perfil actual:', profile);
-      console.log('[ProfileScreen] Token:', userToken ? 'PRESENTE' : 'NO');
-      
-      // Primero intentar sin cuerpo (algunos endpoints no lo requieren)
-      console.log('[ProfileScreen] Intentando sin cuerpo...');
-      
-      let res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 
-          ...API_CONFIG.DEFAULT_HEADERS,
-          Authorization: `Bearer ${userToken}` 
-        },
-      });
-      
-      // Si falla, intentar con diferentes variaciones de datos
-      if (!res.ok) {
-        console.log('[ProfileScreen] Falló sin cuerpo, probando con datos...');
-        
-        const bodyData = {
-          // Diferentes opciones para el ID del paciente
-          patientId: profile?.id,
-          patientProfileId: profile?.patientProfileId || profile?.id,
-          userId: profile?.userId,
-        };
-        
-        console.log('[ProfileScreen] Datos a enviar:', bodyData);
-        
-        res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 
-            ...API_CONFIG.DEFAULT_HEADERS,
-            Authorization: `Bearer ${userToken}` 
-          },
-          body: JSON.stringify(bodyData),
-        });
-      }
-      
-      console.log('[ProfileScreen] Respuesta del endpoint:', res.status, res.ok);
-      
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.log('[ProfileScreen] Error en respuesta:', err);
-        throw new Error(err.error || 'Error al generar código');
-      }
-      
-      const data = await res.json();
-      console.log('[ProfileScreen] Código generado exitosamente:', data);
-      setInvite(data);
-    } catch (e: any) {
-      console.log('[ProfileScreen] Error en handleGenerateInvite:', e.message);
-      setInviteError(e.message || 'Error al generar código');
-    } finally {
-      setInviteLoading(false);
+    clearInviteError();
+    const result = await generateInviteCode();
+    if (result) {
+      console.log('[ProfileScreen] Código generado exitosamente:', result);
     }
   };
 
@@ -340,62 +318,220 @@ export default function ProfileScreen() {
         </View>
         {/* Inputs */}
         <View style={styles.formGroupModern}><Text style={styles.labelModern}>Nombre *</Text><TextInput style={styles.inputModern} value={form.name} onChangeText={v => handleChange('name', v)} placeholder="Nombre completo" autoCapitalize="words" /></View>
+        
+        {/* Fecha de nacimiento y género */}
         <View style={styles.formRowModern}>
           <View style={[styles.formGroupModern, { flex: 1, marginRight: 8 }] }>
-            <Text style={styles.labelModern}>Edad *</Text>
-            <TextInput style={styles.inputModern} value={form.age} onChangeText={v => handleChange('age', v)} placeholder="Edad" keyboardType="numeric" />
+            <Text style={styles.labelModern}>Fecha de nacimiento *</Text>
+            <TouchableOpacity 
+              style={styles.inputModern} 
+              onPress={() => {
+                Alert.alert(
+                  'Seleccionar fecha de nacimiento',
+                  'Por favor ingresa la fecha en formato YYYY-MM-DD',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { 
+                      text: 'Usar selector', 
+                      onPress: () => {
+                        // Aquí podrías implementar un DateTimePicker
+                        // Por ahora, mostrar instrucciones
+                        Alert.alert(
+                          'Formato requerido',
+                          'Ingresa la fecha en formato YYYY-MM-DD\n\nEjemplo: 1990-05-15',
+                          [{ text: 'Entendido' }]
+                        );
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={{ color: form.birthDate ? '#1e293b' : '#9ca3af' }}>
+                {form.birthDate || 'YYYY-MM-DD'}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View style={[styles.formGroupModern, { flex: 1, marginLeft: 8 }] }>
+            <Text style={styles.labelModern}>Género *</Text>
+            <TouchableOpacity 
+              style={styles.inputModern}
+              onPress={() => {
+                Alert.alert(
+                  'Seleccionar género',
+                  'Elige tu género',
+                  [
+                    { text: 'Masculino', onPress: () => handleChange('gender', 'Masculino') },
+                    { text: 'Femenino', onPress: () => handleChange('gender', 'Femenino') },
+                    { text: 'Otro', onPress: () => handleChange('gender', 'Otro') },
+                    { text: 'Cancelar', style: 'cancel' }
+                  ]
+                );
+              }}
+            >
+              <Text style={{ color: form.gender ? '#1e293b' : '#9ca3af' }}>
+                {form.gender || 'Seleccionar género'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* Peso y altura */}
+        <View style={styles.formRowModern}>
+          <View style={[styles.formGroupModern, { flex: 1, marginRight: 8 }] }>
             <Text style={styles.labelModern}>Peso (kg)</Text>
             <TextInput style={styles.inputModern} value={form.weight} onChangeText={v => handleChange('weight', v)} placeholder="Peso" keyboardType="numeric" />
           </View>
+          <View style={[styles.formGroupModern, { flex: 1, marginLeft: 8 }] }>
+            <Text style={styles.labelModern}>Altura (cm)</Text>
+            <TextInput style={styles.inputModern} value={form.height} onChangeText={v => handleChange('height', v)} placeholder="Altura" keyboardType="numeric" />
+          </View>
         </View>
-        <View style={styles.formGroupModern}><Text style={styles.labelModern}>Altura (cm)</Text><TextInput style={styles.inputModern} value={form.height} onChangeText={v => handleChange('height', v)} placeholder="Altura" keyboardType="numeric" /></View>
-        <View style={styles.formGroupModern}><Text style={styles.labelModern}>Alergias</Text><TextInput style={styles.inputModern} value={form.allergies} onChangeText={v => handleChange('allergies', v)} placeholder="Alergias conocidas" /></View>
-        <View style={styles.formGroupModern}><Text style={styles.labelModern}>Reacciones</Text><TextInput style={styles.inputModern} value={form.reactions} onChangeText={v => handleChange('reactions', v)} placeholder="Reacciones adversas" /></View>
-        <View style={styles.formGroupModern}><Text style={styles.labelModern}>Médico de cabecera</Text><TextInput style={styles.inputModern} value={form.doctorName} onChangeText={v => handleChange('doctorName', v)} placeholder="Nombre del médico" /></View>
-        <View style={styles.formGroupModern}><Text style={styles.labelModern}>Contacto médico</Text><TextInput style={styles.inputModern} value={form.doctorContact} onChangeText={v => handleChange('doctorContact', v)} placeholder="Teléfono o email" keyboardType="default" /></View>
+        
+        {/* Tipo de sangre */}
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Tipo de sangre</Text>
+          <TouchableOpacity 
+            style={styles.inputModern}
+            onPress={() => {
+              Alert.alert(
+                'Seleccionar tipo de sangre',
+                'Elige tu tipo de sangre',
+                [
+                  { text: 'O+', onPress: () => handleChange('bloodType', 'O+') },
+                  { text: 'O-', onPress: () => handleChange('bloodType', 'O-') },
+                  { text: 'A+', onPress: () => handleChange('bloodType', 'A+') },
+                  { text: 'A-', onPress: () => handleChange('bloodType', 'A-') },
+                  { text: 'B+', onPress: () => handleChange('bloodType', 'B+') },
+                  { text: 'B-', onPress: () => handleChange('bloodType', 'B-') },
+                  { text: 'AB+', onPress: () => handleChange('bloodType', 'AB+') },
+                  { text: 'AB-', onPress: () => handleChange('bloodType', 'AB-') },
+                  { text: 'No sé', onPress: () => handleChange('bloodType', 'No sé') },
+                  { text: 'Cancelar', style: 'cancel' }
+                ]
+              );
+            }}
+          >
+            <Text style={{ color: form.bloodType ? '#1e293b' : '#9ca3af' }}>
+              {form.bloodType || 'Seleccionar tipo de sangre'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Contacto de emergencia */}
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Nombre contacto emergencia</Text>
+          <TextInput style={styles.inputModern} value={form.emergencyContactName} onChangeText={v => handleChange('emergencyContactName', v)} placeholder="Nombre del contacto de emergencia" />
+        </View>
+        
+        <View style={styles.formRowModern}>
+          <View style={[styles.formGroupModern, { flex: 1, marginRight: 8 }] }>
+            <Text style={styles.labelModern}>Relación</Text>
+            <TextInput style={styles.inputModern} value={form.emergencyContactRelation} onChangeText={v => handleChange('emergencyContactRelation', v)} placeholder="Esposa, Hijo, etc." />
+          </View>
+          <View style={[styles.formGroupModern, { flex: 1, marginLeft: 8 }] }>
+            <Text style={styles.labelModern}>Teléfono emergencia</Text>
+            <TextInput style={styles.inputModern} value={form.emergencyContactPhone} onChangeText={v => handleChange('emergencyContactPhone', v)} placeholder="Teléfono" keyboardType="phone-pad" />
+          </View>
+        </View>
+        
+        {/* Información médica */}
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Alergias</Text>
+          <TextInput style={styles.inputModern} value={form.allergies} onChangeText={v => handleChange('allergies', v)} placeholder="Alergias conocidas" />
+        </View>
+        
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Enfermedades crónicas</Text>
+          <TextInput style={styles.inputModern} value={form.chronicDiseases} onChangeText={v => handleChange('chronicDiseases', v)} placeholder="Enfermedades crónicas" />
+        </View>
+        
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Condiciones actuales</Text>
+          <TextInput style={styles.inputModern} value={form.currentConditions} onChangeText={v => handleChange('currentConditions', v)} placeholder="Condiciones médicas actuales" />
+        </View>
+        
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Reacciones</Text>
+          <TextInput style={styles.inputModern} value={form.reactions} onChangeText={v => handleChange('reactions', v)} placeholder="Reacciones adversas" />
+        </View>
+        
+        {/* Información del médico */}
+        <View style={styles.formGroupModern}>
+          <Text style={styles.labelModern}>Médico de cabecera</Text>
+          <TextInput style={styles.inputModern} value={form.doctorName} onChangeText={v => handleChange('doctorName', v)} placeholder="Nombre del médico" />
+        </View>
+        
+        <View style={styles.formRowModern}>
+          <View style={[styles.formGroupModern, { flex: 1, marginRight: 8 }] }>
+            <Text style={styles.labelModern}>Contacto médico</Text>
+            <TextInput style={styles.inputModern} value={form.doctorContact} onChangeText={v => handleChange('doctorContact', v)} placeholder="Teléfono o email" keyboardType="default" />
+          </View>
+          <View style={[styles.formGroupModern, { flex: 1, marginLeft: 8 }] }>
+            <Text style={styles.labelModern}>Hospital de referencia</Text>
+            <TextInput style={styles.inputModern} value={form.hospitalReference} onChangeText={v => handleChange('hospitalReference', v)} placeholder="Hospital" />
+          </View>
+        </View>
         {error && <Text style={styles.errorTextModern}>{error}</Text>}
         <TouchableOpacity style={styles.saveBtnModern} onPress={handleSave} disabled={saving || loading} accessibilityLabel="Guardar perfil" accessibilityRole="button">
           <Ionicons name="save" size={22} color="#fff" />
           <Text style={styles.saveBtnTextModern}>{saving || loading ? 'Guardando...' : 'Guardar'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.saveBtnModern, { backgroundColor: '#22c55e', marginTop: 18 }]}
-          onPress={handleGenerateInvite}
-          disabled={inviteLoading}
-          accessibilityLabel="Generar código de invitación"
-          accessibilityRole="button"
-        >
-          <Ionicons name="key-outline" size={22} color="#fff" />
-          <Text style={styles.saveBtnTextModern}>{inviteLoading ? 'Generando...' : 'Generar código de invitación'}</Text>
-        </TouchableOpacity>
-        {invite && (
+        {/* Solo mostrar botón de código de invitación para pacientes */}
+        {profile?.role === 'PATIENT' && (
+          <>
+            <TouchableOpacity
+              style={[styles.saveBtnModern, { backgroundColor: '#22c55e', marginTop: 18 }]}
+              onPress={handleGenerateInvite}
+              disabled={inviteLoading}
+              accessibilityLabel="Generar código de invitación"
+              accessibilityRole="button"
+            >
+              <Ionicons name="key-outline" size={22} color="#fff" />
+              <Text style={styles.saveBtnTextModern}>{inviteLoading ? 'Generando...' : 'Generar código de invitación'}</Text>
+            </TouchableOpacity>
+            
+            {/* Información sobre el flujo de trabajo */}
+            <View style={{ marginTop: 12, backgroundColor: '#f0f9ff', borderRadius: 10, padding: 12, borderLeftWidth: 3, borderLeftColor: '#0ea5e9' }}>
+              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#0c4a6e', marginBottom: 6 }}>
+                ¿Cómo funciona?
+              </Text>
+              <Text style={{ fontSize: 13, color: '#0c4a6e', lineHeight: 18 }}>
+                1. Genera un código de 8 caracteres{'\n'}
+                2. Compártelo con tu cuidador{'\n'}
+                3. El cuidador lo usa para solicitar acceso{'\n'}
+                4. Tú apruebas o rechazas la solicitud{'\n'}
+                5. El código expira en 24 horas y solo se usa una vez
+              </Text>
+            </View>
+          </>
+        )}
+        {inviteCode && (
           <View style={{ marginTop: 14, alignItems: 'center', backgroundColor: '#f0fdfa', borderRadius: 12, padding: 14 }}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2563eb' }}>Código: {invite.code}</Text>
-            <Text style={{ color: '#64748b', marginTop: 4 }}>Expira: {new Date(invite.expiresAt).toLocaleString()}</Text>
-            <TouchableOpacity onPress={() => { Clipboard.setString(invite.code); Alert.alert('Copiado', 'Código copiado al portapapeles'); }} style={{ marginTop: 8, backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
+            <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#2563eb' }}>Código: {inviteCode.code}</Text>
+            <Text style={{ color: '#64748b', marginTop: 4 }}>Expira: {new Date(inviteCode.expiresAt).toLocaleString()}</Text>
+            <TouchableOpacity onPress={() => { Clipboard.setString(inviteCode.code); Alert.alert('Copiado', 'Código copiado al portapapeles'); }} style={{ marginTop: 8, backgroundColor: '#2563eb', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 }}>
               <Text style={{ color: '#fff', fontWeight: 'bold' }}>Copiar código</Text>
             </TouchableOpacity>
           </View>
         )}
         {inviteError && <Text style={styles.errorTextModern}>{inviteError}</Text>}
       </LinearGradient>
-      {/* Bloque de solicitudes de cuidadores pendientes */}
+      {/* Bloque de solicitudes de cuidadores pendientes - Solo para pacientes */}
       {profile?.role === 'PATIENT' && (
         <LinearGradient colors={["#fef9c3", "#fef3c7"]} style={[styles.profileCardModern, { borderColor: '#fde047', borderWidth: 1, marginBottom: 18 }]} start={{x:0, y:0}} end={{x:1, y:1}}>
           <Text style={{ fontSize: 17, fontWeight: 'bold', color: '#b45309', marginBottom: 8 }}>Solicitudes de cuidadores pendientes</Text>
-          {loadingRequests ? (
+          {permissionsLoading ? (
             <Text style={{ color: '#b45309' }}>Cargando solicitudes...</Text>
-          ) : requestsError ? (
-            <Text style={{ color: '#ef4444' }}>{requestsError}</Text>
-          ) : pendingRequests.length === 0 ? (
+          ) : permissionsError ? (
+            <Text style={{ color: '#ef4444' }}>{permissionsError}</Text>
+          ) : permissions.filter(p => p.status === 'PENDING').length === 0 ? (
             <Text style={{ color: '#64748b' }}>No hay solicitudes pendientes.</Text>
           ) : (
-            pendingRequests.map((req) => (
-              <View key={req.id} style={{ backgroundColor: '#fffbe9', borderRadius: 10, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#fde047' }}>
-                <Text style={{ color: '#b45309', fontWeight: 'bold' }}>Cuidador: {req.caregiverName || req.caregiverEmail || req.caregiverId}</Text>
-                <Text style={{ color: '#64748b', marginBottom: 6 }}>Estado: {req.status}</Text>
+            permissions.filter(p => p.status === 'PENDING').map((req) => (
+                              <View key={req.id} style={{ backgroundColor: '#fffbe9', borderRadius: 10, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#fde047' }}>
+                  <Text style={{ color: '#b45309', fontWeight: 'bold' }}>Cuidador ID: {req.caregiverId}</Text>
+                  <Text style={{ color: '#64748b', marginBottom: 6 }}>Estado: {req.status}</Text>
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <TouchableOpacity onPress={() => handleRequestAction(req.id, 'ACCEPTED')} style={{ backgroundColor: '#22c55e', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 16, marginRight: 8 }}>
                     <Text style={{ color: '#fff', fontWeight: 'bold' }}>Aceptar</Text>
