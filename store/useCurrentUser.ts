@@ -209,20 +209,102 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         'name', 'birthDate', 'gender', 'weight', 'height', 'bloodType',
         'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
         'allergies', 'chronicDiseases', 'currentConditions', 'reactions',
-        'doctorName', 'doctorContact', 'hospitalReference', 'photoUrl'
+        'doctorName', 'doctorContact', 'hospitalReference', 'photoUrl', 'age'
       ];
       
       const bodyData: Record<string, any> = {};
       allowedFields.forEach(field => {
-        if (data[field as keyof typeof data] !== undefined) {
-          bodyData[field] = data[field as keyof typeof data];
+        const value = data[field as keyof typeof data];
+        if (value !== undefined && value !== null && value !== '') {
+          // Campos que deben ser números
+          if (field === 'weight' || field === 'height') {
+            let numValue: number;
+            
+            if (typeof value === 'number') {
+              numValue = value;
+            } else if (typeof value === 'string') {
+              numValue = parseFloat(value);
+            } else {
+              console.log(`[useCurrentUser] Omitiendo campo ${field} - tipo inválido:`, typeof value);
+              return;
+            }
+            
+            // Validar que sea un número válido
+            if (!isNaN(numValue) && isFinite(numValue) && numValue > 0) {
+              bodyData[field] = numValue; // Asegurar que sea number
+              console.log(`[useCurrentUser] Campo ${field} convertido a número:`, numValue, typeof numValue);
+            } else {
+              console.log(`[useCurrentUser] Omitiendo campo ${field} - valor inválido:`, numValue);
+            }
+          } else if (field === 'birthDate') {
+            // Calcular edad a partir de la fecha de nacimiento
+            try {
+              const birthDate = new Date(value);
+              const today = new Date();
+              let age = today.getFullYear() - birthDate.getFullYear();
+              const monthDiff = today.getMonth() - birthDate.getMonth();
+              
+              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                age--;
+              }
+              
+              if (age >= 0 && age <= 150) {
+                bodyData['age'] = age; // Agregar campo age como número
+                bodyData[field] = value; // Mantener birthDate también
+                console.log(`[useCurrentUser] Edad calculada: ${age} años`);
+              } else {
+                console.log(`[useCurrentUser] Edad calculada inválida: ${age}`);
+              }
+            } catch (error) {
+              console.log(`[useCurrentUser] Error calculando edad:`, error);
+            }
+          } else {
+            // Campos de texto
+            bodyData[field] = value;
+          }
         }
       });
       
       console.log('[useCurrentUser] Campos permitidos enviados:', Object.keys(bodyData));
+      console.log('[useCurrentUser] Datos a enviar (bodyData):', JSON.stringify(bodyData, null, 2));
+      
+      // Verificar que no haya NaN en los datos
+      Object.entries(bodyData).forEach(([key, value]) => {
+        if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
+          console.error(`[useCurrentUser] 🚨 PROBLEMA: Campo ${key} contiene valor inválido:`, value);
+        }
+      });
       
       const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
-      const body = JSON.stringify(bodyData);
+      
+      // Limpiar datos antes de enviar - remover cualquier valor NaN o inválido
+      const cleanBodyData = { ...bodyData };
+      Object.keys(cleanBodyData).forEach(key => {
+        const value = cleanBodyData[key];
+        
+        // Para campos numéricos, asegurar que sean números válidos
+        if (key === 'weight' || key === 'height' || key === 'age') {
+          if (typeof value !== 'number' || isNaN(value) || !isFinite(value) || value <= 0) {
+            console.log(`[useCurrentUser] Removiendo campo ${key} con valor inválido:`, value, typeof value);
+            delete cleanBodyData[key];
+          } else {
+            console.log(`[useCurrentUser] Campo ${key} válido:`, value, typeof value);
+          }
+        } else if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
+          console.log(`[useCurrentUser] Removiendo campo ${key} con valor inválido:`, value);
+          delete cleanBodyData[key];
+        }
+      });
+      
+      const body = JSON.stringify(cleanBodyData);
+      
+      // Verificación final de tipos antes de enviar
+      console.log('[useCurrentUser] Verificación final de tipos:');
+      Object.entries(cleanBodyData).forEach(([key, value]) => {
+        if (key === 'weight' || key === 'height' || key === 'age') {
+          console.log(`[useCurrentUser] ${key}: ${value} (${typeof value}) - ${typeof value === 'number' ? '✅ VÁLIDO' : '❌ INVÁLIDO'}`);
+        }
+      });
       
       console.log('[useCurrentUser] Endpoint:', endpoint);
       console.log('[useCurrentUser] Body:', body);
@@ -263,8 +345,10 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
           errorMessage = 'No autorizado. Verificar token de autenticación.';
         } else if (res.status === 400) {
           if (err.issues && Array.isArray(err.issues)) {
+            console.log('[useCurrentUser] Issues completos del servidor:', JSON.stringify(err.issues, null, 2));
             const fieldErrors = err.issues.map((issue: any) => {
               const field = issue.path?.join('.') || 'campo';
+              console.log(`[useCurrentUser] Issue específico - Campo: ${field}, Esperado: ${issue.expected}, Recibido: ${issue.received}, Mensaje: ${issue.message}`);
               return `${field}: ${issue.message} (esperaba ${issue.expected}, recibió ${issue.received})`;
             }).join(', ');
             errorMessage = `Error de validación: ${fieldErrors}`;

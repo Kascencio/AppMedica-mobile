@@ -11,6 +11,9 @@ import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
 import OfflineIndicator from '../../components/OfflineIndicator';
+import AlarmScheduler from '../../components/AlarmScheduler';
+import DateSelector from '../../components/DateSelector';
+import OptionSelector from '../../components/OptionSelector';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
@@ -544,35 +547,17 @@ export default function MedicationsScreen() {
                     { marginBottom: isTablet ? 0 : 10 },
                     isTablet && { flex: 1 }
                   ]}>
-                    <Text style={[
-                      { fontWeight: '600', marginBottom: 6, color: '#374151' },
-                      isTablet && { fontSize: 16 }
-                    ]}>Tipo</Text>
-                    <View style={[
-                      styles.inputModern,
-                      isTablet && styles.inputTablet
-                    ]}>
-                      <TouchableOpacity
-                        style={styles.pickerButton}
-                        onPress={() => {
-                          Alert.alert(
-                            'Seleccionar tipo',
-                            'Elige el tipo de medicamento',
-                            [
-                              { text: 'Oral', onPress: () => onChange('Oral') },
-                              { text: 'Inyectable', onPress: () => onChange('Inyectable') },
-                              { text: 'Tópico', onPress: () => onChange('Tópico') },
-                              { text: 'Cancelar', style: 'cancel' }
-                          ]
-                          );
-                        }}
-                      >
-                        <Text style={styles.pickerButtonText}>
-                          {value || 'Seleccionar tipo'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={isTablet ? 24 : 20} color="#666" />
-                      </TouchableOpacity>
-                    </View>
+                    <OptionSelector
+                      value={value}
+                      onValueChange={onChange}
+                      options={[
+                        { value: 'Oral', label: 'Oral', icon: 'oral', description: 'Pastillas, jarabes, etc.' },
+                        { value: 'Inyectable', label: 'Inyectable', icon: 'injectable', description: 'Inyecciones, vacunas' },
+                        { value: 'Tópico', label: 'Tópico', icon: 'topical', description: 'Cremas, pomadas, etc.' }
+                      ]}
+                      label="Tipo de medicamento"
+                      placeholder="Seleccionar tipo"
+                    />
                   </View>
                 )}
               />
@@ -584,38 +569,17 @@ export default function MedicationsScreen() {
                     { marginBottom: isTablet ? 0 : 10 },
                     isTablet && { flex: 1 }
                   ]}>
-                    <Text style={[
-                      { fontWeight: '600', marginBottom: 6, color: '#374151' },
-                      isTablet && { fontSize: 16 }
-                    ]}>Frecuencia</Text>
-                    <View style={[
-                      styles.inputModern,
-                      isTablet && styles.inputTablet
-                    ]}>
-                      <TouchableOpacity
-                        style={styles.pickerButton}
-                        onPress={() => {
-                          Alert.alert(
-                            'Seleccionar frecuencia',
-                            'Elige la frecuencia del medicamento',
-                            [
-                              { text: 'Diario', onPress: () => onChange('daily') },
-                              { text: 'Semanal', onPress: () => onChange('weekly') },
-                              { text: 'Personalizado', onPress: () => onChange('custom') },
-                              { text: 'Cancelar', style: 'cancel' }
-                            ]
-                          );
-                        }}
-                      >
-                        <Text style={styles.pickerButtonText}>
-                          {value === 'daily' ? 'Diario' : 
-                           value === 'weekly' ? 'Semanal' : 
-                           value === 'custom' ? 'Personalizado' : 
-                           'Seleccionar frecuencia'}
-                        </Text>
-                        <Ionicons name="chevron-down" size={isTablet ? 24 : 20} color="#666" />
-                      </TouchableOpacity>
-                    </View>
+                    <OptionSelector
+                      value={value}
+                      onValueChange={onChange}
+                      options={[
+                        { value: 'daily', label: 'Diario', icon: 'daily', description: 'Todos los días' },
+                        { value: 'weekly', label: 'Semanal', icon: 'weekly', description: 'Una vez por semana' },
+                        { value: 'custom', label: 'Personalizado', icon: 'custom', description: 'Horario específico' }
+                      ]}
+                      label="Frecuencia"
+                      placeholder="Seleccionar frecuencia"
+                    />
                   </View>
                 )}
               />
@@ -623,132 +587,43 @@ export default function MedicationsScreen() {
             <Controller
               control={control}
               name="startDate"
-              render={({ field: { value } }) => (
-                <View style={{ marginBottom: 10 }}>
-                  <Text>Fecha de inicio *</Text>
-                  <TouchableOpacity style={styles.inputModern} onPress={() => setShowStartPicker(true)}>
-                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-                  </TouchableOpacity>
-                  {showStartPicker && (
-                    <DateTimePicker
-                      value={value || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={onStartChange}
-                    />
-                  )}
-                  {errors.startDate && <Text style={{ color: 'red' }}>{errors.startDate.message as string}</Text>}
-                </View>
+              render={({ field: { value, onChange } }) => (
+                <DateSelector
+                  value={value}
+                  onDateChange={onChange}
+                  label="Fecha de inicio"
+                  placeholder="Seleccionar fecha de inicio"
+                  required={true}
+                  minDate={new Date()}
+                />
               )}
             />
             <Controller
               control={control}
               name="endDate"
-              render={({ field: { value } }) => (
-                <View style={{ marginBottom: 10 }}>
-                  <Text>Fecha de fin</Text>
-                  <TouchableOpacity style={styles.inputModern} onPress={() => setShowEndPicker(true)}>
-                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-                  </TouchableOpacity>
-                  {showEndPicker && (
-                    <DateTimePicker
-                      value={value || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={onEndChange}
-                    />
-                  )}
-                </View>
-              )}
-            />
-            {/* Frecuencia */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Frecuencia de recordatorio</Text>
-              <View style={{ flexDirection: 'row', marginBottom: 8, gap: 8 }}>
-                <TouchableOpacity 
-                  onPress={() => setFrequencyType('daily')} 
-                  style={[
-                    styles.frequencyButton,
-                    frequencyType === 'daily' && styles.frequencyButtonActive
-                  ]}
-                >
-                  <Text style={[
-                    styles.frequencyButtonText,
-                    frequencyType === 'daily' && styles.frequencyButtonTextActive
-                  ]}>Todos los días</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  onPress={() => setFrequencyType('daysOfWeek')} 
-                  style={[
-                    styles.frequencyButton,
-                    frequencyType === 'daysOfWeek' && styles.frequencyButtonActive
-                  ]}
-                >
-                  <Text style={[
-                    styles.frequencyButtonText,
-                    frequencyType === 'daysOfWeek' && styles.frequencyButtonTextActive
-                  ]}>Días específicos</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  onPress={() => setFrequencyType('everyXHours')}
-                  style={[
-                    styles.frequencyButton,
-                    frequencyType === 'everyXHours' && styles.frequencyButtonActive
-                  ]}
-                >
-                  <Text style={[
-                    styles.frequencyButtonText,
-                    frequencyType === 'everyXHours' && styles.frequencyButtonTextActive
-                  ]}>Cada X horas</Text>
-                </TouchableOpacity>
-              </View>
-              {frequencyType === 'daysOfWeek' && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                  {["D","L","M","M","J","V","S"].map((d, i) => (
-                    <TouchableOpacity key={i} onPress={() => toggleDay(i)} style={{ backgroundColor: daysOfWeek.includes(i) ? '#2563eb' : '#e5e7eb', borderRadius: 6, padding: 6, marginRight: 4, marginBottom: 4 }}>
-                      <Text style={{ color: daysOfWeek.includes(i) ? '#fff' : '#334155', fontWeight: 'bold' }}>{d}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {frequencyType === 'everyXHours' && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                  <Text>Cada </Text>
-                  <TextInput
-                    style={{ borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, width: 40, marginHorizontal: 4, textAlign: 'center', backgroundColor: '#fff' }}
-                    value={everyXHours}
-                    onChangeText={setEveryXHours}
-                    keyboardType="numeric"
-                  />
-                  <Text> horas</Text>
-                </View>
-              )}
-            </View>
-            {/* Horas */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Horas de toma</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                {selectedTimes.map((t, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0e7ff', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
-                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                    <TouchableOpacity onPress={() => removeTime(idx)}>
-                      <Ionicons name="close-circle" size={18} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                <TouchableOpacity onPress={() => setShowTimePicker(true)} style={{ backgroundColor: '#2563eb', borderRadius: 6, padding: 8 }}>
-                  <Ionicons name="add" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={new Date()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, date) => { if (date) addTime(date); else setShowTimePicker(false); }}
+              render={({ field: { value, onChange } }) => (
+                <DateSelector
+                  value={value}
+                  onDateChange={onChange}
+                  label="Fecha de fin"
+                  placeholder="Seleccionar fecha de fin (opcional)"
+                  minDate={new Date()}
                 />
               )}
-            </View>
+            />
+            {/* Configuración de alarmas mejorada */}
+            <AlarmScheduler
+              selectedTimes={selectedTimes}
+              setSelectedTimes={setSelectedTimes}
+              frequencyType={frequencyType}
+              setFrequencyType={setFrequencyType}
+              daysOfWeek={daysOfWeek}
+              setDaysOfWeek={setDaysOfWeek}
+              everyXHours={everyXHours}
+              setEveryXHours={setEveryXHours}
+              title="Recordatorios de Medicamento"
+              subtitle="Configura cuándo quieres recibir recordatorios para tomar tu medicamento"
+            />
             <Controller
               control={control}
               name="notes"

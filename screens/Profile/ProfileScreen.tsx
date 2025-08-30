@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Image, Platform, Linking, Button, Alert } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -38,6 +39,7 @@ export default function ProfileScreen() {
     hospitalReference: profile?.hospitalReference || '',
     photoUrl: profile?.photoUrl || '',
   });
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -185,12 +187,31 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen] Antes de conversión - form.weight:', form.weight, typeof form.weight);
       console.log('[ProfileScreen] Antes de conversión - form.height:', form.height, typeof form.height);
       
-      const weightValue = form.weight ? parseFloat(form.weight) : undefined;
-      const heightValue = form.height ? parseInt(form.height, 10) : undefined;
+      // Validar y convertir peso
+      let weightValue: number | undefined = undefined;
+      if (form.weight && form.weight.trim() !== '') {
+        const parsedWeight = parseFloat(form.weight);
+        if (!isNaN(parsedWeight) && isFinite(parsedWeight) && parsedWeight > 0 && parsedWeight <= 500) {
+          weightValue = parsedWeight;
+        } else {
+          throw new Error('El peso debe ser un número válido entre 1 y 500 kg');
+        }
+      }
+      
+      // Validar y convertir altura
+      let heightValue: number | undefined = undefined;
+      if (form.height && form.height.trim() !== '') {
+        const parsedHeight = parseInt(form.height, 10);
+        if (!isNaN(parsedHeight) && isFinite(parsedHeight) && parsedHeight > 0 && parsedHeight <= 300) {
+          heightValue = parsedHeight;
+        } else {
+          throw new Error('La altura debe ser un número válido entre 1 y 300 cm');
+        }
+      }
       
       console.log('[ProfileScreen] Después de conversión - birthDate:', form.birthDate, typeof form.birthDate);
-      console.log('[ProfileScreen] Después de conversión - weight:', weightValue, typeof weightValue, 'isNaN:', weightValue !== undefined ? isNaN(weightValue) : 'undefined');
-      console.log('[ProfileScreen] Después de conversión - height:', heightValue, typeof heightValue, 'isNaN:', heightValue !== undefined ? isNaN(heightValue) : 'undefined');
+      console.log('[ProfileScreen] Después de conversión - weight:', weightValue, typeof weightValue);
+      console.log('[ProfileScreen] Después de conversión - height:', heightValue, typeof heightValue);
       
       const dataToSave = {
         name: cleanForm.name?.trim(),
@@ -223,8 +244,18 @@ export default function ProfileScreen() {
         }
         
         if (typeof value === 'number') {
+          // Asegurar que solo se incluyan números válidos
           if (isNaN(value) || !isFinite(value)) {
             console.log(`[ProfileScreen] ⚠️ Omitiendo campo ${key} (NaN o Infinite):`, value);
+            return;
+          }
+          // Validar rangos específicos
+          if (key === 'weight' && (value <= 0 || value > 500)) {
+            console.log(`[ProfileScreen] ⚠️ Omitiendo peso inválido:`, value);
+            return;
+          }
+          if (key === 'height' && (value <= 0 || value > 300)) {
+            console.log(`[ProfileScreen] ⚠️ Omitiendo altura inválida:`, value);
             return;
           }
         }
@@ -242,16 +273,7 @@ export default function ProfileScreen() {
       console.log('[ProfileScreen] Datos convertidos:', dataToSave);
       console.log('[ProfileScreen] Datos finales filtrados:', finalData);
       
-      // Validar que los campos numéricos sean válidos y realistas
-      if (finalData.weight && typeof finalData.weight === 'number' && (isNaN(finalData.weight) || finalData.weight <= 0 || finalData.weight > 500)) {
-        throw new Error('El peso debe ser un número válido entre 1 y 500 kg');
-      }
-      if (finalData.weight && typeof finalData.weight === 'number' && (isNaN(finalData.weight) || finalData.weight <= 0 || finalData.weight > 500)) {
-        throw new Error('El peso debe ser un número válido entre 1 y 500 kg');
-      }
-      if (finalData.height && typeof finalData.height === 'number' && (isNaN(finalData.height) || finalData.height <= 0 || finalData.height > 300)) {
-        throw new Error('La altura debe ser un número válido entre 1 y 300 cm');
-      }
+      // Los campos numéricos ya fueron validados arriba, no necesitamos validar de nuevo
       
       console.log('[ProfileScreen] Datos a guardar:', finalData);
       
@@ -325,32 +347,31 @@ export default function ProfileScreen() {
             <Text style={styles.labelModern}>Fecha de nacimiento *</Text>
             <TouchableOpacity 
               style={styles.inputModern} 
-              onPress={() => {
-                Alert.alert(
-                  'Seleccionar fecha de nacimiento',
-                  'Por favor ingresa la fecha en formato YYYY-MM-DD',
-                  [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { 
-                      text: 'Usar selector', 
-                      onPress: () => {
-                        // Aquí podrías implementar un DateTimePicker
-                        // Por ahora, mostrar instrucciones
-                        Alert.alert(
-                          'Formato requerido',
-                          'Ingresa la fecha en formato YYYY-MM-DD\n\nEjemplo: 1990-05-15',
-                          [{ text: 'Entendido' }]
-                        );
-                      }
-                    }
-                  ]
-                );
-              }}
+              onPress={() => setShowDatePicker(true)}
             >
               <Text style={{ color: form.birthDate ? '#1e293b' : '#9ca3af' }}>
-                {form.birthDate || 'YYYY-MM-DD'}
+                {form.birthDate ? new Date(form.birthDate).toLocaleDateString('es-ES') : 'Seleccionar fecha'}
               </Text>
             </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={form.birthDate ? new Date(form.birthDate) : new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                maximumDate={new Date()} // No permitir fechas futuras
+                onChange={(event: any, selectedDate?: Date) => {
+                  setShowDatePicker(false);
+                  if (selectedDate) {
+                    // Formatear la fecha como YYYY-MM-DD
+                    const year = selectedDate.getFullYear();
+                    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(selectedDate.getDate()).padStart(2, '0');
+                    const formattedDate = `${year}-${month}-${day}`;
+                    handleChange('birthDate', formattedDate);
+                  }
+                }}
+              />
+            )}
           </View>
           <View style={[styles.formGroupModern, { flex: 1, marginLeft: 8 }] }>
             <Text style={styles.labelModern}>Género *</Text>
@@ -391,31 +412,12 @@ export default function ProfileScreen() {
         {/* Tipo de sangre */}
         <View style={styles.formGroupModern}>
           <Text style={styles.labelModern}>Tipo de sangre</Text>
-          <TouchableOpacity 
-            style={styles.inputModern}
-            onPress={() => {
-              Alert.alert(
-                'Seleccionar tipo de sangre',
-                'Elige tu tipo de sangre',
-                [
-                  { text: 'O+', onPress: () => handleChange('bloodType', 'O+') },
-                  { text: 'O-', onPress: () => handleChange('bloodType', 'O-') },
-                  { text: 'A+', onPress: () => handleChange('bloodType', 'A+') },
-                  { text: 'A-', onPress: () => handleChange('bloodType', 'A-') },
-                  { text: 'B+', onPress: () => handleChange('bloodType', 'B+') },
-                  { text: 'B-', onPress: () => handleChange('bloodType', 'B-') },
-                  { text: 'AB+', onPress: () => handleChange('bloodType', 'AB+') },
-                  { text: 'AB-', onPress: () => handleChange('bloodType', 'AB-') },
-                  { text: 'No sé', onPress: () => handleChange('bloodType', 'No sé') },
-                  { text: 'Cancelar', style: 'cancel' }
-                ]
-              );
-            }}
-          >
-            <Text style={{ color: form.bloodType ? '#1e293b' : '#9ca3af' }}>
-              {form.bloodType || 'Seleccionar tipo de sangre'}
-            </Text>
-          </TouchableOpacity>
+          <TextInput 
+            style={styles.inputModern} 
+            value={form.bloodType} 
+            onChangeText={v => handleChange('bloodType', v)} 
+            placeholder="Ej: O+, A-, B+, AB-, etc." 
+          />
         </View>
         
         {/* Contacto de emergencia */}

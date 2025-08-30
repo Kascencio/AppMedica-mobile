@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
 import OfflineIndicator from '../../components/OfflineIndicator';
+import AlarmScheduler from '../../components/AlarmScheduler';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
@@ -563,67 +564,19 @@ export default function AppointmentsScreen() {
                 </View>
               )}
             />
-            {/* Frecuencia de recordatorio */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Frecuencia de recordatorio</Text>
-              <View style={{ flexDirection: 'row', marginBottom: 6 }}>
-                <TouchableOpacity onPress={() => setFrequencyType('daily')} style={{ marginRight: 12 }}>
-                  <Text style={{ color: frequencyType === 'daily' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daily' ? 'bold' : 'normal' }}>Todos los días</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFrequencyType('daysOfWeek')} style={{ marginRight: 12 }}>
-                  <Text style={{ color: frequencyType === 'daysOfWeek' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daysOfWeek' ? 'bold' : 'normal' }}>Días específicos</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFrequencyType('everyXHours')}>
-                  <Text style={{ color: frequencyType === 'everyXHours' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'everyXHours' ? 'bold' : 'normal' }}>Cada X horas</Text>
-                </TouchableOpacity>
-              </View>
-              {frequencyType === 'daysOfWeek' && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                  {["D","L","M","M","J","V","S"].map((d, i) => (
-                    <TouchableOpacity key={i} onPress={() => toggleDay(i)} style={{ backgroundColor: daysOfWeek.includes(i) ? '#2563eb' : '#e5e7eb', borderRadius: 6, padding: 6, marginRight: 4, marginBottom: 4 }}>
-                      <Text style={{ color: daysOfWeek.includes(i) ? '#fff' : '#334155', fontWeight: 'bold' }}>{d}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {frequencyType === 'everyXHours' && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                  <Text>Cada </Text>
-                  <TextInput
-                    style={{ borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, width: 40, marginHorizontal: 4, textAlign: 'center', backgroundColor: '#fff' }}
-                    value={everyXHours}
-                    onChangeText={setEveryXHours}
-                    keyboardType="numeric"
-                  />
-                  <Text> horas</Text>
-                </View>
-              )}
-            </View>
-            {/* Horas de recordatorio */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Horas de recordatorio</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                {selectedTimes.map((t, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0e7ff', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
-                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
-                    <TouchableOpacity onPress={() => removeTime(idx)}>
-                      <Ionicons name="close-circle" size={18} color="#ef4444" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                <TouchableOpacity onPress={() => setShowCustomTimePicker(true)} style={{ backgroundColor: '#2563eb', borderRadius: 6, padding: 8 }}>
-                  <Ionicons name="add" size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-              {showCustomTimePicker && (
-                <DateTimePicker
-                  value={new Date()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, date) => { if (date) addTime(date); else setShowCustomTimePicker(false); }}
-                />
-              )}
-            </View>
+            {/* Configuración de alarmas mejorada */}
+            <AlarmScheduler
+              selectedTimes={selectedTimes}
+              setSelectedTimes={setSelectedTimes}
+              frequencyType={frequencyType}
+              setFrequencyType={setFrequencyType}
+              daysOfWeek={daysOfWeek}
+              setDaysOfWeek={setDaysOfWeek}
+              everyXHours={everyXHours}
+              setEveryXHours={setEveryXHours}
+              title="Recordatorios de Cita"
+              subtitle="Configura cuándo quieres recibir recordatorios para tu cita médica"
+            />
             {/* Notas */}
             <Controller
               control={control}

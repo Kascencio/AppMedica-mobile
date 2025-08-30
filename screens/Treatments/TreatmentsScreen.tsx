@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTreatments } from '../../store/useTreatments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import OfflineIndicator from '../../components/OfflineIndicator';
+import AlarmScheduler from '../../components/AlarmScheduler';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
@@ -25,6 +26,12 @@ export default function TreatmentsScreen() {
     frequency: 'daily',
     notes: ''
   });
+
+  // Estados para configuración de alarmas
+  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [everyXHours, setEveryXHours] = useState('8');
 
   const perfilIncompleto = !profile?.patientProfileId && !profile?.id;
 
@@ -450,46 +457,19 @@ export default function TreatmentsScreen() {
                   />
                 </View>
                 
-                <View style={[
-                  { marginBottom: 10 },
-                  isTablet && styles.inputGroupTablet
-                ]}>
-                  <Text style={[
-                    GLOBAL_STYLES.inputLabel,
-                    isTablet && styles.inputLabelTablet
-                  ]}>Frecuencia</Text>
-                  <View style={[
-                    GLOBAL_STYLES.row,
-                    isTablet && styles.frequencyButtonsTablet
-                  ]}>
-                    {['daily', 'weekly', 'monthly'].map((freq) => (
-                      <TouchableOpacity
-                        key={freq}
-                        style={[
-                          { 
-                            paddingHorizontal: isTablet ? 20 : 16, 
-                            paddingVertical: isTablet ? 12 : 8, 
-                            borderRadius: 20, 
-                            marginRight: isTablet ? 12 : 8,
-                            backgroundColor: formData.frequency === freq ? COLORS.primary : COLORS.border.neutral
-                          },
-                          isTablet && styles.frequencyButtonTablet
-                        ]}
-                        onPress={() => setFormData({ ...formData, frequency: freq })}
-                      >
-                        <Text style={[
-                          { 
-                            color: formData.frequency === freq ? COLORS.text.inverse : COLORS.text.secondary,
-                            fontWeight: formData.frequency === freq ? '600' : '400'
-                          },
-                          isTablet && styles.frequencyButtonTextTablet
-                        ]}>
-                          {freq === 'daily' ? 'Diario' : freq === 'weekly' ? 'Semanal' : 'Mensual'}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
+                {/* Configuración de alarmas mejorada */}
+                <AlarmScheduler
+                  selectedTimes={selectedTimes}
+                  setSelectedTimes={setSelectedTimes}
+                  frequencyType={frequencyType}
+                  setFrequencyType={setFrequencyType}
+                  daysOfWeek={daysOfWeek}
+                  setDaysOfWeek={setDaysOfWeek}
+                  everyXHours={everyXHours}
+                  setEveryXHours={setEveryXHours}
+                  title="Recordatorios de Tratamiento"
+                  subtitle="Configura cuándo quieres recibir recordatorios para tu tratamiento"
+                />
                 
                 <View style={[
                   { marginBottom: 10 },
