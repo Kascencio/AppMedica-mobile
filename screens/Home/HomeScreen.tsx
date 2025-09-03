@@ -7,7 +7,7 @@ import { useAuth } from '../../store/useAuth';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import OfflineIndicator from '../../components/OfflineIndicator';
-// import logo from '../../assets/logo.webp';
+// import logo from '../../assets/logo.png';
 import { useNavigation } from '@react-navigation/native';
 import AlarmStatus from '../../components/AlarmStatus';
 import COLORS from '../../constants/colors';

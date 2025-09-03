@@ -34,13 +34,24 @@ export function setNotificationHandler() {
 
 // Solicitar permisos
 export async function requestPermissions() {
-  if (Device.isDevice) {
+  try {
+    if (!Device.isDevice) {
+      console.log('[Notifications] No es un dispositivo físico, saltando permisos');
+      return false;
+    }
+
+    // Verificar permisos existentes
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    console.log('[Notifications] Estado actual de permisos:', existingStatus);
+    
     let finalStatus = existingStatus;
     
+    // Si no están concedidos, solicitarlos
     if (existingStatus !== 'granted') {
+      console.log('[Notifications] Solicitando permisos...');
       const { status } = await Notifications.requestPermissionsAsync();
       finalStatus = status;
+      console.log('[Notifications] Nuevo estado de permisos:', status);
     }
     
     if (finalStatus !== 'granted') {
@@ -48,38 +59,53 @@ export async function requestPermissions() {
       return false;
     }
     
+    // Configurar canales de Android
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-        sound: 'default',
-      });
-      
-      // Canal específico para medicamentos
-      await Notifications.setNotificationChannelAsync('medications', {
-        name: 'Medicamentos',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 500, 250, 500],
-        lightColor: '#059669',
-        sound: 'default',
-      });
-      
-      // Canal específico para citas
-      await Notifications.setNotificationChannelAsync('appointments', {
-        name: 'Citas',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 500, 250],
-        lightColor: '#2563eb',
-        sound: 'default',
-      });
+      try {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'General',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          sound: 'default',
+        });
+        
+        // Canal específico para medicamentos
+        await Notifications.setNotificationChannelAsync('medications', {
+          name: 'Medicamentos',
+          description: 'Recordatorios de medicamentos',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 500, 250, 500],
+          lightColor: '#059669',
+          sound: 'default',
+          enableVibrate: true,
+          enableLights: true,
+        });
+        
+        // Canal específico para citas
+        await Notifications.setNotificationChannelAsync('appointments', {
+          name: 'Citas',
+          description: 'Recordatorios de citas médicas',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 500, 250],
+          lightColor: '#2563eb',
+          sound: 'default',
+          enableVibrate: true,
+          enableLights: true,
+        });
+        
+        console.log('[Notifications] Canales de Android configurados correctamente');
+      } catch (error) {
+        console.error('[Notifications] Error configurando canales de Android:', error);
+      }
     }
     
+    console.log('[Notifications] Permisos configurados correctamente');
     return true;
+  } catch (error) {
+    console.error('[Notifications] Error solicitando permisos:', error);
+    return false;
   }
-  
-  return false;
 }
 
 // Programar notificación
@@ -648,5 +674,128 @@ export async function repairNotifications() {
   } catch (error) {
     console.error('[Notifications] Error reparando notificaciones:', error);
     return 0;
+  }
+}
+
+// Verificar salud del sistema de notificaciones
+export async function checkNotificationHealth(): Promise<{
+  permissions: boolean;
+  channels: boolean;
+  scheduled: number;
+  errors: string[];
+}> {
+  const health = {
+    permissions: false,
+    channels: false,
+    scheduled: 0,
+    errors: [] as string[]
+  };
+
+  try {
+    // Verificar permisos
+    const { status } = await Notifications.getPermissionsAsync();
+    health.permissions = status === 'granted';
+    
+    if (!health.permissions) {
+      health.errors.push('Permisos de notificaciones no concedidos');
+    }
+
+    // Verificar canales en Android
+    if (Platform.OS === 'android') {
+      try {
+        const channels = await Notifications.getNotificationChannelsAsync();
+        health.channels = channels.length > 0;
+        
+        if (!health.channels) {
+          health.errors.push('Canales de notificaciones no configurados');
+        }
+      } catch (error) {
+        health.errors.push('Error verificando canales de notificaciones');
+      }
+    } else {
+      health.channels = true; // iOS no usa canales
+    }
+
+    // Verificar notificaciones programadas
+    try {
+      const scheduled = await getScheduledNotifications();
+      health.scheduled = scheduled.length;
+    } catch (error) {
+      health.errors.push('Error obteniendo notificaciones programadas');
+    }
+
+    console.log('[Notifications] Estado de salud:', health);
+    return health;
+  } catch (error) {
+    console.error('[Notifications] Error verificando salud del sistema:', error);
+    health.errors.push('Error general verificando salud del sistema');
+    return health;
+  }
+}
+
+// Reparar sistema de notificaciones
+export async function repairNotificationSystem(): Promise<boolean> {
+  try {
+    console.log('[Notifications] Iniciando reparación del sistema...');
+    
+    // Verificar salud actual
+    const health = await checkNotificationHealth();
+    
+    // Reparar permisos si es necesario
+    if (!health.permissions) {
+      console.log('[Notifications] Reparando permisos...');
+      const permissionsGranted = await requestPermissions();
+      if (!permissionsGranted) {
+        console.error('[Notifications] No se pudieron obtener permisos');
+        return false;
+      }
+    }
+    
+    // Reparar canales si es necesario
+    if (!health.channels && Platform.OS === 'android') {
+      console.log('[Notifications] Reparando canales...');
+      try {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'General',
+          importance: Notifications.AndroidImportance.DEFAULT,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+          sound: 'default',
+        });
+        
+        await Notifications.setNotificationChannelAsync('medications', {
+          name: 'Medicamentos',
+          description: 'Recordatorios de medicamentos',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 500, 250, 500],
+          lightColor: '#059669',
+          sound: 'default',
+          enableVibrate: true,
+          enableLights: true,
+        });
+        
+        await Notifications.setNotificationChannelAsync('appointments', {
+          name: 'Citas',
+          description: 'Recordatorios de citas médicas',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 500, 250],
+          lightColor: '#2563eb',
+          sound: 'default',
+          enableVibrate: true,
+          enableLights: true,
+        });
+        
+        console.log('[Notifications] Canales reparados correctamente');
+      } catch (error) {
+        console.error('[Notifications] Error reparando canales:', error);
+        return false;
+      }
+    }
+    
+    console.log('[Notifications] Reparación completada');
+    return true;
+  } catch (error) {
+    console.error('[Notifications] Error en reparación del sistema:', error);
+    return false;
   }
 }

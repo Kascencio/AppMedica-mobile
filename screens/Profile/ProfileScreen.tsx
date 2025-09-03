@@ -6,17 +6,19 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as RNImage } from 'react-native';
-import logo from '../../assets/logo.webp';
+import logo from '../../assets/logo.png';
 import { useAuth } from '../../store/useAuth';
 import { useInviteCodes } from '../../store/useInviteCodes';
 import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
-import { buildApiUrl, API_CONFIG } from '../../constants/config';
+
+import SyncStatus from '../../components/SyncStatus';
+
 
 export default function ProfileScreen() {
   console.log('[ProfileScreen] Componente montándose/re-renderizando...');
   
-  const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError } = useCurrentUser();
+  const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError, initialized } = useCurrentUser();
   const { userToken } = useAuth();
   const { inviteCode, loading: inviteLoading, error: inviteError, generateInviteCode, clearError: clearInviteError } = useInviteCodes();
   const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus } = usePermissions();
@@ -42,18 +44,25 @@ export default function ProfileScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formInitialized, setFormInitialized] = useState(false);
 
   // Cargar perfil cuando se monta la pantalla
   useEffect(() => {
-    if (!profile && !loading) {
-      console.log('[ProfileScreen] No hay perfil y no está cargando, iniciando carga...');
+    console.log('[ProfileScreen] useEffect de carga - profile:', profile, 'loading:', loading, 'initialized:', initialized);
+    
+    // Si no está inicializado, cargar perfil
+    if (!initialized && !loading) {
+      console.log('[ProfileScreen] No inicializado, iniciando carga...');
+      fetchProfile();
+    } else if (!profile && !loading && initialized) {
+      console.log('[ProfileScreen] Inicializado pero sin perfil, reintentando carga...');
       fetchProfile();
     } else if (profile) {
-      console.log('[ProfileScreen] Perfil ya cargado:', profile);
+      console.log('[ProfileScreen] Perfil ya cargado:', profile.name);
     } else if (loading) {
       console.log('[ProfileScreen] Perfil cargando...');
     }
-  }, []); // Solo se ejecuta una vez al montar
+  }, [profile, loading, initialized]); // Depender de profile, loading e initialized
 
   // Función para reintentar la carga
   const handleRetry = () => {
@@ -61,13 +70,21 @@ export default function ProfileScreen() {
     refreshProfile();
   };
 
-  // Sincronizar formulario cuando cambie el perfil
+  // Función para forzar recarga completa
+  const handleForceReload = () => {
+    console.log('[ProfileScreen] Forzando recarga completa del perfil...');
+    refreshProfile();
+    setFormInitialized(false); // Resetear para que se vuelva a inicializar el formulario
+  };
+
+  // Sincronizar formulario cuando cambie el perfil (solo una vez al cargar)
   useEffect(() => {
-    if (profile) {
-      console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
-      setForm({
+    if (profile && !formInitialized) {
+      console.log('[ProfileScreen] Sincronizando formulario con perfil inicial:', profile);
+      
+      const newForm = {
         name: profile.name || '',
-        birthDate: profile.birthDate || '',
+        birthDate: profile.birthDate || profile.dateOfBirth || '',
         gender: profile.gender || '',
         weight: profile.weight?.toString() || '',
         height: profile.height?.toString() || '',
@@ -83,9 +100,13 @@ export default function ProfileScreen() {
         doctorContact: profile.doctorContact || '',
         hospitalReference: profile.hospitalReference || '',
         photoUrl: profile.photoUrl || '',
-      });
+      };
+      
+      console.log('[ProfileScreen] Inicializando formulario con datos del perfil');
+      setForm(newForm);
+      setFormInitialized(true);
     }
-  }, [profile]);
+  }, [profile, formInitialized]); // Solo depende de profile y formInitialized
 
   // Obtener solicitudes pendientes
   useEffect(() => {
@@ -140,7 +161,7 @@ export default function ProfileScreen() {
   };
 
   const handleChange = (key: string, value: string) => {
-    setForm({ ...form, [key]: value });
+    setForm(prevForm => ({ ...prevForm, [key]: value }));
   };
 
   const handleSave = async () => {
@@ -319,6 +340,34 @@ export default function ProfileScreen() {
         </TouchableOpacity>
         <Text style={styles.titleModern}>Mi Perfil</Text>
         
+        {/* Indicador de carga */}
+        {loading && (
+          <View style={styles.loadingBoxModern}>
+            <Ionicons name="refresh" size={20} color="#2563eb" style={{ marginRight: 8 }} />
+            <Text style={styles.loadingTextModern}>Cargando perfil...</Text>
+          </View>
+        )}
+        
+        {/* Indicador de perfil vacío */}
+        {!loading && profile && !profile.birthDate && !profile.gender && (
+          <View style={styles.emptyProfileBoxModern}>
+            <Ionicons name="information-circle" size={20} color="#f59e0b" style={{ marginRight: 8 }} />
+            <Text style={styles.emptyProfileTextModern}>
+              Completa tu información de perfil para una mejor experiencia
+            </Text>
+          </View>
+        )}
+        
+        {/* Indicador de perfil cargado exitosamente */}
+        {!loading && profile && (profile.birthDate || profile.gender) && (
+          <View style={styles.successBoxModern}>
+            <Ionicons name="checkmark-circle" size={20} color="#22c55e" style={{ marginRight: 8 }} />
+            <Text style={styles.successTextModern}>
+              Perfil cargado correctamente - {profile.name || 'Usuario'}
+            </Text>
+          </View>
+        )}
+        
         {/* Mostrar errores del perfil y botón de reintento */}
         {profileError && (
           <View style={styles.errorBoxModern}>
@@ -330,6 +379,22 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         )}
+        
+        {/* Botón de recarga manual */}
+        {!loading && profile && (
+          <TouchableOpacity 
+            style={styles.reloadBtnModern} 
+            onPress={handleForceReload}
+            accessibilityLabel="Recargar perfil"
+            accessibilityRole="button"
+          >
+            <Ionicons name="refresh-circle" size={20} color="#2563eb" />
+            <Text style={styles.reloadBtnTextModern}>Recargar datos del perfil</Text>
+          </TouchableOpacity>
+        )}
+        
+        {/* Estado de sincronización */}
+        <SyncStatus />
         
         {/* Mensaje explicativo sobre notificaciones y alarmas */}
         <View style={styles.tipBoxModern}>
@@ -547,6 +612,7 @@ export default function ProfileScreen() {
           )}
         </LinearGradient>
       )}
+
     </ScrollView>
   );
 }
@@ -774,5 +840,73 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
     marginLeft: 5,
+  },
+  loadingBoxModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+  },
+  loadingTextModern: {
+    color: '#1e40af',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  emptyProfileBoxModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  emptyProfileTextModern: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  successBoxModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  successTextModern: {
+    color: '#166534',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  reloadBtnModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f9ff',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+  },
+  reloadBtnTextModern: {
+    color: '#2563eb',
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });

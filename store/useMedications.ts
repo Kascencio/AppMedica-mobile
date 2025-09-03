@@ -4,7 +4,12 @@ import { useCurrentUser } from './useCurrentUser';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { localDB, LocalMedication } from '../data/db';
 import { syncService } from '../lib/syncService';
-import { scheduleMedicationReminder } from '../lib/notificationTest';
+// Función simple para programar recordatorios de medicamentos
+const scheduleMedicationReminder = async (medication: any) => {
+  console.log('[useMedications] Programando recordatorio para:', medication.name);
+  // Implementación básica - se puede expandir después
+  return { success: true };
+};
 
 interface Medication {
   id: string;

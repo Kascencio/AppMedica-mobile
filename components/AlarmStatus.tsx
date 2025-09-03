@@ -1,228 +1,523 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useAlarms } from '../hooks/useAlarms';
+import { runAllTests, checkNotificationPermissions, checkAndroidChannels } from '../lib/notificationTest';
 import COLORS from '../constants/colors';
 
 interface AlarmStatusProps {
-  activeAlarms?: number;
-  nextAlarm?: {
-    time: string;
-    medication: string;
-  };
-  onPress?: () => void;
-  compact?: boolean;
+  showDetails?: boolean;
+  onRepair?: () => void;
 }
 
-export default function AlarmStatus({ 
-  activeAlarms = 0, 
-  nextAlarm, 
-  onPress, 
-  compact = false 
-}: AlarmStatusProps) {
-  if (compact) {
+export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStatusProps) {
+  const { 
+    stats, 
+    apiStats, 
+    checkAlarmSystemStatus, 
+    repairAlarmSystem,
+    checkNotificationHealth,
+    syncPendingQueue,
+    loadApiNotifications,
+    loadApiStats
+  } = useAlarms();
+  
+  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [apiHealth, setApiHealth] = useState<any>(null);
+
+  const checkStatus = async () => {
+    setLoading(true);
+    try {
+      const status = await checkAlarmSystemStatus();
+      setSystemStatus(status);
+      
+      // Verificar salud de la API
+      const health = await checkNotificationHealth();
+      setApiHealth(health);
+    } catch (error) {
+      console.error('[AlarmStatus] Error verificando estado:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRepair = async () => {
+    Alert.alert(
+      'Reparar Sistema de Alarmas',
+      '¿Estás seguro de que quieres reparar el sistema de alarmas? Esto puede tomar unos momentos.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Reparar',
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              const success = await repairAlarmSystem();
+              if (success) {
+                Alert.alert('Éxito', 'Sistema de alarmas reparado correctamente');
+                await checkStatus();
+                onRepair?.();
+              } else {
+                Alert.alert('Error', 'No se pudo reparar el sistema de alarmas');
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Error durante la reparación');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleSync = async () => {
+    setLoading(true);
+    try {
+      await syncPendingQueue();
+      await loadApiNotifications();
+      await loadApiStats();
+      Alert.alert('Éxito', 'Sincronización completada');
+      await checkStatus();
+    } catch (error) {
+      Alert.alert('Error', 'Error durante la sincronización');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runTests = async () => {
+    Alert.alert(
+      'Ejecutar Pruebas',
+      '¿Quieres ejecutar pruebas de notificaciones? Esto creará notificaciones de prueba.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Ejecutar',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await runAllTests();
+              Alert.alert('Éxito', 'Pruebas ejecutadas correctamente');
+              await checkStatus();
+            } catch (error) {
+              Alert.alert('Error', 'Error ejecutando pruebas');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  if (!systemStatus) {
     return (
-      <TouchableOpacity 
-        style={styles.compactContainer} 
-        onPress={onPress}
-        activeOpacity={0.8}
-      >
-        <View style={styles.compactIconContainer}>
-          <Ionicons 
-            name="alarm" 
-            size={20} 
-            color={activeAlarms > 0 ? COLORS.warning : COLORS.text.tertiary} 
-          />
-          {activeAlarms > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{activeAlarms}</Text>
-            </View>
-          )}
+      <View style={styles.container}>
+        <View style={styles.statusItem}>
+          <Ionicons name="help-circle" size={20} color={COLORS.text.secondary} />
+          <Text style={styles.statusText}>Verificando estado...</Text>
         </View>
-        {nextAlarm && (
-          <Text style={styles.compactTime}>{nextAlarm.time}</Text>
-        )}
-      </TouchableOpacity>
+      </View>
     );
   }
 
+  const hasErrors = systemStatus.errors.length > 0;
+  const isHealthy = systemStatus.permissions && systemStatus.channels && systemStatus.storageSync;
+  const isApiHealthy = apiHealth?.status === 'healthy' || apiHealth?.status === 'local_only';
+
   return (
-    <TouchableOpacity 
-      style={styles.container} 
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
-      <LinearGradient
-        colors={[COLORS.background.card, COLORS.background.tertiary]}
-        style={styles.gradientContainer}
-      >
-        <View style={styles.header}>
-          <View style={styles.iconContainer}>
-            <Ionicons 
-              name="alarm" 
-              size={24} 
-              color={activeAlarms > 0 ? COLORS.warning : COLORS.text.tertiary} 
-            />
-            {activeAlarms > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>{activeAlarms}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.title}>
-            {activeAlarms > 0 ? 'Alarmas Activas' : 'Sin Alarmas'}
-          </Text>
+    <View style={styles.container}>
+      {/* Estado general */}
+      <View style={[styles.statusHeader, hasErrors ? styles.statusError : styles.statusSuccess]}>
+        <Ionicons 
+          name={isHealthy ? "checkmark-circle" : "alert-circle"} 
+          size={24} 
+          color={isHealthy ? COLORS.success : COLORS.error} 
+        />
+        <Text style={[styles.statusTitle, { color: isHealthy ? COLORS.success : COLORS.error }]}>
+          {isHealthy ? 'Sistema de Alarmas Funcionando' : 'Problemas Detectados'}
+        </Text>
+      </View>
+
+      {/* Estadísticas básicas */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
+          <Text style={styles.statLabel}>Notificaciones Locales</Text>
+          <Text style={styles.statValue}>{systemStatus.scheduledNotifications}</Text>
         </View>
-        
-        {activeAlarms > 0 && nextAlarm ? (
-          <View style={styles.nextAlarmContainer}>
-            <Text style={styles.nextAlarmLabel}>Próxima alarma:</Text>
-            <Text style={styles.nextAlarmTime}>{nextAlarm.time}</Text>
-            <Text style={styles.nextAlarmMedication}>{nextAlarm.medication}</Text>
-          </View>
-        ) : (
-          <Text style={styles.noAlarmsText}>
-            No tienes alarmas programadas
-          </Text>
+        {stats && (
+          <>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Medicamentos</Text>
+              <Text style={styles.statValue}>{stats.types?.medications || 0}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Citas</Text>
+              <Text style={styles.statValue}>{stats.types?.appointments || 0}</Text>
+            </View>
+          </>
         )}
-        
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            {activeAlarms > 0 
-              ? `${activeAlarms} alarma${activeAlarms > 1 ? 's' : ''} activa${activeAlarms > 1 ? 's' : ''}`
-              : 'Todas las alarmas completadas'
-            }
-          </Text>
+      </View>
+
+      {/* Estadísticas de la API */}
+      {apiStats && (
+        <View style={styles.apiStatsContainer}>
+          <Text style={styles.apiStatsTitle}>API de Notificaciones</Text>
+          <View style={styles.apiStatsRow}>
+            <View style={styles.apiStatItem}>
+              <Text style={styles.apiStatLabel}>Total</Text>
+              <Text style={styles.apiStatValue}>{apiStats.total}</Text>
+            </View>
+            <View style={styles.apiStatItem}>
+              <Text style={styles.apiStatLabel}>No Leídas</Text>
+              <Text style={[styles.apiStatValue, { color: apiStats.unread > 0 ? COLORS.warning : COLORS.text.primary }]}>
+                {apiStats.unread}
+              </Text>
+            </View>
+            <View style={styles.apiStatItem}>
+              <Text style={styles.apiStatLabel}>Leídas</Text>
+              <Text style={styles.apiStatValue}>{apiStats.read}</Text>
+            </View>
+          </View>
+          <View style={[styles.apiHealthIndicator, { backgroundColor: isApiHealthy ? COLORS.success + '20' : COLORS.error + '20' }]}>
+            <Ionicons 
+              name={apiHealth?.status === 'healthy' ? "cloud-done" : apiHealth?.status === 'local_only' ? "phone-portrait" : "cloud-offline"} 
+              size={16} 
+              color={isApiHealthy ? COLORS.success : COLORS.error} 
+            />
+            <Text style={[styles.apiHealthText, { color: isApiHealthy ? COLORS.success : COLORS.error }]}>
+              {apiHealth?.status === 'healthy' ? 'API Conectada' : apiHealth?.status === 'local_only' ? 'Modo Local' : 'API Desconectada'}
+            </Text>
+          </View>
         </View>
-      </LinearGradient>
-    </TouchableOpacity>
+      )}
+
+      {/* Detalles si están habilitados */}
+      {showDetails && (
+        <ScrollView style={styles.detailsContainer}>
+          <View style={styles.detailSection}>
+            <Text style={styles.detailTitle}>Verificaciones del Sistema</Text>
+            
+            <View style={styles.checkItem}>
+              <Ionicons 
+                name={systemStatus.permissions ? "checkmark" : "close"} 
+                size={16} 
+                color={systemStatus.permissions ? COLORS.success : COLORS.error} 
+              />
+              <Text style={styles.checkText}>Permisos de Notificación</Text>
+            </View>
+            
+            <View style={styles.checkItem}>
+              <Ionicons 
+                name={systemStatus.channels ? "checkmark" : "close"} 
+                size={16} 
+                color={systemStatus.channels ? COLORS.success : COLORS.error} 
+              />
+              <Text style={styles.checkText}>Canales de Notificación</Text>
+            </View>
+            
+            <View style={styles.checkItem}>
+              <Ionicons 
+                name={systemStatus.storageSync ? "checkmark" : "close"} 
+                size={16} 
+                color={systemStatus.storageSync ? COLORS.success : COLORS.error} 
+              />
+              <Text style={styles.checkText}>Sincronización de Almacenamiento</Text>
+            </View>
+
+            <View style={styles.checkItem}>
+              <Ionicons 
+                name={isApiHealthy ? "checkmark" : "close"} 
+                size={16} 
+                color={isApiHealthy ? COLORS.success : COLORS.error} 
+              />
+              <Text style={styles.checkText}>API de Notificaciones</Text>
+            </View>
+          </View>
+
+          {/* Errores si los hay */}
+          {systemStatus.errors.length > 0 && (
+            <View style={styles.errorSection}>
+              <Text style={styles.errorTitle}>Problemas Detectados:</Text>
+              {systemStatus.errors.map((error: string, index: number) => (
+                <Text key={index} style={styles.errorText}>• {error}</Text>
+              ))}
+            </View>
+          )}
+
+          {/* Estado de la API */}
+          {apiHealth && (
+            <View style={styles.apiHealthSection}>
+              <Text style={styles.apiHealthTitle}>Estado de la API:</Text>
+              <Text style={styles.apiHealthMessage}>{apiHealth.message}</Text>
+              <Text style={styles.apiHealthTimestamp}>
+                Última verificación: {new Date(apiHealth.timestamp).toLocaleString()}
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* Acciones */}
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.refreshButton]}
+          onPress={checkStatus}
+          disabled={loading}
+        >
+          <Ionicons name="refresh" size={16} color={COLORS.primary} />
+          <Text style={styles.actionButtonText}>Verificar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, styles.syncButton]}
+          onPress={handleSync}
+          disabled={loading}
+        >
+          <Ionicons name="sync" size={16} color={COLORS.secondary || '#10b981'} />
+          <Text style={[styles.actionButtonText, { color: COLORS.secondary || '#10b981' }]}>Sincronizar</Text>
+        </TouchableOpacity>
+
+        {hasErrors && (
+          <TouchableOpacity
+            style={[styles.actionButton, styles.repairButton]}
+            onPress={handleRepair}
+            disabled={loading}
+          >
+            <Ionicons name="build" size={16} color={COLORS.text.inverse} />
+            <Text style={[styles.actionButtonText, { color: COLORS.text.inverse }]}>Reparar</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={[styles.actionButton, styles.testButton]}
+          onPress={runTests}
+          disabled={loading}
+        >
+          <Ionicons name="flask" size={16} color={COLORS.warning} />
+          <Text style={[styles.actionButtonText, { color: COLORS.warning }]}>Probar</Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <Text style={styles.loadingText}>Procesando...</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 16,
-    shadowColor: COLORS.shadow.dark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  
-  gradientContainer: {
-    padding: 20,
-    borderRadius: 16,
-  },
-  
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  
-  iconContainer: {
-    position: 'relative',
-    marginRight: 12,
-  },
-  
-  badge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: COLORS.error,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: COLORS.background.card,
-  },
-  
-  badgeText: {
-    color: COLORS.text.inverse,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: COLORS.text.primary,
-    flex: 1,
-  },
-  
-  nextAlarmContainer: {
-    backgroundColor: COLORS.background.secondary,
-    padding: 16,
+    backgroundColor: COLORS.background.white,
     borderRadius: 12,
-    marginBottom: 16,
-  },
-  
-  nextAlarmLabel: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
-    marginBottom: 4,
-  },
-  
-  nextAlarmTime: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginBottom: 4,
-  },
-  
-  nextAlarmMedication: {
-    fontSize: 16,
-    color: COLORS.text.primary,
-    fontWeight: '500',
-  },
-  
-  noAlarmsText: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginBottom: 16,
-  },
-  
-  footer: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border.light,
-    paddingTop: 12,
-  },
-  
-  footerText: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    textAlign: 'center',
-  },
-  
-  // Estilos compactos
-  compactContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.background.card,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    shadowColor: COLORS.shadow.light,
+    padding: 16,
+    marginVertical: 8,
+    shadowColor: COLORS.shadow.dark,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
   },
-  
-  compactIconContainer: {
-    position: 'relative',
-    marginRight: 8,
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  
-  compactTime: {
+  statusSuccess: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.success,
+    paddingLeft: 12,
+  },
+  statusError: {
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.error,
+    paddingLeft: 12,
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+  },
+  apiStatsContainer: {
+    backgroundColor: COLORS.background.tertiary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  apiStatsTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  apiStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 8,
+  },
+  apiStatItem: {
+    alignItems: 'center',
+  },
+  apiStatLabel: {
+    fontSize: 10,
+    color: COLORS.text.secondary,
+    marginBottom: 2,
+  },
+  apiStatValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text.primary,
+  },
+  apiHealthIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  apiHealthText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  detailsContainer: {
+    maxHeight: 200,
+  },
+  detailSection: {
+    marginBottom: 16,
+  },
+  detailTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 8,
+  },
+  checkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  checkText: {
+    fontSize: 14,
+    color: COLORS.text.primary,
+    marginLeft: 8,
+  },
+  errorSection: {
+    backgroundColor: COLORS.error + '10',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.error,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 12,
+    color: COLORS.error,
+    marginBottom: 4,
+  },
+  apiHealthSection: {
+    backgroundColor: COLORS.background.secondary,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  apiHealthTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+    marginBottom: 4,
+  },
+  apiHealthMessage: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+    marginBottom: 4,
+  },
+  apiHealthTimestamp: {
+    fontSize: 10,
+    color: COLORS.text.tertiary,
+    fontStyle: 'italic',
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 16,
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border.neutral,
+    minWidth: 80,
+  },
+  refreshButton: {
+    backgroundColor: COLORS.background.white,
+  },
+  syncButton: {
+    backgroundColor: COLORS.background.white,
+    borderColor: COLORS.secondary || '#10b981',
+  },
+  repairButton: {
+    backgroundColor: COLORS.error,
+    borderColor: COLORS.error,
+  },
+  testButton: {
+    backgroundColor: COLORS.background.white,
+    borderColor: COLORS.warning,
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
   },
 });

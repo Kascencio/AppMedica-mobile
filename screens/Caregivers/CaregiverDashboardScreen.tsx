@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import logo from '../../assets/logo.webp';
+import logo from '../../assets/logo.png';
 import { Image } from 'react-native';
 import { useCaregiver } from '../../store/useCaregiver';
 import { useInviteCodes } from '../../store/useInviteCodes';

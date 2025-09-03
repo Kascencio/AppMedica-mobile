@@ -60,6 +60,7 @@ export interface UserProfile {
   name: string;
   age?: number;
   birthDate?: string;
+  dateOfBirth?: string; // Campo del backend
   gender?: string;
   weight?: number;
   height?: number;
@@ -77,6 +78,7 @@ export interface UserProfile {
   phone?: string;
   relationship?: string;
   photoUrl?: string;
+  photoFileId?: string; // ID de la imagen en ImageKit
   role?: string;
   createdAt: string;
   updatedAt: string;

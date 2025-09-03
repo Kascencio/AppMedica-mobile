@@ -96,8 +96,14 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   loadToken: async () => {
     set({ loading: true });
-    const token = await AsyncStorage.getItem('userToken');
-    set({ userToken: token, isAuthenticated: !!token, loading: false });
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      set({ userToken: token, isAuthenticated: !!token, loading: false });
+    } catch (error) {
+      console.error('[useAuth] Error cargando token:', error);
+      // En caso de error, limpiar estado y continuar
+      set({ userToken: null, isAuthenticated: false, loading: false });
+    }
   },
 }));
 

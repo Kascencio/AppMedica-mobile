@@ -4,7 +4,7 @@ import { useCurrentUser } from '../../store/useCurrentUser';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const defaultAvatar = require('../../assets/logo.webp');
+const defaultAvatar = require('../../assets/logo.png');
 
 export default function CaregiverProfileScreen() {
   const { profile, updateProfile, loading } = useCurrentUser();
@@ -15,17 +15,27 @@ export default function CaregiverProfileScreen() {
   const [saving, setSaving] = useState(false);
 
   const handlePickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      // Aquí deberías subir la imagen al backend y obtener la URL
-      // Por ahora solo mostramos la imagen localmente
-      setPhotoUrl(result.assets[0].uri);
-      // TODO: subir imagen y actualizar en backend
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        console.log('[CaregiverProfileScreen] Imagen seleccionada:', result.assets[0].uri);
+        
+        // Subir la imagen usando ImageKit
+        const { uploadPhoto } = useCurrentUser.getState();
+        const uploadedUrl = await uploadPhoto(result.assets[0].uri);
+        
+        console.log('[CaregiverProfileScreen] URL de imagen subida:', uploadedUrl);
+        setPhotoUrl(uploadedUrl);
+      }
+    } catch (error) {
+      console.error('[CaregiverProfileScreen] Error al seleccionar/subir imagen:', error);
+      Alert.alert('Error', 'No se pudo procesar la imagen seleccionada');
     }
   };
 

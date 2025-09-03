@@ -42,50 +42,48 @@ export default function NotificationsScreen() {
   }, [loadData]);
 
   const renderNotificationsTab = () => (
-    <ScrollView style={GLOBAL_STYLES.container} showsVerticalScrollIndicator={false}>
-      <View style={GLOBAL_STYLES.section}>
-        <View style={GLOBAL_STYLES.rowSpaced}>
-          <Text style={GLOBAL_STYLES.sectionHeader}>Filtros</Text>
-          <TouchableOpacity 
-            style={GLOBAL_STYLES.buttonSecondary}
-            onPress={() => cleanupOldNotifications()}
-          >
-            <Text style={GLOBAL_STYLES.buttonSecondaryText}>Limpiar Antiguas</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <View style={styles.filterContainer}>
-          {(['all', 'unread', 'read', 'archived'] as const).map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={[
-                styles.filterButton,
-                activeFilter === filter && styles.filterButtonActive
-              ]}
-              onPress={() => setActiveFilter(filter)}
-            >
-              <Text style={[
-                styles.filterButtonText,
-                activeFilter === filter && styles.filterButtonTextActive
-              ]}>
-                {filter === 'all' ? 'Todas' : 
-                 filter === 'unread' ? 'No Leídas' :
-                 filter === 'read' ? 'Leídas' : 'Archivadas'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <NotificationsList 
-          embedded={true}
-          filters={{ 
-            status: activeFilter === 'all' ? undefined : 
-                    activeFilter === 'unread' ? 'UNREAD' :
-                    activeFilter === 'read' ? 'READ' : 'ARCHIVED'
-          }}
-        />
+    <View style={GLOBAL_STYLES.section}>
+      <View style={GLOBAL_STYLES.rowSpaced}>
+        <Text style={GLOBAL_STYLES.sectionHeader}>Filtros</Text>
+        <TouchableOpacity 
+          style={GLOBAL_STYLES.buttonSecondary}
+          onPress={() => cleanupOldNotifications()}
+        >
+          <Text style={GLOBAL_STYLES.buttonSecondaryText}>Limpiar Antiguas</Text>
+        </TouchableOpacity>
       </View>
-    </ScrollView>
+      
+      <View style={styles.filterContainer}>
+        {(['all', 'unread', 'read', 'archived'] as const).map((filter) => (
+          <TouchableOpacity
+            key={filter}
+            style={[
+              styles.filterButton,
+              activeFilter === filter && styles.filterButtonActive
+            ]}
+            onPress={() => setActiveFilter(filter)}
+          >
+            <Text style={[
+              styles.filterButtonText,
+              activeFilter === filter && styles.filterButtonTextActive
+            ]}>
+              {filter === 'all' ? 'Todas' : 
+               filter === 'unread' ? 'No Leídas' :
+               filter === 'read' ? 'Leídas' : 'Archivadas'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <NotificationsList 
+        embedded={true}
+        filters={{ 
+          status: activeFilter === 'all' ? undefined : 
+                  activeFilter === 'unread' ? 'UNREAD' :
+                  activeFilter === 'read' ? 'READ' : 'ARCHIVED'
+        }}
+      />
+    </View>
   );
 
   return (

@@ -47,6 +47,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
 
       console.log('[useAppointments] ✅ Perfil válido encontrado:', patientId);
       
+      // Asegurar que la base de datos esté inicializada
+      await localDB.ensureInitialized();
+      
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       

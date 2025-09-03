@@ -5,7 +5,7 @@ import CalendarScreen from '../screens/Calendar/CalendarScreen';
 import CaregiverMedicationsScreen from '../screens/Medications/CaregiverMedicationsScreen';
 import CaregiverDashboardScreen from '../screens/Caregivers/CaregiverDashboardScreen';
 import TreatmentsScreen from '../screens/Treatments/TreatmentsScreen';
-
+import MedicationsScreen from '../screens/Medications/MedicationsScreen';
 import AppointmentsScreen from '../screens/Appointments/AppointmentsScreen';
 import NotesScreen from '../screens/Notes/NotesScreen';
 import HistoryScreen from '../screens/History/HistoryScreen';
@@ -61,7 +61,7 @@ function PatientTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Inicio' }} />
-      <Tab.Screen name="Medications" component={require('../screens/Medications/MedicationsScreen').default} options={{ title: 'Medicamentos' }} />
+      <Tab.Screen name="Medications" component={MedicationsScreen} options={{ title: 'Medicamentos' }} />
       <Tab.Screen name="Calendar" component={CalendarScreen} options={{ title: 'Calendario' }} />
       <Tab.Screen name="Treatments" component={TreatmentsScreen} options={{ title: 'Tratamientos' }} />
       <Tab.Screen name="Appointments" component={AppointmentsScreen} options={{ title: 'Citas' }} />

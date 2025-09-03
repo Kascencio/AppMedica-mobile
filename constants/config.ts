@@ -24,9 +24,9 @@ export const API_CONFIG = {
       UPDATE: '/users/profile',
     },
     PATIENTS: {
-      ME: '/patients/me',
+      ME: '/patients/:id',
       BY_ID: '/patients/:id',
-      PHOTO: '/patients/me/photo',
+      PHOTO: '/patients/:id/photo',
       TEST_FIELDS: '/patients/test-fields',
     },
     CAREGIVERS: {

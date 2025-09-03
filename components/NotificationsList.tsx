@@ -1,250 +1,269 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  View, 
-  Text, 
-  FlatList, 
-  TouchableOpacity, 
-  StyleSheet, 
-  RefreshControl,
-  Alert,
-  ActivityIndicator
-} from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Alert, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNotifications } from '../store/useNotifications';
-import { Notification, NOTIFICATION_STATUSES, NOTIFICATION_PRIORITIES } from '../constants/config';
+import { useAlarms } from '../hooks/useAlarms';
+import { ApiNotification } from '../lib/notificationService';
 import COLORS from '../constants/colors';
-import { GLOBAL_STYLES } from '../constants/styles';
 
 interface NotificationsListProps {
-  filters?: {
-    status?: 'UNREAD' | 'READ' | 'ARCHIVED';
-    priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
-    type?: string;
-    search?: string;
-  };
-  showActions?: boolean;
+  showArchived?: boolean;
+  filterType?: string;
+  onNotificationPress?: (notification: ApiNotification) => void;
   embedded?: boolean;
-  onNotificationPress?: (notification: Notification) => void;
+  filters?: {
+    status?: string;
+    type?: string;
+  };
 }
 
 export default function NotificationsList({ 
-  filters = {}, 
-  showActions = true,
+  showArchived = false, 
+  filterType,
+  onNotificationPress,
   embedded = false,
-  onNotificationPress 
+  filters
 }: NotificationsListProps) {
   const { 
-    notifications, 
-    loading, 
-    error, 
-    pagination,
-    getNotifications, 
-    markAsRead, 
-    markAsArchived, 
-    deleteNotification,
-    markMultipleAsRead,
-    clearError 
-  } = useNotifications();
-
-  const [refreshing, setRefreshing] = useState(false);
+    apiNotifications, 
+    apiLoading, 
+    loadApiNotifications, 
+    markApiNotificationAsRead, 
+    archiveApiNotification,
+    markMultipleAsRead
+  } = useAlarms();
+  
   const [selectedNotifications, setSelectedNotifications] = useState<string[]>([]);
-
-  const stableFilters = useMemo(() => filters, [
-    filters.status,
-    filters.priority,
-    filters.type,
-    filters.search
-  ]);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
 
   useEffect(() => {
     loadNotifications();
-  }, [stableFilters]);
+  }, [showArchived, filterType, filters]);
 
   const loadNotifications = async () => {
-    // Convertir filtros de estado para que coincidan con el backend
-    const backendFilters = {
-      ...filters,
-            status: filters.status,
-      page: 1,
-      pageSize: 20
+    const apiFilters: any = {
+      status: filters?.status || (showArchived ? 'ARCHIVED' : 'UNREAD'),
+      pageSize: 50
     };
     
-    await getNotifications(backendFilters);
+    if (filters?.type || filterType) {
+      apiFilters.type = filters?.type || filterType;
+    }
+    
+    await loadApiNotifications(apiFilters);
   };
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await loadNotifications();
-    setRefreshing(false);
-  };
-
-  const handleNotificationPress = (notification: Notification) => {
-    if (onNotificationPress) {
-      onNotificationPress(notification);
-    } else if (notification.status === NOTIFICATION_STATUSES.UNREAD) {
-      markAsRead(notification.id);
+  const handleNotificationPress = async (notification: ApiNotification) => {
+    if (isSelectionMode) {
+      toggleNotificationSelection(notification.id);
+    } else {
+      // Marcar como leída si no está leída
+      if (notification.status === 'UNREAD') {
+        await markApiNotificationAsRead(notification.id);
+      }
+      onNotificationPress?.(notification);
     }
   };
 
-  const handleMarkAsRead = async (id: string) => {
-    await markAsRead(id);
+  const handleLongPress = (notification: ApiNotification) => {
+    if (!isSelectionMode) {
+      setIsSelectionMode(true);
+      setSelectedNotifications([notification.id]);
+    }
   };
 
-  const handleMarkAsArchived = async (id: string) => {
-    await markAsArchived(id);
+  const toggleNotificationSelection = (notificationId: string) => {
+    setSelectedNotifications(prev => 
+      prev.includes(notificationId)
+        ? prev.filter(id => id !== notificationId)
+        : [...prev, notificationId]
+    );
   };
 
-  const handleDelete = async (id: string) => {
+  const handleMarkSelectedAsRead = async () => {
+    if (selectedNotifications.length === 0) return;
+
     Alert.alert(
-      'Eliminar notificación',
-      '¿Estás seguro de que quieres eliminar esta notificación?',
+      'Marcar como leídas',
+      `¿Marcar ${selectedNotifications.length} notificación(es) como leída(s)?`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Eliminar', 
-          style: 'destructive',
-          onPress: () => deleteNotification(id)
+        {
+          text: 'Marcar',
+          onPress: async () => {
+            await markMultipleAsRead(selectedNotifications);
+            setSelectedNotifications([]);
+            setIsSelectionMode(false);
+            await loadNotifications();
+          }
         }
       ]
     );
   };
 
-  const handleSelectNotification = (id: string) => {
-    setSelectedNotifications(prev => 
-      prev.includes(id) 
-        ? prev.filter(nId => nId !== id)
-        : [...prev, id]
+  const handleArchiveSelected = async () => {
+    if (selectedNotifications.length === 0) return;
+
+    Alert.alert(
+      'Archivar notificaciones',
+      `¿Archivar ${selectedNotifications.length} notificación(es)?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Archivar',
+          style: 'destructive',
+          onPress: async () => {
+            for (const id of selectedNotifications) {
+              await archiveApiNotification(id);
+            }
+            setSelectedNotifications([]);
+            setIsSelectionMode(false);
+            await loadNotifications();
+          }
+        }
+      ]
     );
   };
 
-  const handleMarkMultipleAsRead = async () => {
-    if (selectedNotifications.length > 0) {
-      await markMultipleAsRead(selectedNotifications);
-      setSelectedNotifications([]);
+  const handleCancelSelection = () => {
+    setSelectedNotifications([]);
+    setIsSelectionMode(false);
+  };
+
+  const getNotificationIcon = (type: string) => {
+    switch (type) {
+      case 'MEDICATION_REMINDER':
+        return { name: 'medical', color: COLORS.medical.medication };
+      case 'APPOINTMENT_REMINDER':
+        return { name: 'calendar', color: COLORS.medical.appointment };
+      case 'TREATMENT_UPDATE':
+        return { name: 'fitness', color: COLORS.primary };
+      case 'EMERGENCY_ALERT':
+        return { name: 'warning', color: COLORS.error };
+      case 'SYSTEM_MESSAGE':
+        return { name: 'settings', color: COLORS.text.secondary };
+      case 'CAREGIVER_REQUEST':
+        return { name: 'people', color: COLORS.secondary || '#10b981' };
+      case 'PERMISSION_UPDATE':
+        return { name: 'shield-checkmark', color: COLORS.warning };
+      default:
+        return { name: 'notifications', color: COLORS.text.secondary };
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case NOTIFICATION_PRIORITIES.URGENT:
+      case 'URGENT':
         return COLORS.error;
-      case NOTIFICATION_PRIORITIES.HIGH:
+      case 'HIGH':
         return COLORS.warning;
-      case NOTIFICATION_PRIORITIES.MEDIUM:
-        return COLORS.info;
-      case NOTIFICATION_PRIORITIES.LOW:
-        return COLORS.text.tertiary;
+      case 'MEDIUM':
+        return COLORS.primary;
+      case 'LOW':
+        return COLORS.success;
       default:
         return COLORS.text.secondary;
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case NOTIFICATION_STATUSES.UNREAD:
-        return 'mail-unread';
-      case NOTIFICATION_STATUSES.READ:
-        return 'mail-open';
-      case NOTIFICATION_STATUSES.ARCHIVED:
-        return 'archive';
-      default:
-        return 'mail';
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+    if (diffInHours < 1) {
+      return 'Hace unos minutos';
+    } else if (diffInHours < 24) {
+      return `Hace ${Math.floor(diffInHours)} horas`;
+    } else if (diffInHours < 48) {
+      return 'Ayer';
+    } else {
+      return date.toLocaleDateString('es-ES');
     }
   };
 
-  const renderNotification = ({ item: notification }: { item: Notification }) => {
-    const isSelected = selectedNotifications.includes(notification.id);
-    const isUnread = notification.status === NOTIFICATION_STATUSES.UNREAD;
+  const renderNotification = ({ item }: { item: ApiNotification }) => {
+    const icon = getNotificationIcon(item.type);
+    const priorityColor = getPriorityColor(item.priority);
+    const isSelected = selectedNotifications.includes(item.id);
 
     return (
       <TouchableOpacity
         style={[
           styles.notificationItem,
-          isUnread && styles.unreadNotification,
+          item.status === 'UNREAD' && styles.unreadNotification,
           isSelected && styles.selectedNotification
         ]}
-        onPress={() => handleNotificationPress(notification)}
-        onLongPress={() => handleSelectNotification(notification.id)}
+        onPress={() => handleNotificationPress(item)}
+        onLongPress={() => handleLongPress(item)}
         activeOpacity={0.7}
       >
-        <View style={styles.notificationHeader}>
-          <View style={styles.notificationInfo}>
-            <View style={styles.priorityIndicator}>
-              <View 
-                style={[
-                  styles.priorityDot, 
-                  { backgroundColor: getPriorityColor(notification.priority) }
-                ]} 
-              />
-            </View>
-            <View style={styles.notificationContent}>
-              <Text style={[
-                styles.notificationTitle,
-                isUnread && styles.unreadTitle
-              ]}>
-                {notification.title}
-              </Text>
-              <Text style={styles.notificationMessage} numberOfLines={2}>
-                {notification.message}
-              </Text>
+        {isSelectionMode && (
+          <TouchableOpacity
+            style={[styles.checkbox, isSelected && styles.checkboxSelected]}
+            onPress={() => toggleNotificationSelection(item.id)}
+          >
+            {isSelected && (
+              <Ionicons name="checkmark" size={16} color={COLORS.text.inverse} />
+            )}
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.notificationIcon}>
+          <Ionicons name={icon.name as any} size={24} color={icon.color} />
+          {item.status === 'UNREAD' && (
+            <View style={[styles.unreadIndicator, { backgroundColor: priorityColor }]} />
+          )}
+        </View>
+
+        <View style={styles.notificationContent}>
+          <View style={styles.notificationHeader}>
+            <Text style={styles.notificationTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <View style={styles.notificationMeta}>
+              <View style={[styles.priorityBadge, { backgroundColor: priorityColor + '20' }]}>
+                <Text style={[styles.priorityText, { color: priorityColor }]}>
+                  {item.priority}
+                </Text>
+              </View>
               <Text style={styles.notificationTime}>
-                {new Date(notification.createdAt).toLocaleDateString('es-ES', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                {formatDate(item.createdAt)}
               </Text>
             </View>
           </View>
           
-          <View style={styles.notificationActions}>
-            <Ionicons 
-              name={getStatusIcon(notification.status)} 
-              size={20} 
-              color={isUnread ? COLORS.primary : COLORS.text.tertiary} 
-            />
-            
-            {showActions && (
-              <View style={styles.actionButtons}>
-                {notification.status === NOTIFICATION_STATUSES.UNREAD && (
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleMarkAsRead(notification.id)}
-                  >
-                    <Ionicons name="checkmark-circle" size={16} color={COLORS.success} />
-                  </TouchableOpacity>
-                )}
-                
-                {notification.status !== NOTIFICATION_STATUSES.ARCHIVED && (
-                  <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleMarkAsArchived(notification.id)}
-                  >
-                    <Ionicons name="archive" size={16} color={COLORS.info} />
-                  </TouchableOpacity>
-                )}
-                
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={() => handleDelete(notification.id)}
-                >
-                  <Ionicons name="trash" size={16} color={COLORS.error} />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+          <Text style={styles.notificationMessage} numberOfLines={3}>
+            {item.message}
+          </Text>
+
+          {item.metadata && Object.keys(item.metadata).length > 0 && (
+            <View style={styles.metadataContainer}>
+              {Object.entries(item.metadata).slice(0, 2).map(([key, value]) => (
+                <Text key={key} style={styles.metadataText}>
+                  {key}: {value}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
-        
-        {notification.metadata && Object.keys(notification.metadata).length > 0 && (
-          <View style={styles.metadataContainer}>
-            {Object.entries(notification.metadata).map(([key, value]) => (
-              <Text key={key} style={styles.metadataText}>
-                {key}: {String(value)}
-              </Text>
-            ))}
-          </View>
+
+        {!isSelectionMode && (
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => {
+              if (item.status === 'UNREAD') {
+                markApiNotificationAsRead(item.id);
+              } else {
+                archiveApiNotification(item.id);
+              }
+            }}
+          >
+            <Ionicons 
+              name={item.status === 'UNREAD' ? 'checkmark-circle' : 'archive'} 
+              size={20} 
+              color={item.status === 'UNREAD' ? COLORS.success : COLORS.text.secondary} 
+            />
+          </TouchableOpacity>
         )}
       </TouchableOpacity>
     );
@@ -252,95 +271,74 @@ export default function NotificationsList({
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
-      <Ionicons name="notifications-off" size={48} color={COLORS.text.tertiary} />
-      <Text style={styles.emptyStateTitle}>No hay notificaciones</Text>
+      <Ionicons name="notifications-off" size={48} color={COLORS.text.secondary} />
+      <Text style={styles.emptyStateTitle}>
+        {showArchived ? 'No hay notificaciones archivadas' : 'No hay notificaciones nuevas'}
+      </Text>
       <Text style={styles.emptyStateSubtitle}>
-        {filters.status === NOTIFICATION_STATUSES.UNREAD 
-          ? 'No tienes notificaciones sin leer'
-          : filters.status === NOTIFICATION_STATUSES.ARCHIVED
-          ? 'No tienes notificaciones archivadas'
-          : 'No tienes notificaciones para mostrar'
+        {showArchived 
+          ? 'Las notificaciones archivadas aparecerán aquí'
+          : 'Cuando recibas notificaciones, aparecerán aquí'
         }
       </Text>
     </View>
   );
 
-  const renderHeader = () => {
-    if (selectedNotifications.length === 0) return null;
-
-    return (
-      <View style={styles.selectionHeader}>
-        <Text style={styles.selectionText}>
-          {selectedNotifications.length} seleccionada{selectedNotifications.length !== 1 ? 's' : ''}
-        </Text>
-        <TouchableOpacity
-          style={styles.bulkActionButton}
-          onPress={handleMarkMultipleAsRead}
-        >
-          <Ionicons name="checkmark-circle" size={16} color={COLORS.text.inverse} />
-          <Text style={styles.bulkActionText}>Marcar como leídas</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.cancelSelectionButton}
-          onPress={() => setSelectedNotifications([])}
-        >
-          <Text style={styles.cancelSelectionText}>Cancelar</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={48} color={COLORS.error} />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadNotifications}>
-          <Text style={styles.retryButtonText}>Reintentar</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      {renderHeader()}
-      
+    <View style={[styles.container, embedded && styles.embeddedContainer]}>
+      {isSelectionMode && (
+        <View style={styles.selectionHeader}>
+          <View style={styles.selectionInfo}>
+            <Text style={styles.selectionText}>
+              {selectedNotifications.length} seleccionada(s)
+            </Text>
+          </View>
+          <View style={styles.selectionActions}>
+            <TouchableOpacity
+              style={[styles.selectionButton, styles.readButton]}
+              onPress={handleMarkSelectedAsRead}
+            >
+              <Ionicons name="checkmark" size={16} color={COLORS.success} />
+              <Text style={[styles.selectionButtonText, { color: COLORS.success }]}>
+                Leer
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.selectionButton, styles.archiveButton]}
+              onPress={handleArchiveSelected}
+            >
+              <Ionicons name="archive" size={16} color={COLORS.text.secondary} />
+              <Text style={[styles.selectionButtonText, { color: COLORS.text.secondary }]}>
+                Archivar
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={handleCancelSelection}
+            >
+              <Ionicons name="close" size={16} color={COLORS.text.secondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <FlatList
-        data={notifications}
+        data={apiNotifications}
         renderItem={renderNotification}
         keyExtractor={(item) => item.id}
         refreshControl={
-          !embedded ? (
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[COLORS.primary]}
-              tintColor={COLORS.primary}
-            />
-          ) : undefined
+          <RefreshControl
+            refreshing={apiLoading}
+            onRefresh={loadNotifications}
+            colors={[COLORS.primary]}
+          />
         }
         ListEmptyComponent={renderEmptyState}
-        ListFooterComponent={
-          loading && notifications.length > 0 ? (
-            <View style={styles.loadingFooter}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-              <Text style={styles.loadingText}>Cargando más...</Text>
-            </View>
-          ) : null
-        }
-        onEndReached={() => {
-          if (pagination.page < pagination.totalPages && !loading) {
-            getNotifications({
-              ...stableFilters,
-              page: pagination.page + 1,
-              pageSize: pagination.pageSize
-            });
-          }
-        }}
-        onEndReachedThreshold={0.1}
-        scrollEnabled={!embedded}
-        nestedScrollEnabled={embedded}
+        contentContainerStyle={[
+          apiNotifications.length === 0 ? styles.emptyList : undefined,
+          embedded && styles.embeddedList
+        ]}
+        showsVerticalScrollIndicator={false}
       />
     </View>
   );
@@ -350,154 +348,159 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  
   selectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    alignItems: 'center',
     backgroundColor: COLORS.background.secondary,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border.neutral,
+  },
+  selectionInfo: {
+    flex: 1,
+  },
+  selectionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text.primary,
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  selectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: COLORS.background.white,
+    borderWidth: 1,
+    borderColor: COLORS.border.neutral,
+  },
+  readButton: {
+    borderColor: COLORS.success,
+  },
+  archiveButton: {
+    borderColor: COLORS.text.secondary,
+  },
+  selectionButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  cancelButton: {
+    padding: 6,
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.background.white,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border.light,
   },
-  
-  selectionText: {
-    fontSize: 14,
-    color: COLORS.text.secondary,
-    fontWeight: '600',
-  },
-  
-  bulkActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.success,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  
-  bulkActionText: {
-    color: COLORS.text.inverse,
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 4,
-  },
-  
-  cancelSelectionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  
-  cancelSelectionText: {
-    color: COLORS.text.secondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  
-  notificationItem: {
-    backgroundColor: COLORS.background.card,
-    marginHorizontal: 16,
-    marginVertical: 4,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border.light,
-  },
-  
   unreadNotification: {
-    borderLeftWidth: 4,
+    backgroundColor: COLORS.primary + '05',
+    borderLeftWidth: 3,
     borderLeftColor: COLORS.primary,
-    backgroundColor: COLORS.background.tertiary,
   },
-  
   selectedNotification: {
-    backgroundColor: COLORS.accessibility.selected,
-    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary + '10',
   },
-  
-  notificationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  
-  notificationInfo: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  
-  priorityIndicator: {
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: COLORS.border.neutral,
     marginRight: 12,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  
-  priorityDot: {
+  checkboxSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  notificationIcon: {
+    position: 'relative',
+    marginRight: 12,
+  },
+  unreadIndicator: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  
   notificationContent: {
     flex: 1,
   },
-  
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
   notificationTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.text.primary,
+    flex: 1,
+    marginRight: 8,
+  },
+  notificationMeta: {
+    alignItems: 'flex-end',
+  },
+  priorityBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
     marginBottom: 4,
   },
-  
-  unreadTitle: {
-    fontWeight: '700',
+  priorityText: {
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
-  
+  notificationTime: {
+    fontSize: 12,
+    color: COLORS.text.secondary,
+  },
   notificationMessage: {
     fontSize: 14,
     color: COLORS.text.secondary,
     lineHeight: 20,
     marginBottom: 8,
   },
-  
-  notificationTime: {
-    fontSize: 12,
-    color: COLORS.text.tertiary,
-  },
-  
-  notificationActions: {
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  
-  actionButtons: {
-    flexDirection: 'row',
-    marginTop: 8,
-  },
-  
-  actionButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  
   metadataContainer: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border.light,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  
   metadataText: {
     fontSize: 12,
     color: COLORS.text.tertiary,
-    marginBottom: 2,
+    backgroundColor: COLORS.background.tertiary,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
-  
+  actionButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
   emptyState: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 48,
   },
-  
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -505,52 +508,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  
   emptyStateSubtitle: {
     fontSize: 14,
     color: COLORS.text.tertiary,
     textAlign: 'center',
     paddingHorizontal: 32,
   },
-  
-  loadingFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  
-  loadingText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: COLORS.text.secondary,
-  },
-  
-  errorContainer: {
+  emptyList: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-  },
-  
-  errorText: {
-    fontSize: 16,
-    color: COLORS.error,
-    textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  
-  retryButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  
-  retryButtonText: {
-    color: COLORS.text.inverse,
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

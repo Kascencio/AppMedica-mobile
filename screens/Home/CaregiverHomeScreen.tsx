@@ -5,7 +5,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useCaregiver } from '../../store/useCaregiver';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useAuth } from '../../store/useAuth';
-import logo from '../../assets/logo.webp';
+import logo from '../../assets/logo.png';
 
 const { width } = Dimensions.get('window');
 

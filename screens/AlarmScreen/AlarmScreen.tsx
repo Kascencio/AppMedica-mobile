@@ -131,7 +131,13 @@ export default function AlarmScreen({ navigation }: any) {
           refId,
           scheduledFor: eventDate,
           action,
-          meta: {},
+          meta: {
+            name,
+            dosage,
+            instructions,
+            time,
+            location: (route.params as any)?.location,
+          },
         });
         showToast('Evento registrado');
         navigation.goBack();

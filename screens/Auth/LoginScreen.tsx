@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as z from 'zod';
 import { useAuth } from '../../store/useAuth';
 import { useCurrentUser } from '../../store/useCurrentUser';
-import logo from '../../assets/logo.webp';
+import logo from '../../assets/logo.png';
 
 const loginSchema = z.object({
   email: z.string().email('Correo inválido'),

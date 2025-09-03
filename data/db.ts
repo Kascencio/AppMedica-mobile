@@ -85,8 +85,32 @@ export interface SyncQueue {
 
 class LocalDatabase {
   private db: SQLite.SQLiteDatabase | null = null;
+  private isInitializing = false;
+  private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
+    // Si ya está inicializada, retornar inmediatamente
+    if (this.db) {
+      return;
+    }
+
+    // Si ya está inicializándose, esperar a que termine
+    if (this.isInitializing && this.initPromise) {
+      return this.initPromise;
+    }
+
+    // Iniciar proceso de inicialización
+    this.isInitializing = true;
+    this.initPromise = this._init();
+    
+    try {
+      await this.initPromise;
+    } finally {
+      this.isInitializing = false;
+    }
+  }
+
+  private async _init(): Promise<void> {
     try {
       this.db = await SQLite.openDatabaseAsync('recuerdamed.db');
       await this.createTables();
@@ -94,7 +118,15 @@ class LocalDatabase {
       console.log('[LocalDatabase] Base de datos inicializada correctamente');
     } catch (error) {
       console.error('[LocalDatabase] Error inicializando base de datos:', error);
+      this.db = null;
       throw error;
+    }
+  }
+
+  // Método para verificar si la base de datos está lista
+  async ensureInitialized(): Promise<void> {
+    if (!this.db) {
+      await this.init();
     }
   }
 
@@ -209,15 +241,18 @@ class LocalDatabase {
       // Importar y ejecutar migraciones
       const { addDoctorNameToAppointments } = await import('./migrations/add_doctor_name_to_appointments');
       await addDoctorNameToAppointments(this.db);
+      console.log('[LocalDatabase] Migraciones ejecutadas correctamente');
     } catch (error) {
       console.error('[LocalDatabase] Error ejecutando migraciones:', error);
       // No lanzar error para evitar que la app falle
+      // En su lugar, registrar el error y continuar
+      console.warn('[LocalDatabase] Continuando sin migraciones debido a error');
     }
   }
 
   // Métodos para medicamentos
   async saveMedication(medication: LocalMedication): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `
       INSERT OR REPLACE INTO medications 
@@ -225,7 +260,7 @@ class LocalDatabase {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    await this.db.runAsync(query, [
+    await this.db!.runAsync(query, [
       medication.id,
       medication.name,
       medication.dosage,
@@ -244,10 +279,10 @@ class LocalDatabase {
   }
 
   async getMedications(patientProfileId: string): Promise<LocalMedication[]> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `SELECT * FROM medications WHERE patientProfileId = ? ORDER BY createdAt DESC`;
-    const result = await this.db.getAllAsync(query, [patientProfileId]);
+    const result = await this.db!.getAllAsync(query, [patientProfileId]);
     
     return result.map((row: any) => ({
       ...row,
@@ -256,13 +291,13 @@ class LocalDatabase {
   }
 
   async deleteMedication(id: string): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('DELETE FROM medications WHERE id = ?', [id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM medications WHERE id = ?', [id]);
   }
 
   // Métodos para citas
   async saveAppointment(appointment: LocalAppointment): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `
       INSERT OR REPLACE INTO appointments 
@@ -270,7 +305,7 @@ class LocalDatabase {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    await this.db.runAsync(query, [
+    await this.db!.runAsync(query, [
       appointment.id,
       appointment.title,
       appointment.dateTime,
@@ -286,10 +321,10 @@ class LocalDatabase {
   }
 
   async getAppointments(patientProfileId: string): Promise<LocalAppointment[]> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `SELECT * FROM appointments WHERE patientProfileId = ? ORDER BY dateTime ASC`;
-    const result = await this.db.getAllAsync(query, [patientProfileId]);
+    const result = await this.db!.getAllAsync(query, [patientProfileId]);
     
     return result.map((row: any) => ({
       ...row,
@@ -298,13 +333,13 @@ class LocalDatabase {
   }
 
   async deleteAppointment(id: string): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('DELETE FROM appointments WHERE id = ?', [id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM appointments WHERE id = ?', [id]);
   }
 
   // Métodos para tratamientos
   async saveTreatment(treatment: LocalTreatment): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `
       INSERT OR REPLACE INTO treatments 
@@ -312,7 +347,7 @@ class LocalDatabase {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    await this.db.runAsync(query, [
+    await this.db!.runAsync(query, [
       treatment.id,
       treatment.title,
       treatment.description || null,
@@ -328,10 +363,10 @@ class LocalDatabase {
   }
 
   async getTreatments(patientProfileId: string): Promise<LocalTreatment[]> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `SELECT * FROM treatments WHERE patientProfileId = ? ORDER BY createdAt DESC`;
-    const result = await this.db.getAllAsync(query, [patientProfileId]);
+    const result = await this.db!.getAllAsync(query, [patientProfileId]);
     
     return result.map((row: any) => ({
       ...row,
@@ -340,13 +375,13 @@ class LocalDatabase {
   }
 
   async deleteTreatment(id: string): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('DELETE FROM treatments WHERE id = ?', [id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM treatments WHERE id = ?', [id]);
   }
 
   // Métodos para notes
   async saveNote(note: LocalNote): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
     
     const query = `
       INSERT OR REPLACE INTO notes 
@@ -354,7 +389,7 @@ class LocalDatabase {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
-    await this.db.runAsync(query, [
+    await this.db!.runAsync(query, [
       note.id,
       note.title,
       note.content,
@@ -368,10 +403,10 @@ class LocalDatabase {
   }
 
   async getNotes(patientProfileId: string): Promise<LocalNote[]> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
     
     const query = `SELECT * FROM notes WHERE patientProfileId = ? ORDER BY date DESC`;
-    const result = await this.db.getAllAsync(query, [patientProfileId]);
+    const result = await this.db!.getAllAsync(query, [patientProfileId]);
     
     return result.map((row: any) => ({
       id: row.id,
@@ -387,13 +422,13 @@ class LocalDatabase {
   }
 
   async deleteNote(id: string): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('DELETE FROM notes WHERE id = ?', [id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM notes WHERE id = ?', [id]);
   }
 
   // Métodos para intake_events
   async saveIntakeEvent(event: LocalIntakeEvent): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
     
     const query = `
       INSERT OR REPLACE INTO intake_events 
@@ -401,7 +436,7 @@ class LocalDatabase {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     
-    await this.db.runAsync(query, [
+    await this.db!.runAsync(query, [
       event.id,
       event.kind,
       event.refId,
@@ -418,10 +453,10 @@ class LocalDatabase {
   }
 
   async getIntakeEvents(patientProfileId: string): Promise<LocalIntakeEvent[]> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
     
     const query = `SELECT * FROM intake_events WHERE patientProfileId = ? ORDER BY at DESC`;
-    const result = await this.db.getAllAsync(query, [patientProfileId]);
+    const result = await this.db!.getAllAsync(query, [patientProfileId]);
     
     return result.map((row: any) => ({
       id: row.id,
@@ -440,20 +475,20 @@ class LocalDatabase {
   }
 
   async deleteIntakeEvent(id: string): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('DELETE FROM intake_events WHERE id = ?', [id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM intake_events WHERE id = ?', [id]);
   }
 
   // Métodos para cola de sincronización
   async addToSyncQueue(item: SyncQueue): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `
       INSERT INTO sync_queue (id, action, entity, data, createdAt, retryCount)
       VALUES (?, ?, ?, ?, ?, ?)
     `;
 
-    await this.db.runAsync(query, [
+    await this.db!.runAsync(query, [
       item.id,
       item.action,
       item.entity,
@@ -464,10 +499,10 @@ class LocalDatabase {
   }
 
   async getSyncQueue(): Promise<SyncQueue[]> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const query = `SELECT * FROM sync_queue ORDER BY createdAt ASC`;
-    const result = await this.db.getAllAsync(query);
+    const result = await this.db!.getAllAsync(query);
     
     return result.map((row: any) => ({
       ...row,
@@ -476,26 +511,26 @@ class LocalDatabase {
   }
 
   async removeFromSyncQueue(id: string): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('DELETE FROM sync_queue WHERE id = ?', [id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM sync_queue WHERE id = ?', [id]);
   }
 
   async updateRetryCount(id: string, retryCount: number): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
-    await this.db.runAsync('UPDATE sync_queue SET retryCount = ? WHERE id = ?', [retryCount, id]);
+    await this.ensureInitialized();
+    await this.db!.runAsync('UPDATE sync_queue SET retryCount = ? WHERE id = ?', [retryCount, id]);
   }
 
   // Método para limpiar datos antiguos
   async clearOldData(daysOld: number = 30): Promise<void> {
-    if (!this.db) throw new Error('Base de datos no inicializada');
+    await this.ensureInitialized();
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
     const cutoffString = cutoffDate.toISOString();
 
-    await this.db.runAsync('DELETE FROM medications WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
-    await this.db.runAsync('DELETE FROM appointments WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
-    await this.db.runAsync('DELETE FROM treatments WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
+    await this.db!.runAsync('DELETE FROM medications WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
+    await this.db!.runAsync('DELETE FROM appointments WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
+    await this.db!.runAsync('DELETE FROM treatments WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
   }
 
   // Método para cerrar la base de datos
@@ -504,6 +539,8 @@ class LocalDatabase {
       await this.db.closeAsync();
       this.db = null;
     }
+    this.isInitializing = false;
+    this.initPromise = null;
   }
 }
 

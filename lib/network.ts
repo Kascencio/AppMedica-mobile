@@ -1,12 +1,35 @@
 import NetInfo from '@react-native-community/netinfo';
 
 // Configuración de timeout para verificaciones de red
-const NETWORK_TIMEOUT = 10000; // 10 segundos
+const NETWORK_TIMEOUT = 30000; // 30 segundos (aumentado de 10)
 const PING_URLS = [
   'https://www.google.com',
   'https://www.cloudflare.com',
   'https://www.recuerdamed.org'
 ];
+
+// Función para retry con backoff exponencial
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>, 
+  maxRetries: number = 3, 
+  baseDelay: number = 1000
+): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.log(`[Network] Intento ${attempt + 1} falló, reintentando en ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw new Error('Máximo número de reintentos alcanzado');
+}
 
 // Verificar conectividad de red de forma robusta
 export async function checkNetworkConnectivity(): Promise<boolean> {

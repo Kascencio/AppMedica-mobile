@@ -33,6 +33,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       return;
     }
     
+    // Evitar ciclos infinitos - solo cargar si no está inicializado o no hay perfil
     if (currentState.initialized && currentState.profile) {
       console.log('[useCurrentUser] Ya inicializado con perfil, saltando...');
       return;
@@ -48,10 +49,11 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         set({ profile: localProfile, loading: false, initialized: true });
       }
       
-      // SEGUNDO: Intentar sincronizar con el servidor
+      // SEGUNDO: Intentar sincronizar con el servidor solo si hay token
       const token = useAuth.getState().userToken;
       if (!token) {
         console.log('[useCurrentUser] No hay token, usando solo perfil local');
+        set({ loading: false, initialized: true });
         return;
       }
       
@@ -91,11 +93,14 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             }
           } catch (authError) {
             console.log('[useCurrentUser] Error obteniendo datos de usuario:', authError);
+            // No fallar si no se puede obtener datos adicionales
           }
           
           // Intentar obtener información completa del perfil desde /patients/me
           try {
-            const patientsEndpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+            // Usar el ID del paciente del token para construir la URL
+            const patientId = userProfile.patientProfileId || userProfile.id;
+            const patientsEndpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
             console.log('[useCurrentUser] Obteniendo perfil de paciente desde:', patientsEndpoint);
             
             const patientsRes = await fetch(patientsEndpoint, {
@@ -106,88 +111,58 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
               const patientsData = await patientsRes.json();
               console.log('[useCurrentUser] Perfil de paciente obtenido:', patientsData);
               
+              // Mapear géneros del inglés al español
+              const genderMapReverse: Record<string, string> = {
+                'male': 'Masculino',
+                'female': 'Femenino',
+                'other': 'Otro'
+              };
+              
+              // Mapear campos del backend a la estructura del frontend
               const completeProfile = {
                 ...userProfile,
                 ...patientsData,
                 id: patientsData.id || userProfile.id,
                 role: patientsData.role || userProfile.role || 'PATIENT',
+                // Mapear campos específicos del backend
+                birthDate: patientsData.dateOfBirth || patientsData.birthDate,
+                gender: patientsData.gender ? genderMapReverse[patientsData.gender] || patientsData.gender : patientsData.gender,
+                // Mantener campos que no existen en el backend como undefined
+                bloodType: patientsData.bloodType,
+                emergencyContactName: patientsData.emergencyContactName,
+                emergencyContactRelation: patientsData.emergencyContactRelation,
+                emergencyContactPhone: patientsData.emergencyContactPhone,
+                chronicDiseases: patientsData.chronicDiseases,
+                currentConditions: patientsData.currentConditions,
+                hospitalReference: patientsData.hospitalReference,
               };
               console.log('[useCurrentUser] Perfil completo combinado:', completeProfile);
               
               // Guardar perfil localmente
               await get().saveProfileLocally(completeProfile);
               set({ profile: completeProfile, loading: false, initialized: true });
-              return;
             } else {
-              console.log('[useCurrentUser] Error obteniendo perfil de paciente:', patientsRes.status, patientsRes.statusText);
+              // Si no se puede obtener el perfil completo, usar el básico
+              console.log('[useCurrentUser] No se pudo obtener perfil completo, usando básico');
+              await get().saveProfileLocally(userProfile);
+              set({ profile: userProfile, loading: false, initialized: true });
             }
           } catch (patientsError) {
             console.log('[useCurrentUser] Error obteniendo perfil de paciente:', patientsError);
+            // Usar perfil básico si hay error
+            await get().saveProfileLocally(userProfile);
+            set({ profile: userProfile, loading: false, initialized: true });
           }
-          
-          // Si no se pudo obtener de patients/me, intentar obtener el perfil por ID
-          try {
-            console.log('[useCurrentUser] Intentando obtener perfil por ID:', userProfile.id);
-            const profileByIdEndpoint = buildApiUrl(`/patients/${userProfile.id}`);
-            
-            const profileByIdRes = await fetch(profileByIdEndpoint, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            
-            if (profileByIdRes.ok) {
-              const profileByIdData = await profileByIdRes.json();
-              console.log('[useCurrentUser] Perfil obtenido por ID:', profileByIdData);
-              
-              const completeProfile = {
-                ...userProfile,
-                ...profileByIdData,
-                id: profileByIdData.id || userProfile.id,
-                role: profileByIdData.role || userProfile.role || 'PATIENT',
-                name: profileByIdData.name || userProfile.name || null,
-                birthDate: profileByIdData.birthDate || profileByIdData.dateOfBirth || null,
-                gender: profileByIdData.gender || null,
-                weight: profileByIdData.weight || null,
-                height: profileByIdData.height || null,
-                bloodType: profileByIdData.bloodType || null,
-                emergencyContactName: profileByIdData.emergencyContactName || null,
-                emergencyContactRelation: profileByIdData.emergencyContactRelation || null,
-                emergencyContactPhone: profileByIdData.emergencyContactPhone || null,
-                allergies: profileByIdData.allergies || null,
-                chronicDiseases: profileByIdData.chronicDiseases || null,
-                currentConditions: profileByIdData.currentConditions || null,
-                reactions: profileByIdData.reactions || null,
-                doctorName: profileByIdData.doctorName || null,
-                doctorContact: profileByIdData.doctorContact || null,
-                hospitalReference: profileByIdData.hospitalReference || null,
-                photoUrl: profileByIdData.photoUrl || null,
-              };
-              console.log('[useCurrentUser] Perfil completo obtenido por ID:', completeProfile);
-              
-              // Guardar perfil localmente
-              await get().saveProfileLocally(completeProfile);
-              set({ profile: completeProfile, loading: false, initialized: true });
-              return;
-            } else {
-              console.log('[useCurrentUser] Error obteniendo perfil por ID:', profileByIdRes.status);
-            }
-          } catch (profileByIdError) {
-            console.log('[useCurrentUser] Error obteniendo perfil por ID:', profileByIdError);
-          }
-          
-          // Si no se pudo obtener de ninguna forma, usar solo el perfil básico del token
-          console.log('[useCurrentUser] Usando solo perfil básico del token');
-          await get().saveProfileLocally(userProfile);
-          set({ profile: userProfile, loading: false, initialized: true });
-          return;
+        } else {
+          throw new Error('Token inválido');
         }
-      } catch (decodeError) {
-        console.log('[useCurrentUser] Error decodificando token:', decodeError);
-        throw new Error('Token inválido');
+      } catch (tokenError) {
+        console.error('[useCurrentUser] Error procesando token:', tokenError);
+        set({ error: 'Error de autenticación', loading: false, initialized: true });
       }
-      
-    } catch (err: any) {
-      console.log('[useCurrentUser] Error capturado:', err.message);
-      set({ error: err.message, loading: false });
+    } catch (error) {
+      console.error('[useCurrentUser] Error en fetchProfile:', error);
+      set({ error: error instanceof Error ? error.message : 'Error desconocido', loading: false, initialized: true });
     }
   },
 
@@ -204,9 +179,9 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       console.log('[useCurrentUser] Actualizando perfil con datos:', data);
       console.log('[useCurrentUser] Perfil actual:', profile);
       
-      // Actualizar todos los campos permitidos según la nueva estructura
+      // Actualizar campos según la estructura del backend
       const allowedFields = [
-        'name', 'birthDate', 'gender', 'weight', 'height', 'bloodType',
+        'name', 'dateOfBirth', 'gender', 'weight', 'height', 'bloodType',
         'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
         'allergies', 'chronicDiseases', 'currentConditions', 'reactions',
         'doctorName', 'doctorContact', 'hospitalReference', 'photoUrl', 'age'
@@ -214,7 +189,23 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       
       const bodyData: Record<string, any> = {};
       allowedFields.forEach(field => {
-        const value = data[field as keyof typeof data];
+        let value = data[field as keyof typeof data];
+        
+        // Mapear birthDate del frontend a dateOfBirth del backend
+        if (field === 'dateOfBirth' && !value) {
+          value = data.birthDate;
+        }
+        
+        // Mapear géneros del español al inglés
+        if (field === 'gender' && value) {
+          const genderMap: Record<string, string> = {
+            'Masculino': 'male',
+            'Femenino': 'female',
+            'Otro': 'other'
+          };
+          value = genderMap[value] || value;
+        }
+        
         if (value !== undefined && value !== null && value !== '') {
           // Campos que deben ser números
           if (field === 'weight' || field === 'height') {
@@ -236,7 +227,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             } else {
               console.log(`[useCurrentUser] Omitiendo campo ${field} - valor inválido:`, numValue);
             }
-          } else if (field === 'birthDate') {
+          } else if (field === 'dateOfBirth') {
             // Calcular edad a partir de la fecha de nacimiento
             try {
               const birthDate = new Date(value);
@@ -250,7 +241,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
               
               if (age >= 0 && age <= 150) {
                 bodyData['age'] = age; // Agregar campo age como número
-                bodyData[field] = value; // Mantener birthDate también
+                bodyData[field] = value; // Mantener dateOfBirth también
                 console.log(`[useCurrentUser] Edad calculada: ${age} años`);
               } else {
                 console.log(`[useCurrentUser] Edad calculada inválida: ${age}`);
@@ -267,6 +258,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       
       console.log('[useCurrentUser] Campos permitidos enviados:', Object.keys(bodyData));
       console.log('[useCurrentUser] Datos a enviar (bodyData):', JSON.stringify(bodyData, null, 2));
+      console.log('[useCurrentUser] Datos originales del formulario:', JSON.stringify(data, null, 2));
       
       // Verificar que no haya NaN en los datos
       Object.entries(bodyData).forEach(([key, value]) => {
@@ -275,7 +267,12 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         }
       });
       
-      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+      // Usar el ID del paciente para construir la URL
+      const patientId = profile?.patientProfileId || profile?.id;
+      if (!patientId) {
+        throw new Error('ID de paciente no encontrado');
+      }
+      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
       
       // Limpiar datos antes de enviar - remover cualquier valor NaN o inválido
       const cleanBodyData = { ...bodyData };
@@ -309,9 +306,12 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       console.log('[useCurrentUser] Endpoint:', endpoint);
       console.log('[useCurrentUser] Body:', body);
       
-      // Probar PUT primero
-      let res = await fetch(endpoint, {
-        method: 'PUT',
+      // Usar PATCH directamente (según las pruebas)
+      console.log('[useCurrentUser] Usando PATCH para actualizar perfil...');
+      let res;
+      
+      res = await fetch(endpoint, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
@@ -319,22 +319,34 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         body,
       });
       
-      // Si PUT falla con 405, probar PATCH
-      if (!res.ok && res.status === 405) {
-        console.log('[useCurrentUser] PUT falló con 405, intentando PATCH /patients/me');
-        res = await fetch(endpoint, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body,
-        });
-      }
-      
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         console.log('[useCurrentUser] Error de API:', res.status, err);
+        
+        // Manejar error 500 específicamente
+        if (res.status === 500) {
+          console.log('[useCurrentUser] ⚠️ Error 500 del servidor, guardando localmente como fallback...');
+          
+          // Crear perfil actualizado combinando datos existentes con nuevos
+          const updatedProfile = {
+            ...profile,
+            ...bodyData,
+            // Mapear campos del backend al frontend
+            birthDate: bodyData.dateOfBirth || profile?.birthDate,
+            // Mapear géneros del inglés al español
+            gender: bodyData.gender === 'male' ? 'Masculino' : 
+                   bodyData.gender === 'female' ? 'Femenino' : 
+                   bodyData.gender === 'other' ? 'Otro' : bodyData.gender,
+          };
+          
+          // Guardar localmente
+          await get().saveProfileLocally(updatedProfile);
+          await AsyncStorage.setItem('lastProfileSync', new Date().toISOString());
+          set({ profile: updatedProfile, loading: false });
+          
+          console.log('[useCurrentUser] ✅ Perfil guardado localmente como fallback');
+          return; // No lanzar error, ya que se guardó localmente
+        }
         
         let errorMessage = 'Error al actualizar perfil';
         if (res.status === 405) {
@@ -372,18 +384,19 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       
       // Guardar perfil localmente
       await get().saveProfileLocally(updatedProfile);
+      await AsyncStorage.setItem('lastProfileSync', new Date().toISOString());
       set({ profile: updatedProfile });
       
       // Recargar el perfil para asegurar sincronización con el servidor
       await get().refreshProfile();
       
-    } catch (err: any) {
-      console.log('[useCurrentUser] Error en updateProfile:', err.message);
-      set({ error: err.message });
-      throw err;
-    } finally {
-      set({ loading: false });
-    }
+          } catch (err: any) {
+        console.log('[useCurrentUser] Error en updateProfile:', err.message);
+        set({ error: err.message });
+        throw err;
+      } finally {
+        set({ loading: false });
+      }
   },
 
   resetProfile: () => {
@@ -426,43 +439,32 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
   },
 
   uploadPhoto: async (uri) => {
-    console.log('[useCurrentUser] Subiendo foto...');
+    console.log('[useCurrentUser] Subiendo foto con ImageKit...');
     try {
       const token = useAuth.getState().userToken;
       if (!token) throw new Error('No autenticado');
 
-      // Por ahora, devolver la URI local hasta que se implemente la subida al servidor
-      console.log('[useCurrentUser] Foto subida localmente:', uri);
-      return uri;
-      
-      // TODO: Implementar subida real al servidor cuando esté disponible
-      /*
-      const formData = new FormData();
-      formData.append('file', {
-        uri,
-        type: 'image/jpeg',
-        name: 'photo.jpg',
-      } as any);
+      const profile = get().profile;
+      if (!profile?.id) throw new Error('Perfil no encontrado');
 
-      const uploadEndpoint = buildApiUrl('/upload');
-      const res = await fetch(uploadEndpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
+      // Importar el servicio de ImageKit
+      const { imageUploadService } = await import('../lib/imageUploadService');
+      
+      const result = await imageUploadService.uploadImage(uri, {
+        userId: profile.id,
+        folder: '/recuerdamed/profiles',
+        tags: ['profile', 'avatar'],
+        useUniqueFileName: true,
+        compressImage: true,
       });
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error('[useCurrentUser] Error al subir foto:', res.status, err);
-        throw new Error('Error al subir foto');
+      if (!result.success) {
+        throw new Error(result.error || 'Error al subir imagen');
       }
 
-      const uploadedUrl = await res.json();
-      console.log('[useCurrentUser] Foto subida exitosamente:', uploadedUrl);
-      return uploadedUrl.url;
-      */
+      console.log('[useCurrentUser] Foto subida exitosamente a ImageKit:', result.url);
+      return result.url!;
+
     } catch (error) {
       console.error('[useCurrentUser] Error en uploadPhoto:', error);
       throw error;

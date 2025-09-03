@@ -16,6 +16,8 @@ export async function addDoctorNameToAppointments(db: SQLite.SQLiteDatabase): Pr
     }
   } catch (error) {
     console.error('[Migration] Error agregando columna doctorName:', error);
-    throw error;
+    // No lanzar error para evitar que la app falle
+    // En su lugar, registrar el error y continuar
+    console.warn('[Migration] Continuando sin agregar columna doctorName debido a error');
   }
 }

@@ -300,55 +300,57 @@ export default function AlarmScheduler({
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Horarios de recordatorio</Text>
-          <View style={styles.timeButtonsContainer}>
-            <TouchableOpacity
-              style={[styles.addTimeButton, styles.quickTimeButton]}
-              onPress={showQuickTimePresets}
-              accessibilityRole="button"
-              accessibilityLabel="Agregar horario rápido"
-            >
-              <Ionicons name="time" size={isTablet ? 18 : 16} color={COLORS.text.inverse} />
-              <Text style={styles.addTimeButtonText}>Rápido</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.addTimeButton, styles.customTimeButton]}
-              onPress={showCustomTimeSelector}
-              accessibilityRole="button"
-              accessibilityLabel="Agregar horario personalizado"
-            >
-              <Ionicons name="add" size={isTablet ? 18 : 16} color={COLORS.text.inverse} />
-              <Text style={styles.addTimeButtonText}>Personalizado</Text>
-            </TouchableOpacity>
-          </View>
+        </View>
+        <View style={styles.timeButtonsContainer}>
+          <TouchableOpacity
+            style={[styles.addTimeButton, styles.quickTimeButton]}
+            onPress={showQuickTimePresets}
+            accessibilityRole="button"
+            accessibilityLabel="Agregar horario rápido"
+          >
+            <Ionicons name="time" size={isTablet ? 18 : 16} color={COLORS.text.inverse} />
+            <Text style={styles.addTimeButtonText}>Rápido</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addTimeButton, styles.customTimeButton]}
+            onPress={showCustomTimeSelector}
+            accessibilityRole="button"
+            accessibilityLabel="Agregar horario personalizado"
+          >
+            <Ionicons name="add" size={isTablet ? 18 : 16} color={COLORS.text.inverse} />
+            <Text style={styles.addTimeButtonText}>Personalizado</Text>
+          </TouchableOpacity>
         </View>
 
-        {selectedTimes.length === 0 ? (
-          <View style={styles.emptyTimes}>
-            <Ionicons name="time-outline" size={isTablet ? 48 : 40} color={COLORS.text.secondary} />
-            <Text style={styles.emptyTimesText}>No hay horarios configurados</Text>
-            <Text style={styles.emptyTimesSubtext}>
-              Usa "Rápido" para horarios comunes o "Personalizado" para un horario específico
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.timesContainer}>
-            {selectedTimes.map((time, index) => (
-              <View key={index} style={styles.timeChip}>
-                <Ionicons name="time" size={16} color={COLORS.primary} />
-                <Text style={styles.timeChipText}>
-                  {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => removeTime(index)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Eliminar horario ${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                >
-                  <Ionicons name="close-circle" size={18} color={COLORS.error} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
-        )}
+        <View style={styles.timesSection}>
+          {selectedTimes.length === 0 ? (
+            <View style={styles.emptyTimes}>
+              <Ionicons name="time-outline" size={isTablet ? 48 : 40} color={COLORS.text.secondary} />
+              <Text style={styles.emptyTimesText}>No hay horarios configurados</Text>
+              <Text style={styles.emptyTimesSubtext}>
+                Usa "Rápido" para horarios comunes o "Personalizado" para un horario específico
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.timesContainer}>
+              {selectedTimes.map((time, index) => (
+                <View key={index} style={styles.timeChip}>
+                  <Ionicons name="time" size={16} color={COLORS.primary} />
+                  <Text style={styles.timeChipText}>
+                    {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => removeTime(index)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Eliminar horario ${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                  >
+                    <Ionicons name="close-circle" size={18} color={COLORS.error} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
 
         {showTimePicker && (
           <DateTimePicker
@@ -624,18 +626,22 @@ const styles = StyleSheet.create({
   },
   timeButtonsContainer: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
+    flexWrap: 'wrap',
+    marginBottom: 16,
   },
   addTimeButton: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
+    minWidth: 120,
+    flex: 1,
   },
   quickTimeButton: {
     backgroundColor: COLORS.primary,
@@ -648,52 +654,61 @@ const styles = StyleSheet.create({
   addTimeButtonText: {
     color: COLORS.text.inverse,
     fontWeight: '600',
-    fontSize: 14,
-    marginLeft: 8,
+    fontSize: 15,
+    marginLeft: 10,
   },
   emptyTimes: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 48,
+    paddingHorizontal: 24,
     backgroundColor: COLORS.background.white,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 2,
     borderColor: COLORS.border.neutral,
     borderStyle: 'dashed',
+    marginTop: 8,
   },
   emptyTimesText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: COLORS.text.secondary,
-    marginTop: 16,
+    marginTop: 20,
+    textAlign: 'center',
   },
   emptyTimesSubtext: {
-    fontSize: 14,
+    fontSize: 15,
     color: COLORS.text.secondary,
     textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 24,
+    marginTop: 12,
+    paddingHorizontal: 32,
+    lineHeight: 22,
+  },
+  timesSection: {
+    marginTop: 16,
   },
   timesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 16,
+    paddingTop: 8,
   },
   timeChip: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primary + '20',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderWidth: 1,
     borderColor: COLORS.primary + '40',
+    marginBottom: 8,
   },
   timeChipText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: COLORS.primary,
-    marginLeft: 8,
-    marginRight: 12,
+    marginLeft: 12,
+    marginRight: 16,
   },
   summary: {
     flexDirection: 'row',

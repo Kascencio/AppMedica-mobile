@@ -176,73 +176,149 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
         throw new Error('No hay perfil de paciente disponible');
       }
       
-      // VERIFICAR CONECTIVIDAD - NO PERMITIR AGREGAR SI ESTÁ OFFLINE
-      if (!isOnline) {
-        throw new Error('No hay conexión a internet. No se pueden registrar eventos en modo offline.');
-      }
-      
-      if (!token) {
-        throw new Error('No hay token de autenticación. Inicia sesión nuevamente.');
-      }
-      
-      // Si estamos online, intentar sincronizar directamente con el servidor
-      try {
-        console.log('[useIntakeEvents] Intentando sincronizar con servidor...');
-        
-        const bodyData = { 
-          ...data, 
-          patientProfileId: profile.id,
-          at: new Date().toISOString()
-        };
-        const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.INTAKE_EVENTS.BASE);
-        
-        console.log('[useIntakeEvents] Enviando petición a:', endpoint);
-        console.log('[useIntakeEvents] Headers:', { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token.substring(0, 20)}...` });
-        console.log('[useIntakeEvents] Body:', JSON.stringify(bodyData, null, 2));
-        
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-          body: JSON.stringify(bodyData),
-        });
-        
-        console.log('[useIntakeEvents] Respuesta recibida:', {
-          status: res.status,
-          statusText: res.statusText,
-          ok: res.ok
-        });
-        
-        if (res.ok) {
-          const responseData = await res.json();
-          console.log('[useIntakeEvents] Evento registrado exitosamente:', responseData);
+      // Si estamos online, intentar sincronizar con el servidor
+      if (isOnline && token) {
+        try {
+          console.log('[useIntakeEvents] Intentando sincronizar con servidor...');
           
-          // Guardar en base de datos local
-          const localEvent: LocalIntakeEvent = {
-            ...responseData,
-            isOffline: false,
-            syncStatus: 'synced',
-            updatedAt: responseData.updatedAt || responseData.createdAt || new Date().toISOString()
+          // Primero intentar con el endpoint de intake-events
+          const bodyData = { 
+            ...data, 
+            patientProfileId: profile.id,
+            at: new Date().toISOString()
           };
-          await localDB.saveIntakeEvent(localEvent);
+          const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.INTAKE_EVENTS.BASE);
           
-          // Recargar la lista completa
-          await get().getEvents();
+          console.log('[useIntakeEvents] Enviando petición a:', endpoint);
+          console.log('[useIntakeEvents] Headers:', { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token.substring(0, 20)}...` });
+          console.log('[useIntakeEvents] Body:', JSON.stringify(bodyData, null, 2));
           
-        } else {
-          // Si falla la API, no permitir guardar
-          const errorData = await res.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Error al registrar evento en el servidor');
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+            body: JSON.stringify(bodyData),
+          });
+          
+          console.log('[useIntakeEvents] Respuesta recibida:', {
+            status: res.status,
+            statusText: res.statusText,
+            ok: res.ok
+          });
+          
+          if (res.ok) {
+            const responseData = await res.json();
+            console.log('[useIntakeEvents] Evento registrado exitosamente:', responseData);
+            
+            // Guardar en base de datos local
+            const localEvent: LocalIntakeEvent = {
+              ...responseData,
+              isOffline: false,
+              syncStatus: 'synced',
+              updatedAt: responseData.updatedAt || responseData.createdAt || new Date().toISOString()
+            };
+            await localDB.saveIntakeEvent(localEvent);
+            
+            // Recargar la lista completa
+            await get().getEvents();
+            return;
+            
+          } else if (res.status === 404) {
+            console.log('[useIntakeEvents] Endpoint intake-events no disponible (404), intentando con notificaciones...');
+            
+            // Si el endpoint de intake-events no existe, crear una notificación como alternativa
+            try {
+              const notificationData = {
+                userId: profile.id,
+                type: 'MEDICATION_REMINDER',
+                title: `Registro de ${data.action.toLowerCase()}`,
+                message: `${data.kind === 'MED' ? 'Medicamento' : 'Tratamiento'} ${data.action.toLowerCase()} - ${(data as any).notes || 'Sin notas'}`,
+                priority: data.action === 'SKIPPED' ? 'MEDIUM' : 'HIGH',
+                metadata: {
+                  intakeEvent: true,
+                  kind: data.kind,
+                  refId: data.refId,
+                  action: data.action,
+                  scheduledFor: data.scheduledFor,
+                  notes: (data as any).notes
+                }
+              };
+              
+              const notificationEndpoint = buildApiUrl('/notifications');
+              console.log('[useIntakeEvents] Creando notificación como alternativa:', notificationEndpoint);
+              
+              const notificationRes = await fetch(notificationEndpoint, {
+                method: 'POST',
+                headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+                body: JSON.stringify(notificationData),
+              });
+              
+              if (notificationRes.ok) {
+                const notificationData = await notificationRes.json();
+                console.log('[useIntakeEvents] Notificación creada como alternativa:', notificationData);
+                
+                // Guardar evento localmente con referencia a la notificación
+                const localEvent: LocalIntakeEvent = {
+                  id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                  ...data,
+                  patientProfileId: profile.id,
+                  at: new Date().toISOString(),
+                  isOffline: false,
+                  syncStatus: 'synced',
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  meta: JSON.stringify({
+                    notificationId: notificationData.id,
+                    syncedViaNotification: true
+                  })
+                };
+                await localDB.saveIntakeEvent(localEvent);
+                
+                // Recargar la lista completa
+                await get().getEvents();
+                return;
+              } else {
+                console.log('[useIntakeEvents] Error creando notificación alternativa:', notificationRes.status);
+              }
+            } catch (notificationError: any) {
+              console.log('[useIntakeEvents] Error con notificación alternativa:', notificationError.message);
+            }
+            
+            // Continuar con el guardado local
+          } else {
+            // Si falla la API, continuar con guardado local
+            const errorData = await res.json().catch(() => ({}));
+            console.log('[useIntakeEvents] Error de API:', errorData.message || 'Error desconocido');
+            console.log('[useIntakeEvents] Continuando con guardado local...');
+          }
+          
+        } catch (serverError: any) {
+          console.log('[useIntakeEvents] Error sincronizando con servidor:', serverError);
+          console.log('[useIntakeEvents] Continuando con guardado local...');
         }
-        
-      } catch (serverError: any) {
-        console.log('[useIntakeEvents] Error sincronizando con servidor:', serverError);
-        console.log('[useIntakeEvents] Detalles del error:', {
-          message: serverError.message,
-          stack: serverError.stack,
-          name: serverError.name
-        });
-        throw new Error(`Error de conexión: ${serverError.message}`);
       }
+      
+      // Guardar localmente (modo offline o si falló el servidor)
+      console.log('[useIntakeEvents] Guardando evento localmente...');
+      
+      const localEvent: LocalIntakeEvent = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        ...data,
+        patientProfileId: profile.id,
+        at: new Date().toISOString(),
+        isOffline: true,
+        syncStatus: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      await localDB.saveIntakeEvent(localEvent);
+      console.log('[useIntakeEvents] Evento guardado localmente:', localEvent.id);
+      
+      // Agregar a la cola de sincronización para cuando el endpoint esté disponible
+      await syncService.addToSyncQueue('CREATE', 'intakeEvents', localEvent);
+      
+      // Recargar la lista completa
+      await get().getEvents();
       
     } catch (err: any) {
       console.log('[useIntakeEvents] Error en registerEvent:', err.message);

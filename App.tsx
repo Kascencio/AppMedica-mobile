@@ -14,6 +14,8 @@ import { useAutoSync } from './hooks/useAutoSync';
 import { Ionicons } from '@expo/vector-icons';
 import { setNotificationHandler, requestPermissions } from './lib/notifications';
 import { syncService } from './lib/syncService';
+import { notificationService } from './lib/notificationService';
+import { DatabaseInitializer } from './components/DatabaseInitializer';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
@@ -28,23 +30,46 @@ export default function App() {
   useEffect(() => {
     loadToken();
     (async () => {
-      // Configurar el manejador de notificaciones
-      setNotificationHandler();
-      
-      // Solicitar permisos usando la función del módulo de notificaciones
-      const permissionsGranted = await requestPermissions();
-      if (permissionsGranted) {
-        setNotiPerm('granted');
-      } else {
-        setNotiPerm('denied');
-        setShowPermModal(true);
+      try {
+        // Configurar el manejador de notificaciones
+        setNotificationHandler();
+        
+        // Solicitar permisos usando la función del módulo de notificaciones
+        const permissionsGranted = await requestPermissions();
+        if (permissionsGranted) {
+          setNotiPerm('granted');
+        } else {
+          setNotiPerm('denied');
+          setShowPermModal(true);
+        }
+        
+        // Inicializar servicio de sincronización (que incluye la base de datos)
+        try {
+          await syncService.init();
+        } catch (syncError) {
+          console.error('[App] Error inicializando syncService:', syncError);
+          // Continuar sin sincronización
+        }
+        
+        // Inicializar sistema offline
+        try {
+          await initializeOffline();
+        } catch (offlineError) {
+          console.error('[App] Error inicializando sistema offline:', offlineError);
+          // Continuar sin modo offline
+        }
+        
+        // Inicializar servicio de notificaciones
+        try {
+          await notificationService.initialize();
+        } catch (notificationError) {
+          console.error('[App] Error inicializando notificationService:', notificationError);
+          // Continuar sin notificaciones
+        }
+      } catch (error) {
+        console.error('[App] Error crítico en inicialización:', error);
+        // No detener la app por errores de inicialización
       }
-      
-      // Inicializar sistema offline
-      await initializeOffline();
-      
-      // Inicializar servicio de sincronización
-      await syncService.init();
     })();
     
     // Listener para respuesta a notificaciones (cuando el usuario toca la notificación)
@@ -56,7 +81,7 @@ export default function App() {
       if (data && (data.type === 'MEDICATION' || data.type === 'APPOINTMENT' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
         if (navigationRef.isReady()) {
           (navigationRef as any).navigate('AlarmScreen', { 
-            kind: data.kind || 'MED',
+            kind: data.kind || data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT',
             refId: data.medicationId || data.appointmentId || data.refId,
             scheduledFor: data.scheduledFor,
             name: data.medicationName || data.doctorName || data.name,
@@ -69,27 +94,33 @@ export default function App() {
       }
     });
     
-    // Listener para notificaciones recibidas en primer plano
+    // Listener para notificaciones recibidas en primer plano (solo para alarmas activas)
     const fgListener = Notifications.addNotificationReceivedListener(notification => {
       const data = notification.request.content.data;
       const receivedAt = new Date();
       console.log('[NOTIFICACIÓN RECIBIDA] Hora recibida:', receivedAt.toISOString(), 'Datos:', data);
       
-      // Si es una alarma de medicamento o cita, navegar automáticamente a la pantalla de alarma
+      // Solo navegar automáticamente si es una alarma de medicamento o cita y la app está en primer plano
       if (data && (data.type === 'MEDICATION' || data.type === 'APPOINTMENT' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
-        console.log('[App] Navegando a pantalla de alarma automáticamente');
-        if (navigationRef.isReady()) {
-          // Navegar inmediatamente para mostrar la alarma
-          (navigationRef as any).navigate('AlarmScreen', { 
-            kind: data.kind || 'MED',
-            refId: data.medicationId || data.appointmentId || data.refId,
-            scheduledFor: data.scheduledFor,
-            name: data.medicationName || data.doctorName || data.name,
-            dosage: data.dosage || '',
-            instructions: data.instructions || data.notes || '',
-            time: data.time,
-            location: data.location || ''
-          });
+        // Verificar que la notificación sea reciente (dentro de los últimos 30 segundos)
+        const notificationTime = data.scheduledFor ? new Date(data.scheduledFor) : receivedAt;
+        const timeDiff = Math.abs(receivedAt.getTime() - notificationTime.getTime());
+        
+        if (timeDiff <= 30000) { // 30 segundos
+          console.log('[App] Navegando a pantalla de alarma automáticamente');
+          if (navigationRef.isReady()) {
+            // Navegar inmediatamente para mostrar la alarma
+            (navigationRef as any).navigate('AlarmScreen', { 
+              kind: data.kind || data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT',
+              refId: data.medicationId || data.appointmentId || data.refId,
+              scheduledFor: data.scheduledFor,
+              name: data.medicationName || data.doctorName || data.name,
+              dosage: data.dosage || '',
+              instructions: data.instructions || data.notes || '',
+              time: data.time,
+              location: data.location || ''
+            });
+          }
         }
       }
     });
@@ -134,7 +165,7 @@ export default function App() {
   }
 
   return (
-    <>
+    <DatabaseInitializer>
       <NavigationContainer ref={navigationRef}>
         {isAuthenticated ? <AppTabs /> : <AuthStack />}
       </NavigationContainer>
@@ -151,6 +182,6 @@ export default function App() {
           </View>
         </View>
       </Modal>
-    </>
+    </DatabaseInitializer>
   );
 }
