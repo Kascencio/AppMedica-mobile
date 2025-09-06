@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './useAuth';
+import { useOffline } from './useOffline'; // Importar useOffline
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { UserProfile } from '../types';
 
@@ -16,6 +17,7 @@ interface CurrentUserState {
   saveProfileLocally: (profile: UserProfile) => Promise<void>;
   loadProfileLocally: () => Promise<UserProfile | null>;
   uploadPhoto: (uri: string) => Promise<string>;
+  syncProfileUpdate: (profileData: Partial<UserProfile>) => Promise<boolean>;
 }
 
 export const useCurrentUser = create<CurrentUserState>((set, get) => ({
@@ -167,236 +169,95 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
   },
 
   updateProfile: async (data) => {
-    console.log('[useCurrentUser] ========== INICIO updateProfile ==========');
-    console.log('[useCurrentUser] Datos recibidos:', JSON.stringify(data, null, 2));
+    console.log('[useCurrentUser] Iniciando updateProfile (offline-first)');
+    const { profile, saveProfileLocally, syncProfileUpdate } = get();
     
-    set({ loading: true, error: null });
+    if (!profile) {
+      console.error('[useCurrentUser] No hay perfil para actualizar.');
+      set({ error: 'No hay perfil para actualizar.' });
+      return;
+    }
+
+    // 1. Optimistic UI Update
+    const updatedProfile = { ...profile, ...data, updatedAt: new Date().toISOString() };
+    set({ profile: updatedProfile, loading: false, error: null });
+    console.log('[useCurrentUser] Perfil actualizado localmente (optimista)');
+
+    // 2. Persist Locally
+    await saveProfileLocally(updatedProfile);
+
+    // 3. Sync with Server
+    const { isOnline, addPendingSync } = useOffline.getState();
+    if (isOnline) {
+      console.log('[useCurrentUser] Online, intentando sincronizar inmediatamente...');
+      const success = await syncProfileUpdate(data);
+      if (!success) {
+        console.log('[useCurrentUser] Sincronización falló, agregando a la cola.');
+        await addPendingSync('UPDATE', 'profile', data);
+      } else {
+        console.log('[useCurrentUser] Sincronización inmediata exitosa.');
+      }
+    } else {
+      console.log('[useCurrentUser] Offline, agregando a la cola de sincronización.');
+      await addPendingSync('UPDATE', 'profile', data);
+    }
+  },
+
+  syncProfileUpdate: async (data) => {
+    console.log('[useCurrentUser] Sincronizando perfil con el servidor...');
+    set({ loading: true });
     try {
       const token = useAuth.getState().userToken;
       if (!token) throw new Error('No autenticado');
+      
       const { profile } = get();
+      if (!profile) throw new Error('Perfil no disponible para sincronización');
       
-      console.log('[useCurrentUser] Actualizando perfil con datos:', data);
-      console.log('[useCurrentUser] Perfil actual:', profile);
-      
-      // Actualizar campos según la estructura del backend
-      const allowedFields = [
-        'name', 'dateOfBirth', 'gender', 'weight', 'height', 'bloodType',
-        'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
-        'allergies', 'chronicDiseases', 'currentConditions', 'reactions',
-        'doctorName', 'doctorContact', 'hospitalReference', 'photoUrl', 'age'
-      ];
-      
-      const bodyData: Record<string, any> = {};
-      allowedFields.forEach(field => {
-        let value = data[field as keyof typeof data];
-        
-        // Mapear birthDate del frontend a dateOfBirth del backend
-        if (field === 'dateOfBirth' && !value) {
-          value = data.birthDate;
-        }
-        
-        // Mapear géneros del español al inglés
-        if (field === 'gender' && value) {
-          const genderMap: Record<string, string> = {
-            'Masculino': 'male',
-            'Femenino': 'female',
-            'Otro': 'other'
-          };
-          value = genderMap[value] || value;
-        }
-        
-        if (value !== undefined && value !== null && value !== '') {
-          // Campos que deben ser números
-          if (field === 'weight' || field === 'height') {
-            let numValue: number;
-            
-            if (typeof value === 'number') {
-              numValue = value;
-            } else if (typeof value === 'string') {
-              numValue = parseFloat(value);
-            } else {
-              console.log(`[useCurrentUser] Omitiendo campo ${field} - tipo inválido:`, typeof value);
-              return;
-            }
-            
-            // Validar que sea un número válido
-            if (!isNaN(numValue) && isFinite(numValue) && numValue > 0) {
-              bodyData[field] = numValue; // Asegurar que sea number
-              console.log(`[useCurrentUser] Campo ${field} convertido a número:`, numValue, typeof numValue);
-            } else {
-              console.log(`[useCurrentUser] Omitiendo campo ${field} - valor inválido:`, numValue);
-            }
-          } else if (field === 'dateOfBirth') {
-            // Calcular edad a partir de la fecha de nacimiento
-            try {
-              const birthDate = new Date(value);
-              const today = new Date();
-              let age = today.getFullYear() - birthDate.getFullYear();
-              const monthDiff = today.getMonth() - birthDate.getMonth();
-              
-              if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                age--;
-              }
-              
-              if (age >= 0 && age <= 150) {
-                bodyData['age'] = age; // Agregar campo age como número
-                bodyData[field] = value; // Mantener dateOfBirth también
-                console.log(`[useCurrentUser] Edad calculada: ${age} años`);
-              } else {
-                console.log(`[useCurrentUser] Edad calculada inválida: ${age}`);
-              }
-            } catch (error) {
-              console.log(`[useCurrentUser] Error calculando edad:`, error);
-            }
-          } else {
-            // Campos de texto
-            bodyData[field] = value;
-          }
-        }
-      });
-      
-      console.log('[useCurrentUser] Campos permitidos enviados:', Object.keys(bodyData));
-      console.log('[useCurrentUser] Datos a enviar (bodyData):', JSON.stringify(bodyData, null, 2));
-      console.log('[useCurrentUser] Datos originales del formulario:', JSON.stringify(data, null, 2));
-      
-      // Verificar que no haya NaN en los datos
-      Object.entries(bodyData).forEach(([key, value]) => {
-        if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
-          console.error(`[useCurrentUser] 🚨 PROBLEMA: Campo ${key} contiene valor inválido:`, value);
-        }
-      });
-      
-      // Usar el ID del paciente para construir la URL
-      const patientId = profile?.patientProfileId || profile?.id;
-      if (!patientId) {
-        throw new Error('ID de paciente no encontrado');
-      }
+      const patientId = profile.patientProfileId || profile.id;
+      if (!patientId) throw new Error('ID de paciente no encontrado');
+
       const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
       
-      // Limpiar datos antes de enviar - remover cualquier valor NaN o inválido
-      const cleanBodyData = { ...bodyData };
-      Object.keys(cleanBodyData).forEach(key => {
-        const value = cleanBodyData[key];
-        
-        // Para campos numéricos, asegurar que sean números válidos
-        if (key === 'weight' || key === 'height' || key === 'age') {
-          if (typeof value !== 'number' || isNaN(value) || !isFinite(value) || value <= 0) {
-            console.log(`[useCurrentUser] Removiendo campo ${key} con valor inválido:`, value, typeof value);
-            delete cleanBodyData[key];
-          } else {
-            console.log(`[useCurrentUser] Campo ${key} válido:`, value, typeof value);
-          }
-        } else if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
-          console.log(`[useCurrentUser] Removiendo campo ${key} con valor inválido:`, value);
-          delete cleanBodyData[key];
+      // Mapear y limpiar datos para el backend
+      const bodyData: Record<string, any> = {};
+      Object.keys(data).forEach(key => {
+        let value = data[key as keyof typeof data];
+        if (key === 'birthDate') bodyData['dateOfBirth'] = value;
+        else if (key === 'gender') {
+          const genderMap: Record<string, string> = { 'Masculino': 'male', 'Femenino': 'female', 'Otro': 'other' };
+          bodyData['gender'] = genderMap[value as string] || value;
         }
+        else bodyData[key] = value;
       });
-      
-      const body = JSON.stringify(cleanBodyData);
-      
-      // Verificación final de tipos antes de enviar
-      console.log('[useCurrentUser] Verificación final de tipos:');
-      Object.entries(cleanBodyData).forEach(([key, value]) => {
-        if (key === 'weight' || key === 'height' || key === 'age') {
-          console.log(`[useCurrentUser] ${key}: ${value} (${typeof value}) - ${typeof value === 'number' ? '✅ VÁLIDO' : '❌ INVÁLIDO'}`);
-        }
-      });
-      
-      console.log('[useCurrentUser] Endpoint:', endpoint);
-      console.log('[useCurrentUser] Body:', body);
-      
-      // Usar PATCH directamente (según las pruebas)
-      console.log('[useCurrentUser] Usando PATCH para actualizar perfil...');
-      let res;
-      
-      res = await fetch(endpoint, {
+
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body,
+        body: JSON.stringify(bodyData),
       });
-      
+
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.log('[useCurrentUser] Error de API:', res.status, err);
-        
-        // Manejar error 500 específicamente
-        if (res.status === 500) {
-          console.log('[useCurrentUser] ⚠️ Error 500 del servidor, guardando localmente como fallback...');
-          
-          // Crear perfil actualizado combinando datos existentes con nuevos
-          const updatedProfile = {
-            ...profile,
-            ...bodyData,
-            // Mapear campos del backend al frontend
-            birthDate: bodyData.dateOfBirth || profile?.birthDate,
-            // Mapear géneros del inglés al español
-            gender: bodyData.gender === 'male' ? 'Masculino' : 
-                   bodyData.gender === 'female' ? 'Femenino' : 
-                   bodyData.gender === 'other' ? 'Otro' : bodyData.gender,
-          };
-          
-          // Guardar localmente
-          await get().saveProfileLocally(updatedProfile);
-          await AsyncStorage.setItem('lastProfileSync', new Date().toISOString());
-          set({ profile: updatedProfile, loading: false });
-          
-          console.log('[useCurrentUser] ✅ Perfil guardado localmente como fallback');
-          return; // No lanzar error, ya que se guardó localmente
-        }
-        
-        let errorMessage = 'Error al actualizar perfil';
-        if (res.status === 405) {
-          errorMessage = `Método no permitido en ${endpoint}. Verificar endpoint de la API.`;
-        } else if (res.status === 404) {
-          errorMessage = `Endpoint ${endpoint} no encontrado. Verificar configuración de la API.`;
-        } else if (res.status === 401) {
-          errorMessage = 'No autorizado. Verificar token de autenticación.';
-        } else if (res.status === 400) {
-          if (err.issues && Array.isArray(err.issues)) {
-            console.log('[useCurrentUser] Issues completos del servidor:', JSON.stringify(err.issues, null, 2));
-            const fieldErrors = err.issues.map((issue: any) => {
-              const field = issue.path?.join('.') || 'campo';
-              console.log(`[useCurrentUser] Issue específico - Campo: ${field}, Esperado: ${issue.expected}, Recibido: ${issue.received}, Mensaje: ${issue.message}`);
-              return `${field}: ${issue.message} (esperaba ${issue.expected}, recibió ${issue.received})`;
-            }).join(', ');
-            errorMessage = `Error de validación: ${fieldErrors}`;
-          } else {
-            errorMessage = err.error || err.message || 'Datos inválidos enviados a la API.';
-          }
-        } else if (err.error) {
-          errorMessage = err.error;
-        } else if (err.message) {
-          errorMessage = err.message;
-        }
-        
-        throw new Error(errorMessage);
+        const errorData = await res.json().catch(() => ({ message: 'Error de red' }));
+        throw new Error(`Error del servidor: ${res.status} - ${errorData.message || 'Error desconocido'}`);
       }
+
+      const serverProfile = await res.json();
       
-      const updated = await res.json();
-      console.log('[useCurrentUser] Perfil actualizado exitosamente:', updated);
-      
-      // Actualizar el estado local con la respuesta del servidor
-      const updatedProfile = { ...profile, ...updated };
-      
-      // Guardar perfil localmente
-      await get().saveProfileLocally(updatedProfile);
-      await AsyncStorage.setItem('lastProfileSync', new Date().toISOString());
-      set({ profile: updatedProfile });
-      
-      // Recargar el perfil para asegurar sincronización con el servidor
-      await get().refreshProfile();
-      
-          } catch (err: any) {
-        console.log('[useCurrentUser] Error en updateProfile:', err.message);
-        set({ error: err.message });
-        throw err;
-      } finally {
-        set({ loading: false });
-      }
+      // Actualizar estado con la respuesta del servidor para consistencia
+      const finalProfile = { ...get().profile, ...serverProfile, updatedAt: new Date().toISOString() };
+      set({ profile: finalProfile, loading: false });
+      await get().saveProfileLocally(finalProfile);
+
+      console.log('[useCurrentUser] Sincronización de perfil exitosa.');
+      return true;
+    } catch (err: any) {
+      console.error('[useCurrentUser] Error en syncProfileUpdate:', err.message);
+      set({ error: err.message, loading: false });
+      return false;
+    }
   },
 
   resetProfile: () => {
