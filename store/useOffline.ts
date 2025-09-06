@@ -235,14 +235,24 @@ export const useOffline = create<OfflineState>((set, get) => ({
       
       for (const item of pendingItems) {
         try {
-          // Aquí implementarías la lógica de sincronización con el backend
-          // Por ahora solo simulamos el éxito
+          let success = false;
           console.log(`[useOffline] Sincronizando: ${item.action} ${item.entity}`);
-          
-          // Simular delay de red
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
-          successfulItems.push(item.id);
+
+          if (item.entity === 'profile' && item.action === 'UPDATE') {
+            const { syncProfileUpdate } = (await import('./useCurrentUser')).useCurrentUser.getState();
+            success = await syncProfileUpdate(item.data);
+          } else {
+            // Aquí iría la lógica para otras entidades (medicamentos, citas, etc.)
+            console.warn(`[useOffline] No hay lógica de sincronización para: ${item.entity}`);
+            // Simulamos éxito para que no se quede en la cola para siempre
+            success = true;
+          }
+
+          if (success) {
+            successfulItems.push(item.id);
+          } else {
+            throw new Error(`Fallo en la lógica de sincronización para ${item.entity}`);
+          }
         } catch (error) {
           console.error(`[useOffline] Error sincronizando item ${item.id}:`, error);
           failedItems.push({ ...item, retryCount: item.retryCount + 1 });
