@@ -337,12 +337,12 @@ export default function AlarmScheduler({
                 <View key={index} style={styles.timeChip}>
                   <Ionicons name="time" size={16} color={COLORS.primary} />
                   <Text style={styles.timeChipText}>
-                    {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
                   </Text>
                   <TouchableOpacity
                     onPress={() => removeTime(index)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Eliminar horario ${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                    accessibilityLabel={`Eliminar horario ${time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`}
                   >
                     <Ionicons name="close-circle" size={18} color={COLORS.error} />
                   </TouchableOpacity>
@@ -411,7 +411,7 @@ export default function AlarmScheduler({
               {frequencyType === 'daysOfWeek' && `Recibirás recordatorios los ${daysOfWeek.map(d => getDayName(d)).join(', ')}`}
               {frequencyType === 'everyXHours' && `Recibirás recordatorios cada ${everyXHours} horas`}
               {' a las '}
-              {selectedTimes.map(t => t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })).join(', ')}
+              {selectedTimes.map(t => t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })).join(', ')}
             </Text>
           </View>
         </View>

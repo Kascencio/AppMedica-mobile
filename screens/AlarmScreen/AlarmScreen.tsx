@@ -108,7 +108,7 @@ export default function AlarmScreen({ navigation }: any) {
               name,
               dosage,
               instructions,
-              time: snoozeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              time: snoozeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
               patientProfileId: profile?.patientProfileId || profile?.id,
             },
             trigger: {
@@ -216,7 +216,7 @@ export default function AlarmScreen({ navigation }: any) {
         <View style={styles.timeContainer}>
           <Ionicons name="time" size={24} color={COLORS.primary} />
           <Text style={styles.timeText}>
-            {time || (scheduledFor ? new Date(scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : getCurrentTime())}
+            {time || (scheduledFor ? new Date(scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : getCurrentTime())}
           </Text>
         </View>
       </View>

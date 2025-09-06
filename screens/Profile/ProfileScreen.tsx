@@ -13,6 +13,10 @@ import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
 
 import SyncStatus from '../../components/SyncStatus';
+import { runFullDiagnostic } from '../../lib/alarmDiagnostic';
+import { testMedicationAlarm, checkAlarmStatus, clearAllAlarms } from '../../lib/alarmTest';
+import { recreateNotificationChannels } from '../../lib/notificationChannels';
+import { testNotificationDisplay, testImmediateNotification, checkNotificationPermissions } from '../../lib/notificationDisplayTest';
 
 
 export default function ProfileScreen() {
@@ -613,6 +617,177 @@ export default function ProfileScreen() {
         </LinearGradient>
       )}
 
+      {/* Sección de Diagnóstico de Alarmas - Solo para desarrollo */}
+      {__DEV__ && (
+        <LinearGradient
+          colors={['#fef2f2', '#fee2e2', '#fca5a5']}
+          style={{
+            margin: 16,
+            borderRadius: 16,
+            padding: 20,
+            borderWidth: 2,
+            borderColor: '#fca5a5',
+          }}
+        >
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#dc2626', marginBottom: 12, textAlign: 'center' }}>
+            🔍 Diagnóstico de Alarmas
+          </Text>
+          
+          <View style={{ gap: 12 }}>
+            <TouchableOpacity
+              onPress={runFullDiagnostic}
+              style={{
+                backgroundColor: '#dc2626',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                🔍 Ejecutar Diagnóstico Completo
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={testMedicationAlarm}
+              style={{
+                backgroundColor: '#059669',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                🧪 Probar Alarma (1 min)
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={checkAlarmStatus}
+              style={{
+                backgroundColor: '#3b82f6',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                📊 Ver Estado de Alarmas
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={clearAllAlarms}
+              style={{
+                backgroundColor: '#ef4444',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                🗑️ Limpiar Todas las Alarmas
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={async () => {
+                const success = await recreateNotificationChannels();
+                Alert.alert(
+                  'Recrear Canales',
+                  success ? 'Canales recreados correctamente' : 'Error recreando canales',
+                  [{ text: 'OK' }]
+                );
+              }}
+              style={{
+                backgroundColor: '#8b5cf6',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                🔧 Recrear Canales
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={async () => {
+                const result = await testNotificationDisplay();
+                Alert.alert(
+                  'Prueba de Visualización',
+                  result.success ? 'Notificación programada correctamente' : result.message,
+                  [{ text: 'OK' }]
+                );
+              }}
+              style={{
+                backgroundColor: '#06b6d4',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                📱 Probar Visualización
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={async () => {
+                const result = await testImmediateNotification();
+                Alert.alert(
+                  'Notificación Inmediata',
+                  result.success ? 'Notificación enviada correctamente' : result.message,
+                  [{ text: 'OK' }]
+                );
+              }}
+              style={{
+                backgroundColor: '#f59e0b',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                🚨 Notificación Inmediata
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              onPress={async () => {
+                const result = await checkNotificationPermissions();
+                Alert.alert(
+                  'Estado de Permisos',
+                  `Estado: ${result.status}\nPuede solicitar: ${result.canAskAgain ? 'Sí' : 'No'}\nConcedidos: ${result.granted ? 'Sí' : 'No'}`,
+                  [{ text: 'OK' }]
+                );
+              }}
+              style={{
+                backgroundColor: '#10b981',
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                borderRadius: 8,
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ color: 'white', fontWeight: 'bold' }}>
+                🔐 Verificar Permisos
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={{ fontSize: 12, color: '#dc2626', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
+            Diagnóstico solo disponible en modo desarrollo
+          </Text>
+        </LinearGradient>
+      )}
     </ScrollView>
   );
 }

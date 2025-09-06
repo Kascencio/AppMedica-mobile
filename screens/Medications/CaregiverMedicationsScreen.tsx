@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMedications } from '../../store/useMedications';
-import { scheduleNotification, cancelNotification } from '../../lib/notifications';
+import { scheduleNotification, cancelNotification, scheduleMedicationReminder } from '../../lib/notifications';
 import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -140,7 +140,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         dosage: med.dosage,
         instructions: med.notes,
         scheduledFor: date.toISOString(),
-        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -207,48 +207,22 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
       if (medId) {
         if (frequencyType === 'daily') {
           for (const t of selectedTimes) {
-            const now = new Date();
-            let firstDate = new Date(now);
-            firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-            if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
-            // Margen de seguridad de 1 minuto
-            if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            const nowLog = new Date();
-            console.log('[MEDICAMENTO] Hora actual:', nowLog.toISOString());
-            console.log('[MEDICAMENTO] Programando notificación para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+            // Convertir Date a string HH:MM para scheduleMedicationReminder (formato 24 horas)
+            const timeString = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
+            // Usar la función centralizada de programación de medicamentos
+            await scheduleMedicationReminder({
+              id: medId,
+              name: data.name,
+              dosage: data.dosage,
+              time: timeString,
+              frequency: 'daily',
+              startDate: data.startDate,
+              endDate: data.endDate,
+              patientProfileId: selectedPatient?.id || profile?.patientProfileId || profile?.id,
             });
-            const id = await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: t.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.DAILY,
-                hour: t.getHours(), 
-                minute: t.getMinutes() 
-              },
-            });
-            notificationIdsRef.current[`${medId}_${t.getHours()}_${t.getMinutes()}`] = id;
+            
+            console.log(`[MEDICAMENTO] Alarma programada: ${data.name} a las ${timeString}`);
           }
         } else if (frequencyType === 'daysOfWeek') {
           for (const t of selectedTimes) {
@@ -271,7 +245,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                   name: data.name,
                   dosage: data.dosage,
                   instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
                 },
                 trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
               });
@@ -285,7 +259,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                   name: data.name,
                   dosage: data.dosage,
                   instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
                 },
                 trigger: { 
                   type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
@@ -317,7 +291,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 name: data.name,
                 dosage: data.dosage,
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
               },
                               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
               });
@@ -331,7 +305,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 name: data.name,
                 dosage: data.dosage,
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
               },
               trigger: { 
                 type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
@@ -599,7 +573,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
                 {selectedTimes.map((t, idx) => (
                   <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0e7ff', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
-                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</Text>
                     <TouchableOpacity onPress={() => removeTime(idx)}>
                       <Ionicons name="close-circle" size={18} color="#ef4444" />
                     </TouchableOpacity>

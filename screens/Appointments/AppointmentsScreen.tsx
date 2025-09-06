@@ -131,7 +131,7 @@ export default function AppointmentsScreen() {
     if (appt.dateTime) {
       setValue('date', new Date(appt.dateTime));
     }
-    setValue('time', appt.dateTime ? new Date(appt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+    setValue('time', appt.dateTime ? new Date(appt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
     setValue('notes', appt.description || '');
   };
   const openCreateModal = () => {
@@ -192,7 +192,7 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
@@ -207,7 +207,7 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { 
@@ -241,7 +241,7 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
                 trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
@@ -256,7 +256,7 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
                 trigger: { 
@@ -291,7 +291,7 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
@@ -306,7 +306,7 @@ export default function AppointmentsScreen() {
                 name: data.doctorName,
                 dosage: '',
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
                 patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { 

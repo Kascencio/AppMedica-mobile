@@ -261,7 +261,7 @@ export default function HomeScreen() {
           const today = new Date();
           if (aptDate.toDateString() === today.toDateString()) {
             timeline.push({
-              time: aptDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+              time: aptDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false }),
               title: `Cita con ${apt.doctorName}`,
               subtitle: apt.location,
               completed: false,

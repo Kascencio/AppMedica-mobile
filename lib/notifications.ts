@@ -12,12 +12,13 @@ export function setNotificationHandler() {
       // Para notificaciones de medicamentos y citas, mostrar alerta y reproducir sonido
       if (notification.request.content.data?.type === 'MEDICATION' || 
           notification.request.content.data?.kind === 'MED' ||
-          notification.request.content.data?.kind === 'APPOINTMENT') {
+          notification.request.content.data?.kind === 'APPOINTMENT' ||
+          notification.request.content.data?.type === 'APPOINTMENT') {
         return {
-          shouldShowBanner: true,
-          shouldShowList: true,
-          shouldPlaySound: true,
-          shouldSetBadge: true,
+          shouldShowBanner: true, // Mostrar banner en el sistema
+          shouldShowList: true,   // Mostrar en el panel de notificaciones
+          shouldPlaySound: true,  // Reproducir sonido
+          shouldSetBadge: true,   // Mostrar badge en el icono de la app
         };
       }
       
@@ -36,8 +37,8 @@ export function setNotificationHandler() {
 export async function requestPermissions() {
   try {
     if (!Device.isDevice) {
-      console.log('[Notifications] No es un dispositivo físico, saltando permisos');
-      return false;
+      console.log('[Notifications] No es un dispositivo físico, asumiendo permisos concedidos para pruebas');
+      return true;
     }
 
     // Verificar permisos existentes
@@ -140,7 +141,9 @@ export async function scheduleNotification({
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.HIGH,
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
-        // channelId removido para compatibilidad con expo-notifications
+        categoryIdentifier: channelId, // Usar categoryIdentifier en lugar de channelId
+        sticky: false, // No hacer la notificación persistente
+        autoDismiss: true, // Permitir que se cierre automáticamente
       },
       trigger,
     });
@@ -311,40 +314,10 @@ export async function scheduleMedicationReminder({
       return;
     }
     
-    // Programar primera notificación única con manejo de errores
-    try {
-      const firstNotificationId = `med_${id}_first_${Date.now()}`;
-      await scheduleNotification({
-        title: `💊 ${name}`,
-        body: `Es hora de tomar ${dosage}`,
-        data: {
-          type: 'MEDICATION',
-          medicationId: id,
-          medicationName: name,
-          dosage,
-          time,
-          patientProfileId,
-          kind: 'MED',
-          refId: id,
-          scheduledFor: firstNotification.toISOString(),
-          name,
-          instructions: dosage,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: firstNotification,
-        },
-        identifier: firstNotificationId,
-        channelId: 'medications',
-      });
-    } catch (error) {
-      console.error('[Notifications] Error programando primera notificación:', error);
-    }
-    
-    // Programar notificaciones recurrentes solo si es diario (más estable)
+    // Programar notificación diaria recurrente (más estable que notificaciones únicas)
     if (frequency === 'daily') {
       try {
-        const dailyNotificationId = `med_${id}_daily`;
+        const dailyNotificationId = `med_${id}_daily_${hours}_${minutes}`;
         await scheduleNotification({
           title: `💊 ${name}`,
           body: `Es hora de tomar ${dosage}`,
@@ -359,12 +332,18 @@ export async function scheduleMedicationReminder({
             refId: id,
             name,
             instructions: dosage,
+            // Datos adicionales para AlarmScreen
+            appointmentId: null,
+            doctorName: null,
+            notes: dosage,
+            location: null,
+            scheduledFor: firstNotification.toISOString(),
           },
-                  trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
-          hour: hours,
-          minute: minutes,
-        },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DAILY,
+            hour: hours,
+            minute: minutes,
+          },
           identifier: dailyNotificationId,
           channelId: 'medications',
         });
@@ -372,6 +351,38 @@ export async function scheduleMedicationReminder({
         console.log(`[Notifications] Recordatorio diario programado: ${name} a las ${time}`);
       } catch (error) {
         console.error('[Notifications] Error programando notificación diaria:', error);
+      }
+    } else {
+      // Para frecuencias no diarias, programar notificación única
+      try {
+        const singleNotificationId = `med_${id}_single_${Date.now()}`;
+        await scheduleNotification({
+          title: `💊 ${name}`,
+          body: `Es hora de tomar ${dosage}`,
+          data: {
+            type: 'MEDICATION',
+            medicationId: id,
+            medicationName: name,
+            dosage,
+            time,
+            patientProfileId,
+            kind: 'MED',
+            refId: id,
+            scheduledFor: firstNotification.toISOString(),
+            name,
+            instructions: dosage,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.DATE,
+            date: firstNotification,
+          },
+          identifier: singleNotificationId,
+          channelId: 'medications',
+        });
+        
+        console.log(`[Notifications] Notificación única programada: ${name} para ${firstNotification.toISOString()}`);
+      } catch (error) {
+        console.error('[Notifications] Error programando notificación única:', error);
       }
     }
     

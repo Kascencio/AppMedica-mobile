@@ -202,7 +202,7 @@ export default function CalendarScreen() {
                       <Ionicons name="calendar" size={18} color="#2563eb" style={{ marginRight: 8 }} />
                       <View>
                         <Text style={styles.eventTitle}>{a.title}</Text>
-                        <Text style={styles.eventInfo}>{a.dateTime ? new Date(a.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}{a.location ? ` - ${a.location}` : ''}</Text>
+                        <Text style={styles.eventInfo}>{a.dateTime ? new Date(a.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}{a.location ? ` - ${a.location}` : ''}</Text>
                         <Text style={styles.eventStatus}>{a.status === 'SCHEDULED' ? 'Programada' : a.status === 'COMPLETED' ? 'Completada' : 'Cancelada'}</Text>
                       </View>
                     </View>

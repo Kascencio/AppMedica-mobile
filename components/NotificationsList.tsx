@@ -40,16 +40,21 @@ export default function NotificationsList({
   }, [showArchived, filterType, filters]);
 
   const loadNotifications = async () => {
-    const apiFilters: any = {
-      status: filters?.status || (showArchived ? 'ARCHIVED' : 'UNREAD'),
-      pageSize: 50
-    };
-    
-    if (filters?.type || filterType) {
-      apiFilters.type = filters?.type || filterType;
+    try {
+      const apiFilters: any = {
+        status: filters?.status || (showArchived ? 'ARCHIVED' : 'UNREAD'),
+        pageSize: 50
+      };
+      
+      if (filters?.type || filterType) {
+        apiFilters.type = filters?.type || filterType;
+      }
+      
+      await loadApiNotifications(apiFilters);
+    } catch (error) {
+      console.log('[NotificationsList] Error cargando notificaciones:', error);
+      // Continuar sin mostrar error, ya que el sistema híbrido maneja esto
     }
-    
-    await loadApiNotifications(apiFilters);
   };
 
   const handleNotificationPress = async (notification: ApiNotification) => {
@@ -58,7 +63,12 @@ export default function NotificationsList({
     } else {
       // Marcar como leída si no está leída
       if (notification.status === 'UNREAD') {
-        await markApiNotificationAsRead(notification.id);
+        try {
+          await markApiNotificationAsRead(notification.id);
+        } catch (error) {
+          console.log('[NotificationsList] Error marcando como leída:', error);
+          // Continuar sin mostrar error
+        }
       }
       onNotificationPress?.(notification);
     }
@@ -90,10 +100,15 @@ export default function NotificationsList({
         {
           text: 'Marcar',
           onPress: async () => {
-            await markMultipleAsRead(selectedNotifications);
-            setSelectedNotifications([]);
-            setIsSelectionMode(false);
-            await loadNotifications();
+            try {
+              await markMultipleAsRead(selectedNotifications);
+              setSelectedNotifications([]);
+              setIsSelectionMode(false);
+              await loadNotifications();
+            } catch (error) {
+              console.log('[NotificationsList] Error marcando múltiples como leídas:', error);
+              // Continuar sin mostrar error
+            }
           }
         }
       ]
@@ -112,12 +127,17 @@ export default function NotificationsList({
           text: 'Archivar',
           style: 'destructive',
           onPress: async () => {
-            for (const id of selectedNotifications) {
-              await archiveApiNotification(id);
+            try {
+              for (const id of selectedNotifications) {
+                await archiveApiNotification(id);
+              }
+              setSelectedNotifications([]);
+              setIsSelectionMode(false);
+              await loadNotifications();
+            } catch (error) {
+              console.log('[NotificationsList] Error archivando notificaciones:', error);
+              // Continuar sin mostrar error
             }
-            setSelectedNotifications([]);
-            setIsSelectionMode(false);
-            await loadNotifications();
           }
         }
       ]
@@ -250,11 +270,16 @@ export default function NotificationsList({
         {!isSelectionMode && (
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => {
-              if (item.status === 'UNREAD') {
-                markApiNotificationAsRead(item.id);
-              } else {
-                archiveApiNotification(item.id);
+            onPress={async () => {
+              try {
+                if (item.status === 'UNREAD') {
+                  await markApiNotificationAsRead(item.id);
+                } else {
+                  await archiveApiNotification(item.id);
+                }
+              } catch (error) {
+                console.log('[NotificationsList] Error en acción de notificación:', error);
+                // Continuar sin mostrar error
               }
             }}
           >
@@ -273,14 +298,21 @@ export default function NotificationsList({
     <View style={styles.emptyState}>
       <Ionicons name="notifications-off" size={48} color={COLORS.text.secondary} />
       <Text style={styles.emptyStateTitle}>
-        {showArchived ? 'No hay notificaciones archivadas' : 'No hay notificaciones nuevas'}
+        {showArchived ? 'No hay notificaciones archivadas' : 'No hay notificaciones'}
       </Text>
       <Text style={styles.emptyStateSubtitle}>
         {showArchived 
           ? 'Las notificaciones archivadas aparecerán aquí'
-          : 'Cuando recibas notificaciones, aparecerán aquí'
+          : 'Las notificaciones de medicamentos y citas aparecerán aquí cuando se programen'
         }
       </Text>
+      <TouchableOpacity 
+        style={styles.refreshButton}
+        onPress={loadNotifications}
+      >
+        <Ionicons name="refresh" size={16} color={COLORS.primary} />
+        <Text style={styles.refreshButtonText}>Actualizar</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -516,5 +548,22 @@ const styles = StyleSheet.create({
   },
   emptyList: {
     flex: 1,
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary + '10',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: COLORS.primary + '30',
+  },
+  refreshButtonText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });

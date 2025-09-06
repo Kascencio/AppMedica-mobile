@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMedications } from '../../store/useMedications';
-import { scheduleNotification, cancelNotification } from '../../lib/notifications';
+import { scheduleNotification, cancelNotification, scheduleMedicationReminder } from '../../lib/notifications';
 import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -150,7 +150,7 @@ export default function MedicationsScreen() {
         dosage: med.dosage,
         instructions: med.notes,
         scheduledFor: date.toISOString(),
-        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -212,50 +212,28 @@ export default function MedicationsScreen() {
       if (medId) {
         if (frequencyType === 'daily') {
           for (const t of selectedTimes) {
-            const now = new Date();
-            let firstDate = new Date(now);
-            firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-            if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
-            if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+            // Convertir Date a string HH:MM para scheduleMedicationReminder (formato 24 horas)
+            const timeString = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
+            // Usar la función centralizada de programación de medicamentos
+            await scheduleMedicationReminder({
+              id: medId,
+              name: data.name,
+              dosage: data.dosage,
+              time: timeString,
+              frequency: 'daily',
+              startDate: data.startDate,
+              endDate: data.endDate,
+              patientProfileId: profile?.patientProfileId || profile?.id,
             });
-            const id = await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: t.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.DAILY,
-                hour: t.getHours(), 
-                minute: t.getMinutes() 
-              },
-            });
-            // Guardar tanto la notificación inicial como la repetitiva
-            const firstNotificationId = `med_${medId}_first_${t.getHours()}_${t.getMinutes()}`;
-            notificationIdsRef.current[firstNotificationId] = id;
-            notificationIdsRef.current[`${medId}_${t.getHours()}_${t.getMinutes()}`] = id;
+            
+            console.log(`[MEDICAMENTO] Alarma programada: ${data.name} a las ${timeString}`);
           }
         } else if (frequencyType === 'daysOfWeek') {
           for (const t of selectedTimes) {
+            const timeString = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+            
+            // Para días específicos, programar notificaciones individuales para cada día
             for (const day of daysOfWeek) {
               const now = new Date();
               let firstDate = new Date(now);
@@ -263,89 +241,57 @@ export default function MedicationsScreen() {
               firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
               if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
               if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+              
               await scheduleNotification({
-                title: `Toma tu medicamento: ${data.name}`,
-                body: `Dosis: ${data.dosage}`,
+                title: `💊 ${data.name}`,
+                body: `Es hora de tomar ${data.dosage}`,
                 data: {
+                  type: 'MEDICATION',
                   kind: 'MED',
                   refId: medId,
                   scheduledFor: firstDate.toISOString(),
                   name: data.name,
                   dosage: data.dosage,
                   instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  time: timeString,
+                  patientProfileId: profile?.patientProfileId || profile?.id,
                 },
                 trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+                identifier: `med_${medId}_${day}_${t.getHours()}_${t.getMinutes()}`,
               });
-              const id = await scheduleNotification({
-                title: `Toma tu medicamento: ${data.name}`,
-                body: `Dosis: ${data.dosage}`,
-                data: {
-                  kind: 'MED',
-                  refId: medId,
-                  scheduledFor: t.toISOString(),
-                  name: data.name,
-                  dosage: data.dosage,
-                  instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                },
-                trigger: { 
-                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-                  weekday: day + 1, 
-                  hour: t.getHours(), 
-                  minute: t.getMinutes() 
-                },
-              });
-              // Guardar tanto la notificación inicial como la repetitiva
-              const firstNotificationId = `med_${medId}_first_${day}_${t.getHours()}_${t.getMinutes()}`;
-              notificationIdsRef.current[firstNotificationId] = id;
-              notificationIdsRef.current[`${medId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
             }
           }
         } else if (frequencyType === 'everyXHours') {
           if (selectedTimes.length > 0) {
             const base = selectedTimes[0];
+            const timeString = base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
             const interval = parseInt(everyXHours) || 8;
+            
+            // Programar notificaciones cada X horas
             let firstDate = new Date();
             firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
             if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
             if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
+            
             await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
+              title: `💊 ${data.name}`,
+              body: `Es hora de tomar ${data.dosage}`,
               data: {
+                type: 'MEDICATION',
                 kind: 'MED',
                 refId: medId,
                 scheduledFor: firstDate.toISOString(),
                 name: data.name,
                 dosage: data.dosage,
                 instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                time: timeString,
+                patientProfileId: profile?.patientProfileId || profile?.id,
               },
               trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
+              identifier: `med_${medId}_interval_${interval}h`,
             });
-            const id = await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: base.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60,
-                repeats: true
-              },
-            });
-            // Guardar tanto la notificación inicial como la repetitiva
-            const firstNotificationId = `med_${medId}_first_every${interval}h`;
-            notificationIdsRef.current[firstNotificationId] = id;
-            notificationIdsRef.current[`${medId}_every${interval}h`] = id;
+            
+            console.log(`[MEDICAMENTO] Alarma programada cada ${interval} horas: ${data.name} a las ${timeString}`);
           }
         }
       }

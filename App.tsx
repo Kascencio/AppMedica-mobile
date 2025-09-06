@@ -102,25 +102,19 @@ export default function App() {
       
       // Solo navegar automáticamente si es una alarma de medicamento o cita y la app está en primer plano
       if (data && (data.type === 'MEDICATION' || data.type === 'APPOINTMENT' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
-        // Verificar que la notificación sea reciente (dentro de los últimos 30 segundos)
-        const notificationTime = data.scheduledFor ? new Date(data.scheduledFor) : receivedAt;
-        const timeDiff = Math.abs(receivedAt.getTime() - notificationTime.getTime());
-        
-        if (timeDiff <= 30000) { // 30 segundos
-          console.log('[App] Navegando a pantalla de alarma automáticamente');
-          if (navigationRef.isReady()) {
-            // Navegar inmediatamente para mostrar la alarma
-            (navigationRef as any).navigate('AlarmScreen', { 
-              kind: data.kind || data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT',
-              refId: data.medicationId || data.appointmentId || data.refId,
-              scheduledFor: data.scheduledFor,
-              name: data.medicationName || data.doctorName || data.name,
-              dosage: data.dosage || '',
-              instructions: data.instructions || data.notes || '',
-              time: data.time,
-              location: data.location || ''
-            });
-          }
+        console.log('[App] Navegando a pantalla de alarma automáticamente');
+        if (navigationRef.isReady()) {
+          // Navegar inmediatamente para mostrar la alarma
+          (navigationRef as any).navigate('AlarmScreen', { 
+            kind: data.kind || (data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT'),
+            refId: data.medicationId || data.appointmentId || data.refId,
+            scheduledFor: data.scheduledFor,
+            name: data.medicationName || data.doctorName || data.name,
+            dosage: data.dosage || '',
+            instructions: data.instructions || data.notes || '',
+            time: data.time,
+            location: data.location || ''
+          });
         }
       }
     });

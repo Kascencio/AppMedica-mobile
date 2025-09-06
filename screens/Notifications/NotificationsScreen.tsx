@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNotifications } from '../../store/useNotifications';
+import { useAlarms } from '../../hooks/useAlarms';
 import NotificationsList from '../../components/NotificationsList';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import COLORS from '../../constants/colors';
@@ -20,22 +20,19 @@ const isTablet = width > 768;
 
 export default function NotificationsScreen() {
   const { 
-    notifications, 
-    stats, 
-    getNotifications, 
-    getStats, 
-    cleanupOldNotifications,
-    clearError 
-  } = useNotifications();
+    apiNotifications, 
+    apiLoading,
+    loadApiNotifications,
+    markApiNotificationAsRead,
+    archiveApiNotification,
+    markMultipleAsRead
+  } = useAlarms();
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'unread' | 'read' | 'archived'>('all');
 
   const loadData = useMemo(() => async () => {
-    await Promise.all([
-      getNotifications(),
-      getStats()
-    ]);
-  }, [getNotifications, getStats]);
+    await loadApiNotifications();
+  }, [loadApiNotifications]);
 
   useEffect(() => {
     loadData();
@@ -47,9 +44,9 @@ export default function NotificationsScreen() {
         <Text style={GLOBAL_STYLES.sectionHeader}>Filtros</Text>
         <TouchableOpacity 
           style={GLOBAL_STYLES.buttonSecondary}
-          onPress={() => cleanupOldNotifications()}
+          onPress={() => loadApiNotifications()}
         >
-          <Text style={GLOBAL_STYLES.buttonSecondaryText}>Limpiar Antiguas</Text>
+          <Text style={GLOBAL_STYLES.buttonSecondaryText}>Actualizar</Text>
         </TouchableOpacity>
       </View>
       
@@ -98,25 +95,23 @@ export default function NotificationsScreen() {
           </Text>
         </View>
 
-        {stats && (
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <Ionicons name="notifications" size={24} color={COLORS.primary} />
-              <Text style={styles.statNumber}>{stats.total}</Text>
-              <Text style={styles.statLabel}>Total</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="mail-unread" size={24} color={COLORS.accent.orange} />
-              <Text style={styles.statNumber}>{stats.unread}</Text>
-              <Text style={styles.statLabel}>No Leídas</Text>
-            </View>
-            <View style={styles.statCard}>
-              <Ionicons name="checkmark-circle" size={24} color={COLORS.accent.green} />
-              <Text style={styles.statNumber}>{stats.read}</Text>
-              <Text style={styles.statLabel}>Leídas</Text>
-            </View>
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Ionicons name="notifications" size={24} color={COLORS.primary} />
+            <Text style={styles.statNumber}>{apiNotifications.length}</Text>
+            <Text style={styles.statLabel}>Total</Text>
           </View>
-        )}
+          <View style={styles.statCard}>
+            <Ionicons name="mail-unread" size={24} color={COLORS.accent.orange} />
+            <Text style={styles.statNumber}>{apiNotifications.filter(n => n.status === 'UNREAD').length}</Text>
+            <Text style={styles.statLabel}>No Leídas</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Ionicons name="checkmark-circle" size={24} color={COLORS.accent.green} />
+            <Text style={styles.statNumber}>{apiNotifications.filter(n => n.status === 'READ').length}</Text>
+            <Text style={styles.statLabel}>Leídas</Text>
+          </View>
+        </View>
 
         {renderNotificationsTab()}
       </View>
