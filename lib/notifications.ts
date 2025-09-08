@@ -90,7 +90,7 @@ export async function requestPermissions() {
           importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 500, 250],
           lightColor: '#2563eb',
-          sound: 'default',
+          sound: 'alarm.mp3', // Usar sonido personalizado
           enableVibrate: true,
           enableLights: true,
         });
@@ -138,7 +138,7 @@ export async function scheduleNotification({
         title,
         body,
         data: notificationData,
-        sound: channelId === 'medications' ? 'alarm.mp3' : 'default', // Usar sonido personalizado para medicamentos
+        sound: (channelId === 'medications' || channelId === 'appointments') ? 'alarm.mp3' : 'default', // Usar sonido personalizado para alarmas
         priority: Notifications.AndroidNotificationPriority.HIGH,
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
         categoryIdentifier: channelId, // Usar categoryIdentifier en lugar de channelId
