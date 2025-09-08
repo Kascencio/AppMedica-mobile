@@ -170,149 +170,69 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     console.log('[ProfileScreen] ========== INICIO handleSave ==========');
-    console.log('[ProfileScreen] Estado del formulario:', JSON.stringify(form, null, 2));
-    
     setError(null);
-    // Validar solo campos clave
-    if (!form.name.trim()) return setError('El nombre es obligatorio');
-    if (!form.birthDate.trim()) return setError('La fecha de nacimiento es obligatoria');
-    if (!form.gender.trim()) return setError('El género es obligatorio');
-    
-    // Validar formato de fecha de nacimiento (YYYY-MM-DD)
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(form.birthDate)) {
-      return setError('La fecha de nacimiento debe tener el formato YYYY-MM-DD');
+
+    // --- 1. VALIDACIÓN ---
+    if (!form.name.trim() || !form.birthDate.trim() || !form.gender.trim()) {
+      return setError('Nombre, fecha de nacimiento y género son obligatorios.');
     }
-    
-    // Validar que la fecha sea válida
-    const birthDate = new Date(form.birthDate);
-    if (isNaN(birthDate.getTime())) {
-      return setError('La fecha de nacimiento no es válida');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate) || isNaN(new Date(form.birthDate).getTime())) {
+      return setError('La fecha de nacimiento no es válida (formato YYYY-MM-DD).');
     }
-    
-    // Validar que la fecha no sea en el futuro
-    if (birthDate > new Date()) {
-      return setError('La fecha de nacimiento no puede ser en el futuro');
+    if (new Date(form.birthDate) > new Date()) {
+        return setError('La fecha de nacimiento no puede ser en el futuro.');
     }
-    
+
     setSaving(true);
     try {
-      console.log('[ProfileScreen] Iniciando guardado de perfil...');
-      
-      // Limpiar campos vacíos y convertir tipos correctamente
-      const cleanForm = Object.fromEntries(
-        Object.entries(form).map(([k, v]) => {
-          if (v === '' || v === null || v === undefined) return [k, undefined];
-          return [k, v];
-        })
-      );
-      
-      // Convertir campos numéricos y limpiar datos
-      console.log('[ProfileScreen] Antes de conversión - form.birthDate:', form.birthDate, typeof form.birthDate);
-      console.log('[ProfileScreen] Antes de conversión - form.weight:', form.weight, typeof form.weight);
-      console.log('[ProfileScreen] Antes de conversión - form.height:', form.height, typeof form.height);
-      
-      // Validar y convertir peso
-      let weightValue: number | undefined = undefined;
-      if (form.weight && form.weight.trim() !== '') {
-        const parsedWeight = parseFloat(form.weight);
-        if (!isNaN(parsedWeight) && isFinite(parsedWeight) && parsedWeight > 0 && parsedWeight <= 500) {
-          weightValue = parsedWeight;
-        } else {
-          throw new Error('El peso debe ser un número válido entre 1 y 500 kg');
+      // --- 2. PREPARACIÓN Y LIMPIEZA DE DATOS ---
+      const dataToSave: Record<string, any> = {};
+
+      // Mapear y limpiar cada campo del formulario
+      Object.entries(form).forEach(([key, value]) => {
+        const K = key as keyof typeof form;
+        let finalValue: any = value;
+
+        // Limpiar strings
+        if (typeof finalValue === 'string') {
+          finalValue = finalValue.trim();
         }
-      }
-      
-      // Validar y convertir altura
-      let heightValue: number | undefined = undefined;
-      if (form.height && form.height.trim() !== '') {
-        const parsedHeight = parseInt(form.height, 10);
-        if (!isNaN(parsedHeight) && isFinite(parsedHeight) && parsedHeight > 0 && parsedHeight <= 300) {
-          heightValue = parsedHeight;
-        } else {
-          throw new Error('La altura debe ser un número válido entre 1 y 300 cm');
+
+        // Si el valor es un string vacío, se convierte en undefined para ser filtrado
+        if (finalValue === '') {
+          finalValue = undefined;
         }
-      }
-      
-      console.log('[ProfileScreen] Después de conversión - birthDate:', form.birthDate, typeof form.birthDate);
-      console.log('[ProfileScreen] Después de conversión - weight:', weightValue, typeof weightValue);
-      console.log('[ProfileScreen] Después de conversión - height:', heightValue, typeof heightValue);
-      
-      const dataToSave = {
-        name: cleanForm.name?.trim(),
-        birthDate: cleanForm.birthDate?.trim(),
-        gender: cleanForm.gender?.trim(),
-        weight: weightValue,
-        height: heightValue,
-        bloodType: cleanForm.bloodType?.trim() || undefined,
-        emergencyContactName: cleanForm.emergencyContactName?.trim() || undefined,
-        emergencyContactRelation: cleanForm.emergencyContactRelation?.trim() || undefined,
-        emergencyContactPhone: cleanForm.emergencyContactPhone?.trim() || undefined,
-        allergies: cleanForm.allergies?.trim() || undefined,
-        chronicDiseases: cleanForm.chronicDiseases?.trim() || undefined,
-        currentConditions: cleanForm.currentConditions?.trim() || undefined,
-        reactions: cleanForm.reactions?.trim() || undefined,
-        doctorName: cleanForm.doctorName?.trim() || undefined,
-        doctorContact: cleanForm.doctorContact?.trim() || undefined,
-        hospitalReference: cleanForm.hospitalReference?.trim() || undefined,
-        photoUrl: cleanForm.photoUrl || undefined,
-      };
-      
-      // Filtrar campos undefined y validar números más estrictamente
-      const finalData: Record<string, any> = {};
-      Object.entries(dataToSave).forEach(([key, value]) => {
-        console.log(`[ProfileScreen] Procesando campo ${key}:`, value, typeof value);
-        
-        if (value === undefined || value === null || value === '') {
-          console.log(`[ProfileScreen] Omitiendo campo ${key} (vacío)`);
-          return;
-        }
-        
-        if (typeof value === 'number') {
-          // Asegurar que solo se incluyan números válidos
-          if (isNaN(value) || !isFinite(value)) {
-            console.log(`[ProfileScreen] ⚠️ Omitiendo campo ${key} (NaN o Infinite):`, value);
-            return;
-          }
-          // Validar rangos específicos
-          if (key === 'weight' && (value <= 0 || value > 500)) {
-            console.log(`[ProfileScreen] ⚠️ Omitiendo peso inválido:`, value);
-            return;
-          }
-          if (key === 'height' && (value <= 0 || value > 300)) {
-            console.log(`[ProfileScreen] ⚠️ Omitiendo altura inválida:`, value);
-            return;
+
+        // Manejo de campos numéricos (peso y altura)
+        if (K === 'weight' || K === 'height') {
+          if (finalValue) {
+            const num = K === 'weight' ? parseFloat(finalValue) : parseInt(finalValue, 10);
+            // Si el número es inválido (NaN) o cero, se convierte en undefined
+            if (isNaN(num) || !isFinite(num) || num <= 0) {
+              finalValue = undefined;
+            } else {
+              finalValue = num;
+            }
           }
         }
         
-        if (typeof value === 'string' && value.trim() === '') {
-          console.log(`[ProfileScreen] Omitiendo campo ${key} (string vacío)`);
-          return;
+        // Asignar el valor limpio si no es undefined
+        if (finalValue !== undefined) {
+            dataToSave[K] = finalValue;
         }
-        
-        finalData[key] = value;
-        console.log(`[ProfileScreen] ✅ Incluyendo campo ${key}:`, value);
       });
       
-      console.log('[ProfileScreen] Datos originales del formulario:', form);
-      console.log('[ProfileScreen] Datos convertidos:', dataToSave);
-      console.log('[ProfileScreen] Datos finales filtrados:', finalData);
-      
-      // Los campos numéricos ya fueron validados arriba, no necesitamos validar de nuevo
-      
-      console.log('[ProfileScreen] Datos a guardar:', finalData);
-      
-      await updateProfile(finalData);
+      console.log('[ProfileScreen] Datos a guardar (limpios y filtrados):', dataToSave);
+
+      // --- 3. GUARDADO ---
+      await updateProfile(dataToSave);
       
       console.log('[ProfileScreen] Perfil guardado exitosamente');
-      setError(null);
-      
-      // Mostrar mensaje de éxito
-      Alert.alert('Éxito', 'Perfil actualizado correctamente y guardado localmente');
-      
+      Alert.alert('Éxito', 'Perfil actualizado correctamente.');
+
     } catch (e: any) {
-      console.log('[ProfileScreen] Error al guardar:', e);
-      const errorMessage = e.message || JSON.stringify(e) || 'Error al guardar';
+      console.error('[ProfileScreen] Error al guardar:', e);
+      const errorMessage = e.message || 'Ocurrió un error al guardar el perfil.';
       setError(errorMessage);
       Alert.alert('Error', errorMessage);
     } finally {
