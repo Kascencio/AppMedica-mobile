@@ -20,6 +20,35 @@ interface CurrentUserState {
   syncProfileUpdate: (profileData: Partial<UserProfile>) => Promise<boolean>;
 }
 
+// Helper para asegurar que el objeto de perfil tenga una estructura consistente
+const createDefaultProfile = (base: Partial<UserProfile>): UserProfile => ({
+  id: '',
+  userId: '',
+  patientProfileId: '',
+  name: '',
+  role: 'PATIENT',
+  birthDate: '',
+  gender: '',
+  weight: undefined,
+  height: undefined,
+  bloodType: '',
+  emergencyContactName: '',
+  emergencyContactRelation: '',
+  emergencyContactPhone: '',
+  allergies: '',
+  chronicDiseases: '',
+  currentConditions: '',
+  reactions: '',
+  doctorName: '',
+  doctorContact: '',
+  hospitalReference: '',
+  photoUrl: '',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  ...base,
+});
+
+
 export const useCurrentUser = create<CurrentUserState>((set, get) => ({
   profile: null,
   loading: false,
@@ -28,145 +57,76 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
 
   fetchProfile: async () => {
     console.log('[useCurrentUser] Iniciando fetchProfile...');
-    
-    const currentState = get();
-    if (currentState.loading) {
-      console.log('[useCurrentUser] Ya hay una carga en progreso, saltando...');
-      return;
-    }
-    
-    // Evitar ciclos infinitos - solo cargar si no está inicializado o no hay perfil
-    if (currentState.initialized && currentState.profile) {
-      console.log('[useCurrentUser] Ya inicializado con perfil, saltando...');
-      return;
-    }
-    
+    const { loading, initialized, loadProfileLocally, saveProfileLocally } = get();
+
+    if (loading) return console.log('[useCurrentUser] Carga en progreso, saltando.');
+
     set({ loading: true, error: null });
-    
-    try {
-      // PRIMERO: Intentar cargar perfil localmente
-      const localProfile = await get().loadProfileLocally();
-      if (localProfile) {
-        console.log('[useCurrentUser] Perfil cargado localmente:', localProfile);
-        set({ profile: localProfile, loading: false, initialized: true });
-      }
-      
-      // SEGUNDO: Intentar sincronizar con el servidor solo si hay token
-      const token = useAuth.getState().userToken;
-      if (!token) {
-        console.log('[useCurrentUser] No hay token, usando solo perfil local');
-        set({ loading: false, initialized: true });
-        return;
-      }
-      
-      // Decodificar el token JWT para obtener información del usuario
-      try {
-        const tokenParts = token.split('.');
-        if (tokenParts.length === 3) {
-          const payload = JSON.parse(atob(tokenParts[1]));
-          console.log('[useCurrentUser] Payload del token:', payload);
-          
-          // Crear perfil básico desde el token
-          const userProfile: UserProfile = {
-            id: payload.profileId || payload.sub,
-            userId: payload.sub,
-            patientProfileId: payload.profileId,
-            name: payload.patientName || 'Usuario',
-            role: payload.role || 'PATIENT',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-          
-          console.log('[useCurrentUser] Perfil básico creado desde token:', userProfile);
-          
-          // Intentar obtener información del usuario desde /auth/me
-          try {
-            const authEndpoint = buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME);
-            console.log('[useCurrentUser] Obteniendo información de usuario desde:', authEndpoint);
-            
-            const authRes = await fetch(authEndpoint, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            
-            if (authRes.ok) {
-              const authData = await authRes.json();
-              console.log('[useCurrentUser] Datos de usuario obtenidos:', authData);
-              Object.assign(userProfile, authData);
-            }
-          } catch (authError) {
-            console.log('[useCurrentUser] Error obteniendo datos de usuario:', authError);
-            // No fallar si no se puede obtener datos adicionales
-          }
-          
-          // Intentar obtener información completa del perfil desde /patients/me
-          try {
-            // Usar el ID del paciente del token para construir la URL
-            const patientId = userProfile.patientProfileId || userProfile.id;
-            const patientsEndpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
-            console.log('[useCurrentUser] Obteniendo perfil de paciente desde:', patientsEndpoint);
-            
-            const patientsRes = await fetch(patientsEndpoint, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            
-            if (patientsRes.ok) {
-              const patientsData = await patientsRes.json();
-              console.log('[useCurrentUser] Perfil de paciente obtenido:', patientsData);
-              
-              // Mapear géneros del inglés al español
-              const genderMapReverse: Record<string, string> = {
-                'male': 'Masculino',
-                'female': 'Femenino',
-                'other': 'Otro'
-              };
-              
-              // Mapear campos del backend a la estructura del frontend
-              const completeProfile = {
-                ...userProfile,
-                ...patientsData,
-                id: patientsData.id || userProfile.id,
-                role: patientsData.role || userProfile.role || 'PATIENT',
-                // Mapear campos específicos del backend
-                birthDate: patientsData.dateOfBirth || patientsData.birthDate,
-                gender: patientsData.gender ? genderMapReverse[patientsData.gender] || patientsData.gender : patientsData.gender,
-                // Mantener campos que no existen en el backend como undefined
-                bloodType: patientsData.bloodType,
-                emergencyContactName: patientsData.emergencyContactName,
-                emergencyContactRelation: patientsData.emergencyContactRelation,
-                emergencyContactPhone: patientsData.emergencyContactPhone,
-                chronicDiseases: patientsData.chronicDiseases,
-                currentConditions: patientsData.currentConditions,
-                hospitalReference: patientsData.hospitalReference,
-              };
-              console.log('[useCurrentUser] Perfil completo combinado:', completeProfile);
-              
-              // Guardar perfil localmente
-              await get().saveProfileLocally(completeProfile);
-              set({ profile: completeProfile, loading: false, initialized: true });
-            } else {
-              // Si no se puede obtener el perfil completo, usar el básico
-              console.log('[useCurrentUser] No se pudo obtener perfil completo, usando básico');
-              await get().saveProfileLocally(userProfile);
-              set({ profile: userProfile, loading: false, initialized: true });
-            }
-          } catch (patientsError) {
-            console.log('[useCurrentUser] Error obteniendo perfil de paciente:', patientsError);
-            // Usar perfil básico si hay error
-            await get().saveProfileLocally(userProfile);
-            set({ profile: userProfile, loading: false, initialized: true });
-          }
-        } else {
-          throw new Error('Token inválido');
-        }
-      } catch (tokenError) {
-        console.error('[useCurrentUser] Error procesando token:', tokenError);
-        set({ error: 'Error de autenticación', loading: false, initialized: true });
-      }
-    } catch (error) {
-      console.error('[useCurrentUser] Error en fetchProfile:', error);
-      set({ error: error instanceof Error ? error.message : 'Error desconocido', loading: false, initialized: true });
+
+    // 1. Cargar desde local para una UI más rápida
+    const localProfile = await loadProfileLocally();
+    if (localProfile && !initialized) {
+        console.log('[useCurrentUser] Perfil cargado desde local. Sincronizando en segundo plano...');
+        set({ profile: localProfile, initialized: true });
     }
-  },
+
+    // 2. Sincronizar con el servidor si hay token
+    const token = useAuth.getState().userToken;
+    if (!token) {
+        console.log('[useCurrentUser] No hay token, usando perfil local si existe.');
+        set({ loading: false, initialized: true }); // Marcar como inicializado
+        return;
+    }
+
+    try {
+        // Decodificar token para obtener datos base
+        const tokenPayload = JSON.parse(atob(token.split('.')[1]));
+        const baseProfile = {
+            id: tokenPayload.profileId || tokenPayload.sub,
+            userId: tokenPayload.sub,
+            patientProfileId: tokenPayload.profileId,
+            name: tokenPayload.patientName || 'Usuario',
+            role: tokenPayload.role || 'PATIENT',
+        };
+
+        // Obtener perfil detallado del backend
+        const patientId = baseProfile.patientProfileId || baseProfile.id;
+        const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
+        const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+
+        let finalProfile;
+        if (res.ok) {
+            const serverData = await res.json();
+            console.log('[useCurrentUser] Perfil del servidor obtenido:', serverData);
+            
+            // Mapear datos del servidor a nuestro modelo de perfil
+            const genderMapReverse = { 'male': 'Masculino', 'female': 'Femenino', 'other': 'Otro' };
+            const mappedData = {
+                ...serverData,
+                birthDate: serverData.dateOfBirth || serverData.birthDate,
+                gender: serverData.gender ? genderMapReverse[serverData.gender as keyof typeof genderMapReverse] || serverData.gender : undefined,
+            };
+            
+            // Combinar datos: locales -> base del token -> del servidor
+            finalProfile = { ...localProfile, ...baseProfile, ...mappedData };
+        } else {
+            console.warn('[useCurrentUser] No se pudo obtener perfil detallado, usando datos locales/base.');
+            finalProfile = { ...localProfile, ...baseProfile };
+        }
+
+        const completeProfile = createDefaultProfile(finalProfile);
+
+        console.log('[useCurrentUser] Perfil final combinado y limpio:', completeProfile);
+        await saveProfileLocally(completeProfile);
+        set({ profile: completeProfile, initialized: true });
+
+    } catch (error: any) {
+        console.error('[useCurrentUser] Error en fetchProfile:', error);
+        set({ error: error.message || 'Error desconocido al obtener perfil' });
+    } finally {
+        set({ loading: false });
+    }
+},
 
   updateProfile: async (data) => {
     console.log('[useCurrentUser] Iniciando updateProfile (offline-first)');
@@ -178,8 +138,19 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       return;
     }
 
+    // Safeguard: Limpiar datos entrantes para evitar guardar valores inválidos
+    const cleanedData: Partial<UserProfile> = {};
+    Object.entries(data).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+            if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
+                return; // No incluir NaN o Infinity
+            }
+            (cleanedData as any)[key] = value;
+        }
+    });
+
     // 1. Optimistic UI Update
-    const updatedProfile = { ...profile, ...data, updatedAt: new Date().toISOString() };
+    const updatedProfile = { ...profile, ...cleanedData, updatedAt: new Date().toISOString() };
     set({ profile: updatedProfile, loading: false, error: null });
     console.log('[useCurrentUser] Perfil actualizado localmente (optimista)');
 
@@ -190,16 +161,16 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
     const { isOnline, addPendingSync } = useOffline.getState();
     if (isOnline) {
       console.log('[useCurrentUser] Online, intentando sincronizar inmediatamente...');
-      const success = await syncProfileUpdate(data);
+      const success = await syncProfileUpdate(cleanedData);
       if (!success) {
         console.log('[useCurrentUser] Sincronización falló, agregando a la cola.');
-        await addPendingSync('UPDATE', 'profile', data);
+        await addPendingSync('UPDATE', 'profile', cleanedData);
       } else {
         console.log('[useCurrentUser] Sincronización inmediata exitosa.');
       }
     } else {
       console.log('[useCurrentUser] Offline, agregando a la cola de sincronización.');
-      await addPendingSync('UPDATE', 'profile', data);
+      await addPendingSync('UPDATE', 'profile', cleanedData);
     }
   },
 
