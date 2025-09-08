@@ -59,7 +59,16 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
     console.log('[useCurrentUser] Iniciando fetchProfile...');
     const { loading, initialized, loadProfileLocally, saveProfileLocally } = get();
 
-    if (loading) return console.log('[useCurrentUser] Carga en progreso, saltando.');
+    if (loading) {
+      console.log('[useCurrentUser] Carga en progreso, saltando.');
+      return;
+    }
+
+    // Si ya está inicializado y hay perfil, no hacer nada
+    if (initialized && get().profile) {
+      console.log('[useCurrentUser] Ya inicializado con perfil, saltando.');
+      return;
+    }
 
     set({ loading: true, error: null });
 

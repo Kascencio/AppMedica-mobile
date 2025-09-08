@@ -139,7 +139,7 @@ export default function App() {
       };
       loadProfileOnce();
     }
-  }, [isAuthenticated, userToken]); // Solo depender de estos dos valores
+  }, [isAuthenticated, userToken, profile, loadingProfile]); // Incluir todas las dependencias necesarias
 
   // Función para abrir configuración del sistema
   const openSettings = () => {

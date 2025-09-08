@@ -13,17 +13,13 @@ import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
 
 import SyncStatus from '../../components/SyncStatus';
-import { runFullDiagnostic } from '../../lib/alarmDiagnostic';
-import { testMedicationAlarm, checkAlarmStatus, clearAllAlarms } from '../../lib/alarmTest';
-import { recreateNotificationChannels } from '../../lib/notificationChannels';
-import { testNotificationDisplay, testImmediateNotification, checkNotificationPermissions } from '../../lib/notificationDisplayTest';
 
 
 export default function ProfileScreen() {
   console.log('[ProfileScreen] Componente montándose/re-renderizando...');
   
   const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError, initialized } = useCurrentUser();
-  const { userToken } = useAuth();
+  const { userToken, logout } = useAuth();
   const { inviteCode, loading: inviteLoading, error: inviteError, generateInviteCode, clearError: clearInviteError } = useInviteCodes();
   const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus } = usePermissions();
   const [form, setForm] = useState({
@@ -52,21 +48,18 @@ export default function ProfileScreen() {
 
   // Cargar perfil cuando se monta la pantalla
   useEffect(() => {
-    console.log('[ProfileScreen] useEffect de carga - profile:', profile, 'loading:', loading, 'initialized:', initialized);
+    console.log('[ProfileScreen] useEffect de carga - loading:', loading, 'initialized:', initialized);
     
-    // Si no está inicializado, cargar perfil
+    // Solo cargar si no está inicializado y no está cargando
     if (!initialized && !loading) {
       console.log('[ProfileScreen] No inicializado, iniciando carga...');
       fetchProfile();
-    } else if (!profile && !loading && initialized) {
-      console.log('[ProfileScreen] Inicializado pero sin perfil, reintentando carga...');
-      fetchProfile();
-    } else if (profile) {
-      console.log('[ProfileScreen] Perfil ya cargado:', profile.name);
     } else if (loading) {
       console.log('[ProfileScreen] Perfil cargando...');
+    } else if (initialized) {
+      console.log('[ProfileScreen] Perfil ya inicializado');
     }
-  }, [profile, loading, initialized]); // Depender de profile, loading e initialized
+  }, [loading, initialized]); // Solo depender de loading e initialized, NO de profile
 
   // Función para reintentar la carga
   const handleRetry = () => {
@@ -537,177 +530,54 @@ export default function ProfileScreen() {
         </LinearGradient>
       )}
 
-      {/* Sección de Diagnóstico de Alarmas - Solo para desarrollo */}
-      {__DEV__ && (
-        <LinearGradient
-          colors={['#fef2f2', '#fee2e2', '#fca5a5']}
+      {/* Botón de Cerrar Sesión */}
+      <LinearGradient
+        colors={['#fef2f2', '#fee2e2', '#fca5a5']}
+        style={{
+          margin: 16,
+          borderRadius: 16,
+          padding: 20,
+          borderWidth: 2,
+          borderColor: '#fca5a5',
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert(
+              'Cerrar Sesión',
+              '¿Estás seguro de que quieres cerrar sesión?',
+              [
+                {
+                  text: 'Cancelar',
+                  style: 'cancel',
+                },
+                {
+                  text: 'Cerrar Sesión',
+                  style: 'destructive',
+                  onPress: () => {
+                    logout();
+                  },
+                },
+              ]
+            );
+          }}
           style={{
-            margin: 16,
-            borderRadius: 16,
-            padding: 20,
-            borderWidth: 2,
-            borderColor: '#fca5a5',
+            backgroundColor: '#dc2626',
+            paddingVertical: 16,
+            paddingHorizontal: 20,
+            borderRadius: 12,
+            alignItems: 'center',
+            flexDirection: 'row',
+            justifyContent: 'center',
+            gap: 8,
           }}
         >
-          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#dc2626', marginBottom: 12, textAlign: 'center' }}>
-            🔍 Diagnóstico de Alarmas
+          <Ionicons name="log-out-outline" size={24} color="white" />
+          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
+            Cerrar Sesión
           </Text>
-          
-          <View style={{ gap: 12 }}>
-            <TouchableOpacity
-              onPress={runFullDiagnostic}
-              style={{
-                backgroundColor: '#dc2626',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                🔍 Ejecutar Diagnóstico Completo
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={testMedicationAlarm}
-              style={{
-                backgroundColor: '#059669',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                🧪 Probar Alarma (1 min)
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={checkAlarmStatus}
-              style={{
-                backgroundColor: '#3b82f6',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                📊 Ver Estado de Alarmas
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={clearAllAlarms}
-              style={{
-                backgroundColor: '#ef4444',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                🗑️ Limpiar Todas las Alarmas
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={async () => {
-                const success = await recreateNotificationChannels();
-                Alert.alert(
-                  'Recrear Canales',
-                  success ? 'Canales recreados correctamente' : 'Error recreando canales',
-                  [{ text: 'OK' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#8b5cf6',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                🔧 Recrear Canales
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={async () => {
-                const result = await testNotificationDisplay();
-                Alert.alert(
-                  'Prueba de Visualización',
-                  result.success ? 'Notificación programada correctamente' : result.message,
-                  [{ text: 'OK' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#06b6d4',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                📱 Probar Visualización
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={async () => {
-                const result = await testImmediateNotification();
-                Alert.alert(
-                  'Notificación Inmediata',
-                  result.success ? 'Notificación enviada correctamente' : result.message,
-                  [{ text: 'OK' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#f59e0b',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                🚨 Notificación Inmediata
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              onPress={async () => {
-                const result = await checkNotificationPermissions();
-                Alert.alert(
-                  'Estado de Permisos',
-                  `Estado: ${result.status}\nPuede solicitar: ${result.canAskAgain ? 'Sí' : 'No'}\nConcedidos: ${result.granted ? 'Sí' : 'No'}`,
-                  [{ text: 'OK' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#10b981',
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-                borderRadius: 8,
-                alignItems: 'center',
-              }}
-            >
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>
-                🔐 Verificar Permisos
-              </Text>
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={{ fontSize: 12, color: '#dc2626', marginTop: 8, textAlign: 'center', fontStyle: 'italic' }}>
-            Diagnóstico solo disponible en modo desarrollo
-          </Text>
-        </LinearGradient>
-      )}
+        </TouchableOpacity>
+      </LinearGradient>
     </ScrollView>
   );
 }
