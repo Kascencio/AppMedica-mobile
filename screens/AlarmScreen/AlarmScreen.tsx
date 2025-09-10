@@ -55,12 +55,23 @@ export default function AlarmScreen({ navigation }: any) {
     let sound: Audio.Sound | null = null;
     (async () => {
       try {
+        // Configurar el modo de audio para que se reproduzca incluso en modo silencioso
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          staysActiveInBackground: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: false,
+          playThroughEarpieceAndroid: false,
+        });
+
         const result = await Audio.Sound.createAsync(
           require('../../assets/alarm.mp3'),
           {
             shouldPlay: true,
             isLooping: true, // Repetir el sonido hasta que el usuario tome acción
             volume: 1.0,
+            rate: 1.0,
+            shouldCorrectPitch: true,
           }
         );
         sound = result.sound;

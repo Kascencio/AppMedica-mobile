@@ -34,7 +34,10 @@
         {
           "icon": "./assets/logo.png",
           "color": "#2563eb",
-          "sounds": ["./assets/alarm.mp3"]
+          "sounds": ["./assets/alarm.mp3"],
+          "mode": "production",
+          "androidMode": "default",
+          "androidCollapsedTitle": "RecuerdaMed"
         }
       ]
     ],

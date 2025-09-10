@@ -16,6 +16,7 @@ import { setNotificationHandler, requestPermissions } from './lib/notifications'
 import { syncService } from './lib/syncService';
 import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
+import { backgroundNotificationHandler } from './lib/backgroundNotificationHandler';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
@@ -72,56 +73,12 @@ export default function App() {
       }
     })();
     
-    // Listener para respuesta a notificaciones (cuando el usuario toca la notificación)
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data;
-      console.log('[App] Notificación tocada:', data);
-      
-      // Navegar a la pantalla de alarma si es una notificación de medicamento o cita
-      if (data && (data.type === 'MEDICATION' || data.type === 'APPOINTMENT' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
-        if (navigationRef.isReady()) {
-          (navigationRef as any).navigate('AlarmScreen', { 
-            kind: data.kind || data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT',
-            refId: data.medicationId || data.appointmentId || data.refId,
-            scheduledFor: data.scheduledFor,
-            name: data.medicationName || data.doctorName || data.name,
-            dosage: data.dosage || '',
-            instructions: data.instructions || data.notes || '',
-            time: data.time,
-            location: data.location || ''
-          });
-        }
-      }
-    });
-    
-    // Listener para notificaciones recibidas en primer plano (solo para alarmas activas)
-    const fgListener = Notifications.addNotificationReceivedListener(notification => {
-      const data = notification.request.content.data;
-      const receivedAt = new Date();
-      console.log('[NOTIFICACIÓN RECIBIDA] Hora recibida:', receivedAt.toISOString(), 'Datos:', data);
-      
-      // Solo navegar automáticamente si es una alarma de medicamento o cita y la app está en primer plano
-      if (data && (data.type === 'MEDICATION' || data.type === 'APPOINTMENT' || data.kind === 'MED' || data.kind === 'APPOINTMENT')) {
-        console.log('[App] Navegando a pantalla de alarma automáticamente');
-        if (navigationRef.isReady()) {
-          // Navegar inmediatamente para mostrar la alarma
-          (navigationRef as any).navigate('AlarmScreen', { 
-            kind: data.kind || (data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT'),
-            refId: data.medicationId || data.appointmentId || data.refId,
-            scheduledFor: data.scheduledFor,
-            name: data.medicationName || data.doctorName || data.name,
-            dosage: data.dosage || '',
-            instructions: data.instructions || data.notes || '',
-            time: data.time,
-            location: data.location || ''
-          });
-        }
-      }
-    });
+    // Configurar el manejador de notificaciones en segundo plano
+    backgroundNotificationHandler.setNavigationRef(navigationRef);
+    const notificationListeners = backgroundNotificationHandler.setupNotificationListeners();
     
     return () => {
-      subscription.remove();
-      fgListener.remove();
+      backgroundNotificationHandler.cleanup(notificationListeners);
     };
   }, []);
 

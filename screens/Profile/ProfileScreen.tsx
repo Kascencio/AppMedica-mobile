@@ -11,6 +11,7 @@ import { useAuth } from '../../store/useAuth';
 import { useInviteCodes } from '../../store/useInviteCodes';
 import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
+import { UserProfile } from '../../types';
 
 import SyncStatus from '../../components/SyncStatus';
 
@@ -23,28 +24,31 @@ export default function ProfileScreen() {
   const { inviteCode, loading: inviteLoading, error: inviteError, generateInviteCode, clearError: clearInviteError } = useInviteCodes();
   const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus } = usePermissions();
   const [form, setForm] = useState({
-    name: profile?.name || '',
-    birthDate: profile?.birthDate || '',
-    gender: profile?.gender || '',
-    weight: profile?.weight?.toString() || '',
-    height: profile?.height?.toString() || '',
-    bloodType: profile?.bloodType || '',
-    emergencyContactName: profile?.emergencyContactName || '',
-    emergencyContactRelation: profile?.emergencyContactRelation || '',
-    emergencyContactPhone: profile?.emergencyContactPhone || '',
-    allergies: profile?.allergies || '',
-    chronicDiseases: profile?.chronicDiseases || '',
-    currentConditions: profile?.currentConditions || '',
-    reactions: profile?.reactions || '',
-    doctorName: profile?.doctorName || '',
-    doctorContact: profile?.doctorContact || '',
-    hospitalReference: profile?.hospitalReference || '',
-    photoUrl: profile?.photoUrl || '',
+    name: '',
+    birthDate: '',
+    gender: '',
+    weight: '',
+    height: '',
+    bloodType: '',
+    emergencyContactName: '',
+    emergencyContactRelation: '',
+    emergencyContactPhone: '',
+    allergies: '',
+    chronicDiseases: '',
+    currentConditions: '',
+    reactions: '',
+    doctorName: '',
+    doctorContact: '',
+    hospitalReference: '',
+    photoUrl: '',
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formInitialized, setFormInitialized] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [lastSavedProfile, setLastSavedProfile] = useState<UserProfile | null>(null);
 
   // Cargar perfil cuando se monta la pantalla
   useEffect(() => {
@@ -74,10 +78,10 @@ export default function ProfileScreen() {
     setFormInitialized(false); // Resetear para que se vuelva a inicializar el formulario
   };
 
-  // Sincronizar formulario cuando cambie el perfil (solo una vez al cargar)
+  // Sincronizar formulario cuando cambie el perfil (inicialización y actualizaciones)
   useEffect(() => {
-    if (profile && !formInitialized) {
-      console.log('[ProfileScreen] Sincronizando formulario con perfil inicial:', profile);
+    if (profile) {
+      console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
       
       const newForm = {
         name: profile.name || '',
@@ -99,11 +103,21 @@ export default function ProfileScreen() {
         photoUrl: profile.photoUrl || '',
       };
       
-      console.log('[ProfileScreen] Inicializando formulario con datos del perfil');
-      setForm(newForm);
-      setFormInitialized(true);
+      // Solo actualizar si hay cambios reales para evitar loops
+      const hasChanges = Object.keys(newForm).some(key => {
+        const formValue = form[key as keyof typeof form];
+        const newValue = newForm[key as keyof typeof newForm];
+        return formValue !== newValue;
+      });
+      
+      if (hasChanges || !formInitialized) {
+        console.log('[ProfileScreen] Actualizando formulario con datos del perfil');
+        setForm(newForm);
+        setFormInitialized(true);
+        setLastSavedProfile(profile);
+      }
     }
-  }, [profile, formInitialized]); // Solo depende de profile y formInitialized
+  }, [profile]); // Solo depende de profile
 
   // Obtener solicitudes pendientes
   useEffect(() => {
@@ -164,21 +178,44 @@ export default function ProfileScreen() {
   const handleSave = async () => {
     console.log('[ProfileScreen] ========== INICIO handleSave ==========');
     setError(null);
+    setSaveError(null);
 
-    // --- 1. VALIDACIÓN ---
-    if (!form.name.trim() || !form.birthDate.trim() || !form.gender.trim()) {
-      return setError('Nombre, fecha de nacimiento y género son obligatorios.');
+    // --- 1. VALIDACIÓN MEJORADA ---
+    if (!form.name.trim()) {
+      return setError('El nombre es obligatorio.');
     }
+    if (!form.birthDate.trim()) {
+      return setError('La fecha de nacimiento es obligatoria.');
+    }
+    if (!form.gender.trim()) {
+      return setError('El género es obligatorio.');
+    }
+    
+    // Validar formato de fecha
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate) || isNaN(new Date(form.birthDate).getTime())) {
       return setError('La fecha de nacimiento no es válida (formato YYYY-MM-DD).');
     }
     if (new Date(form.birthDate) > new Date()) {
-        return setError('La fecha de nacimiento no puede ser en el futuro.');
+      return setError('La fecha de nacimiento no puede ser en el futuro.');
+    }
+
+    // Validar campos numéricos
+    if (form.weight && form.weight.trim() !== '') {
+      const weight = parseFloat(form.weight);
+      if (isNaN(weight) || !isFinite(weight) || weight < 0) {
+        return setError('El peso debe ser un número válido mayor o igual a 0.');
+      }
+    }
+    if (form.height && form.height.trim() !== '') {
+      const height = parseInt(form.height, 10);
+      if (isNaN(height) || !isFinite(height) || height < 0) {
+        return setError('La altura debe ser un número entero válido mayor o igual a 0.');
+      }
     }
 
     setSaving(true);
     try {
-      // --- 2. PREPARACIÓN Y LIMPIEZA DE DATOS ---
+      // --- 2. PREPARACIÓN Y LIMPIEZA DE DATOS MEJORADA ---
       const dataToSave: Record<string, any> = {};
 
       // Mapear y limpiar cada campo del formulario
@@ -191,46 +228,126 @@ export default function ProfileScreen() {
           finalValue = finalValue.trim();
         }
 
-        // Si el valor es un string vacío, se convierte en undefined para ser filtrado
-        if (finalValue === '') {
+        // Solo convertir a undefined si es realmente vacío (no para campos obligatorios)
+        if (finalValue === '' && !['name', 'birthDate', 'gender'].includes(K)) {
           finalValue = undefined;
         }
 
-        // Manejo de campos numéricos (peso y altura)
+        // Manejo mejorado de campos numéricos
         if (K === 'weight' || K === 'height') {
-          if (finalValue) {
+          if (finalValue && finalValue !== '') {
             const num = K === 'weight' ? parseFloat(finalValue) : parseInt(finalValue, 10);
-            // Si el número es inválido (NaN) o cero, se convierte en undefined
-            if (isNaN(num) || !isFinite(num) || num <= 0) {
-              finalValue = undefined;
-            } else {
+            if (!isNaN(num) && isFinite(num) && num >= 0) { // Permitir 0
               finalValue = num;
+            } else {
+              finalValue = undefined;
             }
+          } else {
+            finalValue = undefined;
           }
         }
         
         // Asignar el valor limpio si no es undefined
         if (finalValue !== undefined) {
-            dataToSave[K] = finalValue;
+          dataToSave[K] = finalValue;
         }
       });
       
       console.log('[ProfileScreen] Datos a guardar (limpios y filtrados):', dataToSave);
 
-      // --- 3. GUARDADO ---
+      // --- 3. VALIDACIÓN ADICIONAL ---
+      if (Object.keys(dataToSave).length === 0) {
+        throw new Error('No hay datos válidos para guardar');
+      }
+
+      // --- 4. GUARDADO CON VALIDACIÓN DE PERSISTENCIA ---
       await updateProfile(dataToSave);
       
+      // Verificar que el perfil se guardó correctamente
+      const updatedProfile = useCurrentUser.getState().profile;
+      if (!updatedProfile) {
+        throw new Error('Error: El perfil no se actualizó correctamente');
+      }
+
+      // Verificar que los datos se guardaron localmente
+      try {
+        const localProfile = await useCurrentUser.getState().loadProfileLocally();
+        if (!localProfile) {
+          console.warn('[ProfileScreen] Advertencia: No se pudo verificar el guardado local');
+        } else {
+          console.log('[ProfileScreen] Guardado local verificado correctamente');
+        }
+      } catch (localError) {
+        console.error('[ProfileScreen] Error al verificar guardado local:', localError);
+      }
+      
       console.log('[ProfileScreen] Perfil guardado exitosamente');
+      setLastSavedProfile(updatedProfile);
+      setRetryCount(0); // Resetear contador en caso de éxito
       Alert.alert('Éxito', 'Perfil actualizado correctamente.');
 
     } catch (e: any) {
       console.error('[ProfileScreen] Error al guardar:', e);
       const errorMessage = e.message || 'Ocurrió un error al guardar el perfil.';
       setError(errorMessage);
+      setSaveError(errorMessage);
       Alert.alert('Error', errorMessage);
     } finally {
       setSaving(false);
     }
+  };
+
+  // Sistema de reintentos para operaciones de guardado
+  const handleSaveWithRetry = async () => {
+    const maxRetries = 3;
+    
+    try {
+      await handleSave();
+    } catch (error) {
+      if (retryCount < maxRetries) {
+        setRetryCount(prev => prev + 1);
+        console.log(`[ProfileScreen] Reintentando guardado (${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => handleSaveWithRetry(), 1000 * (retryCount + 1)); // Backoff exponencial
+      } else {
+        setSaveError('No se pudo guardar el perfil después de varios intentos');
+        Alert.alert('Error', 'No se pudo guardar el perfil después de varios intentos. Por favor, inténtalo de nuevo.');
+      }
+    }
+  };
+
+  // Función para limpiar errores
+  const clearErrors = () => {
+    setError(null);
+    setSaveError(null);
+    setRetryCount(0);
+  };
+
+  // Función para detectar cambios no guardados
+  const hasUnsavedChanges = () => {
+    if (!lastSavedProfile) return false;
+    
+    const currentForm = form;
+    const savedProfile = lastSavedProfile;
+    
+    return (
+      currentForm.name !== (savedProfile.name || '') ||
+      currentForm.birthDate !== (savedProfile.birthDate || savedProfile.dateOfBirth || '') ||
+      currentForm.gender !== (savedProfile.gender || '') ||
+      currentForm.weight !== (savedProfile.weight?.toString() || '') ||
+      currentForm.height !== (savedProfile.height?.toString() || '') ||
+      currentForm.bloodType !== (savedProfile.bloodType || '') ||
+      currentForm.emergencyContactName !== (savedProfile.emergencyContactName || '') ||
+      currentForm.emergencyContactRelation !== (savedProfile.emergencyContactRelation || '') ||
+      currentForm.emergencyContactPhone !== (savedProfile.emergencyContactPhone || '') ||
+      currentForm.allergies !== (savedProfile.allergies || '') ||
+      currentForm.chronicDiseases !== (savedProfile.chronicDiseases || '') ||
+      currentForm.currentConditions !== (savedProfile.currentConditions || '') ||
+      currentForm.reactions !== (savedProfile.reactions || '') ||
+      currentForm.doctorName !== (savedProfile.doctorName || '') ||
+      currentForm.doctorContact !== (savedProfile.doctorContact || '') ||
+      currentForm.hospitalReference !== (savedProfile.hospitalReference || '') ||
+      currentForm.photoUrl !== (savedProfile.photoUrl || '')
+    );
   };
 
   const handleGenerateInvite = async () => {
@@ -294,6 +411,38 @@ export default function ProfileScreen() {
               <Ionicons name="refresh" size={16} color="#fff" />
               <Text style={styles.retryBtnTextModern}>Reintentar</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Mostrar errores de guardado */}
+        {saveError && (
+          <View style={styles.errorBoxModern}>
+            <Ionicons name="alert-circle" size={20} color="#ef4444" style={{ marginRight: 8 }} />
+            <Text style={styles.errorTextModern}>{saveError}</Text>
+            <TouchableOpacity style={styles.retryBtnModern} onPress={clearErrors}>
+              <Ionicons name="close" size={16} color="#fff" />
+              <Text style={styles.retryBtnTextModern}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Indicador de reintentos */}
+        {retryCount > 0 && (
+          <View style={styles.retryBoxModern}>
+            <Ionicons name="refresh" size={20} color="#f59e0b" style={{ marginRight: 8 }} />
+            <Text style={styles.retryTextModern}>
+              Reintentando guardado... ({retryCount}/3)
+            </Text>
+          </View>
+        )}
+
+        {/* Indicador de cambios no guardados */}
+        {hasUnsavedChanges() && !saving && (
+          <View style={styles.unsavedChangesBoxModern}>
+            <Ionicons name="warning" size={20} color="#f59e0b" style={{ marginRight: 8 }} />
+            <Text style={styles.unsavedChangesTextModern}>
+              Tienes cambios sin guardar
+            </Text>
           </View>
         )}
         
@@ -457,9 +606,22 @@ export default function ProfileScreen() {
           </View>
         </View>
         {error && <Text style={styles.errorTextModern}>{error}</Text>}
-        <TouchableOpacity style={styles.saveBtnModern} onPress={handleSave} disabled={saving || loading} accessibilityLabel="Guardar perfil" accessibilityRole="button">
+        <TouchableOpacity 
+          style={[
+            styles.saveBtnModern, 
+            saving && styles.saveBtnDisabled,
+            hasUnsavedChanges() && !saving && styles.saveBtnWithChanges
+          ]} 
+          onPress={handleSaveWithRetry} 
+          disabled={saving || loading} 
+          accessibilityLabel="Guardar perfil" 
+          accessibilityRole="button"
+        >
           <Ionicons name="save" size={22} color="#fff" />
-          <Text style={styles.saveBtnTextModern}>{saving || loading ? 'Guardando...' : 'Guardar'}</Text>
+          <Text style={styles.saveBtnTextModern}>
+            {saving ? (retryCount > 0 ? `Reintentando... (${retryCount}/3)` : 'Guardando...') : 
+             hasUnsavedChanges() ? 'Guardar cambios' : 'Guardar'}
+          </Text>
         </TouchableOpacity>
         {/* Solo mostrar botón de código de invitación para pacientes */}
         {profile?.role === 'PATIENT' && (
@@ -873,5 +1035,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     marginLeft: 8,
+  },
+  retryBoxModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#fde047',
+  },
+  retryTextModern: {
+    color: '#b45309',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  saveBtnDisabled: {
+    backgroundColor: '#9ca3af',
+    shadowOpacity: 0.1,
+  },
+  saveBtnWithChanges: {
+    backgroundColor: '#f59e0b',
+    shadowColor: '#f59e0b',
+  },
+  unsavedChangesBoxModern: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fffbeb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#fde047',
+  },
+  unsavedChangesTextModern: {
+    color: '#b45309',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
   },
 });

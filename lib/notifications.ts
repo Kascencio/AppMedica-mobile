@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Platform, Linking, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 
@@ -19,6 +19,7 @@ export function setNotificationHandler() {
           shouldShowList: true,   // Mostrar en el panel de notificaciones
           shouldPlaySound: true,  // Reproducir sonido
           shouldSetBadge: true,   // Mostrar badge en el icono de la app
+          shouldShowAlert: true,  // Mostrar alerta (importante para apertura automática)
         };
       }
       
@@ -28,6 +29,7 @@ export function setNotificationHandler() {
         shouldShowList: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
+        shouldShowAlert: false,
       };
     },
   });
@@ -47,10 +49,22 @@ export async function requestPermissions() {
     
     let finalStatus = existingStatus;
     
-    // Si no están concedidos, solicitarlos
+    // Si no están concedidos, solicitarlos con configuración completa
     if (existingStatus !== 'granted') {
-      console.log('[Notifications] Solicitando permisos...');
-      const { status } = await Notifications.requestPermissionsAsync();
+      console.log('[Notifications] Solicitando permisos completos...');
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowCriticalAlerts: true, // Para alarmas críticas
+        },
+        android: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+        }
+      });
       finalStatus = status;
       console.log('[Notifications] Nuevo estado de permisos:', status);
     }
@@ -58,6 +72,11 @@ export async function requestPermissions() {
     if (finalStatus !== 'granted') {
       console.log('[Notifications] Permisos no otorgados');
       return false;
+    }
+
+    // Solicitar permisos adicionales para Android
+    if (Platform.OS === 'android') {
+      await requestAndroidSpecificPermissions();
     }
     
     // Configurar canales de Android
@@ -81,6 +100,9 @@ export async function requestPermissions() {
           sound: 'alarm.mp3', // Usar sonido personalizado
           enableVibrate: true,
           enableLights: true,
+          bypassDnd: true, // Pasar el modo No Molestar
+          showBadge: true, // Mostrar badge
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
         });
         
         // Canal específico para citas
@@ -93,6 +115,9 @@ export async function requestPermissions() {
           sound: 'alarm.mp3', // Usar sonido personalizado
           enableVibrate: true,
           enableLights: true,
+          bypassDnd: true, // Pasar el modo No Molestar
+          showBadge: true, // Mostrar badge
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
         });
         
         console.log('[Notifications] Canales de Android configurados correctamente');
@@ -106,6 +131,51 @@ export async function requestPermissions() {
   } catch (error) {
     console.error('[Notifications] Error solicitando permisos:', error);
     return false;
+  }
+}
+
+// Solicitar permisos específicos de Android
+async function requestAndroidSpecificPermissions() {
+  try {
+    console.log('[Notifications] Solicitando permisos específicos de Android...');
+    
+    // Verificar permisos de alarmas exactas (Android 12+)
+    console.log('[Notifications] Verificando permisos de alarmas exactas...');
+    
+    // Mostrar información sobre permisos de alarmas exactas
+    Alert.alert(
+      'Configuración de Alarmas',
+      'Para que las alarmas funcionen correctamente, asegúrate de que RecuerdaMed tenga permisos de "Alarmas exactas" en la configuración del sistema.',
+      [
+        { text: 'Entendido', style: 'default' },
+        { text: 'Ir a Configuración', onPress: () => Linking.openSettings() }
+      ]
+    );
+
+    // Solicitar desactivar optimización de batería
+    await requestBatteryOptimizationExemption();
+    
+  } catch (error) {
+    console.error('[Notifications] Error solicitando permisos específicos de Android:', error);
+  }
+}
+
+// Solicitar exención de optimización de batería
+async function requestBatteryOptimizationExemption() {
+  try {
+    console.log('[Notifications] Informando sobre optimización de batería...');
+    
+    // Mostrar información sobre optimización de batería
+    Alert.alert(
+      'Optimización de Batería',
+      'Para que las alarmas funcionen correctamente, te recomendamos desactivar la optimización de batería para RecuerdaMed. Ve a Configuración > Batería > Optimización de batería > RecuerdaMed > No optimizar.',
+      [
+        { text: 'Entendido', style: 'default' },
+        { text: 'Ir a Configuración', onPress: () => Linking.openSettings() }
+      ]
+    );
+  } catch (error) {
+    console.error('[Notifications] Error informando sobre optimización de batería:', error);
   }
 }
 
@@ -143,7 +213,10 @@ export async function scheduleNotification({
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
         categoryIdentifier: channelId, // Usar categoryIdentifier en lugar de channelId
         sticky: false, // No hacer la notificación persistente
-        autoDismiss: true, // Permitir que se cierre automáticamente
+        autoDismiss: false, // No permitir que se cierre automáticamente para alarmas
+        // Configuración adicional para mejor apertura automática
+        badge: 1, // Mostrar badge
+        launchImageName: 'SplashScreen', // Para iOS
       },
       trigger,
     });

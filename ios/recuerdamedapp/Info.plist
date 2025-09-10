@@ -56,7 +56,14 @@
     <array>
       <string>fetch</string>
       <string>remote-notification</string>
+      <string>audio</string>
+      <string>background-processing</string>
     </array>
+    <!-- Permisos adicionales para alarmas automáticas -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>$(PRODUCT_NAME) necesita acceso al micrófono para reproducir alarmas de medicamentos</string>
+    <key>NSAudioSessionUsageDescription</key>
+    <string>$(PRODUCT_NAME) necesita acceso a la sesión de audio para reproducir alarmas incluso en modo silencioso</string>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>
