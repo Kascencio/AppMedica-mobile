@@ -16,6 +16,21 @@ import { setNotificationHandler, requestPermissions } from './lib/notifications'
 import { syncService } from './lib/syncService';
 import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
+import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
+import { ALARM_BACKGROUND_FETCH_TASK, registerBackgroundFetchAsync } from './lib/alarmTask';
+
+// Función para verificar y registrar la tarea en segundo plano
+const checkStatusAsync = async () => {
+  const isRegistered = await TaskManager.isTaskRegisteredAsync(ALARM_BACKGROUND_FETCH_TASK);
+  if (isRegistered) {
+    console.log('[App] La tarea en segundo plano ya está registrada.');
+    return;
+  }
+
+  console.log('[App] Registrando la tarea en segundo plano...');
+  await registerBackgroundFetchAsync();
+};
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
@@ -38,6 +53,8 @@ export default function App() {
         const permissionsGranted = await requestPermissions();
         if (permissionsGranted) {
           setNotiPerm('granted');
+          // Si los permisos están concedidos, registrar la tarea en segundo plano
+          await checkStatusAsync();
         } else {
           setNotiPerm('denied');
           setShowPermModal(true);
