@@ -38,5 +38,19 @@
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
     </activity>
+    <activity
+      android:name=".AlarmActivity"
+      android:exported="true"
+      android:launchMode="singleInstance"
+      android:taskAffinity=""
+      android:excludeFromRecents="true"
+      android:theme="@style/Theme.App.SplashScreen"
+      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode"
+      android:windowSoftInputMode="adjustResize"
+      android:screenOrientation="portrait"
+      android:showWhenLocked="true"
+      android:turnScreenOn="true"
+    />
+    <receiver android:name=".AlarmReceiver" android:exported="false"/>
   </application>
 </manifest>

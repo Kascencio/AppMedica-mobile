@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Platform, Linking, Alert } from 'react-native';
+import { Platform, Linking, Alert, NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 
@@ -373,6 +373,51 @@ export async function scheduleMedicationReminder({
   patientProfileId?: string;
 }) {
   try {
+    const { CustomAlarm } = NativeModules;
+    if (Platform.OS === 'android' && CustomAlarm) {
+        console.log('[Notifications] Usando CustomAlarm para Android');
+
+        let hours: number, minutes: number;
+        if (time.includes(':')) {
+            const timeParts = time.split(':');
+            hours = parseInt(timeParts[0], 10);
+            minutes = parseInt(timeParts[1], 10);
+        } else {
+            console.log('[Notifications] Formato de hora no reconocido para CustomAlarm:', time);
+            return;
+        }
+
+        if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+            console.log('[Notifications] Hora inválida para CustomAlarm:', time);
+            return;
+        }
+
+        let triggerDate = new Date();
+        triggerDate.setHours(hours, minutes, 0, 0);
+
+        if (triggerDate.getTime() <= Date.now()) {
+            triggerDate.setDate(triggerDate.getDate() + 1);
+        }
+
+        if (startDate && new Date(startDate).getTime() > triggerDate.getTime()) {
+            triggerDate = new Date(startDate);
+            triggerDate.setHours(hours, minutes, 0, 0);
+        }
+
+        CustomAlarm.schedule({
+            title: `💊 ${name}`,
+            body: `Es hora de tomar ${dosage}`,
+            kind: 'MEDICATION',
+            refId: id,
+            name,
+            dosage,
+            time,
+            instructions: dosage,
+            scheduledFor: triggerDate.toISOString(),
+            timestamp: triggerDate.getTime(),
+        });
+        return;
+    }
     // Validaciones básicas
     if (!id || !name || !dosage || !time) {
       console.log('[Notifications] Datos incompletos para programar medicamento:', { id, name, dosage, time });
@@ -546,6 +591,22 @@ export async function scheduleAppointmentReminder({
   patientProfileId?: string;
 }) {
   try {
+    const { CustomAlarm } = NativeModules;
+    if (Platform.OS === 'android' && CustomAlarm) {
+        console.log('[Notifications] Usando CustomAlarm para Android para citas');
+        const triggerDate = new Date(dateTime);
+        CustomAlarm.schedule({
+            title: `📅 Cita: ${title}`,
+            body: `Es hora de tu cita. Ubicación: ${location}`,
+            kind: 'APPOINTMENT',
+            refId: id,
+            name: title,
+            location: location,
+            scheduledFor: triggerDate.toISOString(),
+            timestamp: triggerDate.getTime(),
+        });
+        return;
+    }
     // Cancelar notificaciones existentes para esta cita
     await cancelAppointmentNotifications(id);
     
