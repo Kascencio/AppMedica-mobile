@@ -1,127 +1,181 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useCurrentUser } from '../store/useCurrentUser';
+import { useAuth } from '../store/useAuth';
 
-export default function ProfileDebug() {
+export function ProfileDebug() {
   const { profile, loading, error, initialized } = useCurrentUser();
+  const { userToken, isAuthenticated } = useAuth();
+
+  const showDebugInfo = () => {
+    // Decodificar token si está disponible
+    let tokenInfo = 'No disponible';
+    if (userToken) {
+      try {
+        const tokenPayload = JSON.parse(atob(userToken.split('.')[1]));
+        tokenInfo = `Sub: ${tokenPayload.sub || 'N/A'}\n` +
+                   `PatientId: ${tokenPayload.patientId || 'N/A'}\n` +
+                   `ProfileId: ${tokenPayload.profileId || 'N/A'}\n` +
+                   `Role: ${tokenPayload.role || 'N/A'}\n` +
+                   `Name: ${tokenPayload.name || tokenPayload.patientName || 'N/A'}`;
+      } catch (e) {
+        tokenInfo = 'Error decodificando token';
+      }
+    }
+
+    const debugInfo = {
+      'Autenticado': isAuthenticated ? 'Sí' : 'No',
+      'Token presente': userToken ? 'Sí' : 'No',
+      'Perfil cargando': loading ? 'Sí' : 'No',
+      'Perfil inicializado': initialized ? 'Sí' : 'No',
+      'Error': error || 'Ninguno',
+      'ID del perfil': profile?.id || 'No disponible',
+      'ID del usuario': profile?.userId || 'No disponible',
+      'ID del paciente': profile?.patientProfileId || 'No disponible',
+      'Nombre': profile?.name || 'No disponible',
+      'Rol': profile?.role || 'No disponible',
+      'Token Info': tokenInfo,
+    };
+
+    const infoText = Object.entries(debugInfo)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
+
+    Alert.alert('🔍 Debug del Perfil', infoText);
+  };
+
+  const testApiCall = async () => {
+    try {
+      const { buildApiUrl, API_CONFIG } = await import('../constants/config');
+      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+      
+      Alert.alert(
+        '🌐 Test de API', 
+        `Endpoint: ${endpoint}\n` +
+        `Token: ${userToken ? 'Presente' : 'No disponible'}\n` +
+        `Base URL: ${API_CONFIG.BASE_URL}`
+      );
+    } catch (error) {
+      Alert.alert('❌ Error', `Error: ${error}`);
+    }
+  };
+
+  const forceRefresh = async () => {
+    try {
+      const { refreshProfile } = useCurrentUser.getState();
+      await refreshProfile();
+      Alert.alert('✅ Éxito', 'Perfil refrescado');
+    } catch (error) {
+      Alert.alert('❌ Error', `Error: ${error}`);
+    }
+  };
+
+  const testTokenDecoding = () => {
+    if (!userToken) {
+      Alert.alert('❌ Error', 'No hay token disponible');
+      return;
+    }
+
+    try {
+      const tokenPayload = JSON.parse(atob(userToken.split('.')[1]));
+      const tokenInfo = {
+        'Sub (subject)': tokenPayload.sub || 'N/A',
+        'PatientId': tokenPayload.patientId || 'N/A',
+        'ProfileId': tokenPayload.profileId || 'N/A',
+        'PatientProfileId': tokenPayload.patientProfileId || 'N/A',
+        'Role': tokenPayload.role || 'N/A',
+        'Name': tokenPayload.name || 'N/A',
+        'PatientName': tokenPayload.patientName || 'N/A',
+        'UserId': tokenPayload.userId || 'N/A',
+        'Exp': new Date(tokenPayload.exp * 1000).toLocaleString(),
+        'Iat': new Date(tokenPayload.iat * 1000).toLocaleString(),
+      };
+
+      const infoText = Object.entries(tokenInfo)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n');
+
+      Alert.alert('🔑 Información del Token', infoText);
+    } catch (error) {
+      Alert.alert('❌ Error', `Error decodificando token: ${error}`);
+    }
+  };
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <Text style={styles.title}>🔍 Debug del Perfil</Text>
       
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Estado General</Text>
-        <Text style={styles.info}>Loading: {loading ? '✅ Sí' : '❌ No'}</Text>
-        <Text style={styles.info}>Initialized: {initialized ? '✅ Sí' : '❌ No'}</Text>
-        <Text style={styles.info}>Error: {error || 'Ninguno'}</Text>
-        <Text style={styles.info}>Profile existe: {profile ? '✅ Sí' : '❌ No'}</Text>
-      </View>
-
-      {profile && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Datos del Perfil</Text>
-          <Text style={styles.info}>ID: {profile.id || 'No definido'}</Text>
-          <Text style={styles.info}>User ID: {profile.userId || 'No definido'}</Text>
-          <Text style={styles.info}>Patient Profile ID: {profile.patientProfileId || 'No definido'}</Text>
-          <Text style={styles.info}>Nombre: {profile.name || 'No definido'}</Text>
-          <Text style={styles.info}>Rol: {profile.role || 'No definido'}</Text>
-          <Text style={styles.info}>Edad: {profile.age || 'No definido'}</Text>
-          <Text style={styles.info}>Fecha de nacimiento: {profile.birthDate || 'No definido'}</Text>
-          <Text style={styles.info}>Género: {profile.gender || 'No definido'}</Text>
-          <Text style={styles.info}>Peso: {profile.weight || 'No definido'}</Text>
-          <Text style={styles.info}>Altura: {profile.height || 'No definido'}</Text>
-          <Text style={styles.info}>Tipo de sangre: {profile.bloodType || 'No definido'}</Text>
-          <Text style={styles.info}>Foto URL: {profile.photoUrl ? '✅ Definida' : '❌ No definida'}</Text>
-        </View>
-      )}
-
-      {profile && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Información Médica</Text>
-          <Text style={styles.info}>Alergias: {profile.allergies || 'No definido'}</Text>
-          <Text style={styles.info}>Enfermedades crónicas: {profile.chronicDiseases || 'No definido'}</Text>
-          <Text style={styles.info}>Condiciones actuales: {profile.currentConditions || 'No definido'}</Text>
-          <Text style={styles.info}>Reacciones: {profile.reactions || 'No definido'}</Text>
-        </View>
-      )}
-
-      {profile && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Contacto de Emergencia</Text>
-          <Text style={styles.info}>Nombre: {profile.emergencyContactName || 'No definido'}</Text>
-          <Text style={styles.info}>Relación: {profile.emergencyContactRelation || 'No definido'}</Text>
-          <Text style={styles.info}>Teléfono: {profile.emergencyContactPhone || 'No definido'}</Text>
-        </View>
-      )}
-
-      {profile && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Información del Médico</Text>
-          <Text style={styles.info}>Médico: {profile.doctorName || 'No definido'}</Text>
-          <Text style={styles.info}>Contacto médico: {profile.doctorContact || 'No definido'}</Text>
-          <Text style={styles.info}>Hospital: {profile.hospitalReference || 'No definido'}</Text>
-        </View>
-      )}
-
-      {profile && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Metadatos</Text>
-          <Text style={styles.info}>Creado: {profile.createdAt || 'No definido'}</Text>
-          <Text style={styles.info}>Actualizado: {profile.updatedAt || 'No definido'}</Text>
-        </View>
-      )}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>JSON Completo del Perfil</Text>
-        <Text style={styles.jsonText}>
-          {profile ? JSON.stringify(profile, null, 2) : 'No hay perfil'}
+      <TouchableOpacity style={styles.button} onPress={showDebugInfo}>
+        <Text style={styles.buttonText}>📊 Mostrar Info de Debug</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.button} onPress={testApiCall}>
+        <Text style={styles.buttonText}>🌐 Test de API</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.button} onPress={forceRefresh}>
+        <Text style={styles.buttonText}>🔄 Forzar Recarga</Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity style={styles.button} onPress={testTokenDecoding}>
+        <Text style={styles.buttonText}>🔑 Ver Token</Text>
+      </TouchableOpacity>
+      
+      <View style={styles.statusContainer}>
+        <Text style={styles.statusText}>
+          Estado: {loading ? 'Cargando...' : initialized ? 'Inicializado' : 'No inicializado'}
         </Text>
+        {error && <Text style={styles.errorText}>Error: {error}</Text>}
+        {profile?.id && <Text style={styles.successText}>ID: {profile.id}</Text>}
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    backgroundColor: '#f8fafc',
     padding: 16,
-    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    margin: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#333',
-  },
-  section: {
-    backgroundColor: '#fff',
-    padding: 16,
-    marginBottom: 16,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: '#1e293b',
     marginBottom: 12,
-    color: '#2563eb',
   },
-  info: {
-    fontSize: 14,
-    marginBottom: 4,
-    color: '#333',
+  button: {
+    backgroundColor: '#2563eb',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
   },
-  jsonText: {
-    fontSize: 12,
-    fontFamily: 'monospace',
-    color: '#666',
-    backgroundColor: '#f8f8f8',
+  buttonText: {
+    color: 'white',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  statusContainer: {
+    marginTop: 12,
     padding: 8,
-    borderRadius: 4,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 6,
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#475569',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#dc2626',
+    marginTop: 4,
+  },
+  successText: {
+    fontSize: 14,
+    color: '#059669',
+    marginTop: 4,
   },
 });

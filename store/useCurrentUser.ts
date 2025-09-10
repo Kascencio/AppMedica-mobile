@@ -83,31 +83,51 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
     const token = useAuth.getState().userToken;
     if (!token) {
         console.log('[useCurrentUser] No hay token, usando perfil local si existe.');
-        set({ loading: false, initialized: true }); // Marcar como inicializado
+        // Si no hay token pero hay perfil local, usarlo
+        if (localProfile) {
+          set({ profile: localProfile, initialized: true });
+        } else {
+          // Crear perfil mínimo sin token
+          const minimalProfile = createDefaultProfile({
+            id: 'temp_' + Date.now(),
+            userId: 'temp_user',
+            patientProfileId: 'temp_patient',
+            name: 'Usuario',
+            role: 'PATIENT',
+          });
+          await saveProfileLocally(minimalProfile);
+          set({ profile: minimalProfile, initialized: true });
+        }
+        set({ loading: false });
         return;
     }
 
     try {
         // Decodificar token para obtener datos base
         const tokenPayload = JSON.parse(atob(token.split('.')[1]));
+        console.log('[useCurrentUser] Token payload decodificado:', tokenPayload);
+        
+        // Intentar obtener el ID del paciente de diferentes campos del token
+        const patientId = tokenPayload.patientId || 
+                         tokenPayload.patientProfileId || 
+                         tokenPayload.profileId || 
+                         tokenPayload.sub;
+        
+        console.log('[useCurrentUser] ID del paciente extraído del token:', patientId);
+        
         const baseProfile = {
-            id: tokenPayload.profileId || tokenPayload.sub,
-            userId: tokenPayload.sub,
-            patientProfileId: tokenPayload.profileId,
-            name: tokenPayload.patientName || 'Usuario',
+            id: patientId,
+            userId: tokenPayload.sub || tokenPayload.userId,
+            patientProfileId: patientId,
+            name: tokenPayload.patientName || tokenPayload.name || 'Usuario',
             role: tokenPayload.role || 'PATIENT',
         };
+        
+        console.log('[useCurrentUser] Perfil base creado desde token:', baseProfile);
 
         // Obtener perfil detallado del backend
-        const patientId = baseProfile.patientProfileId || baseProfile.id;
-        if (!patientId) {
-          console.log('[useCurrentUser] No hay ID de paciente disponible, usando perfil base.');
-          const completeProfile = createDefaultProfile({ ...localProfile, ...baseProfile });
-          await saveProfileLocally(completeProfile);
-          set({ profile: completeProfile, initialized: true });
-          return;
-        }
-        const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
+        const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+        console.log('[useCurrentUser] Obteniendo perfil del servidor desde:', endpoint);
         const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
 
         let finalProfile;
@@ -119,15 +139,36 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             const genderMapReverse = { 'male': 'Masculino', 'female': 'Femenino', 'other': 'Otro' };
             const mappedData = {
                 ...serverData,
+                // Asegurar que tenemos un ID válido
+                id: serverData.id || baseProfile.id,
+                userId: serverData.userId || baseProfile.userId,
+                patientProfileId: serverData.id || baseProfile.patientProfileId,
+                // Mapear campos de fecha
                 birthDate: serverData.dateOfBirth || serverData.birthDate,
+                // Mapear género
                 gender: serverData.gender ? genderMapReverse[serverData.gender as keyof typeof genderMapReverse] || serverData.gender : undefined,
+                // Mapear otros campos
+                name: serverData.name || baseProfile.name,
+                role: serverData.role || baseProfile.role,
             };
+            
+            console.log('[useCurrentUser] Datos mapeados del servidor:', mappedData);
             
             // Combinar datos: locales -> base del token -> del servidor
             finalProfile = { ...localProfile, ...baseProfile, ...mappedData };
         } else {
+            const errorText = await res.text().catch(() => 'No response body');
             console.warn('[useCurrentUser] No se pudo obtener perfil detallado, usando datos locales/base.');
-            finalProfile = { ...localProfile, ...baseProfile };
+            console.warn('[useCurrentUser] Status:', res.status, 'Response:', errorText);
+            
+            // Si el error es "ID inválido", intentar crear un perfil con datos del token
+            if (res.status === 400 && errorText.includes('ID inválido')) {
+                console.log('[useCurrentUser] Error de ID inválido, creando perfil desde token...');
+                // Usar solo los datos del token para crear un perfil básico
+                finalProfile = { ...localProfile, ...baseProfile };
+            } else {
+                finalProfile = { ...localProfile, ...baseProfile };
+            }
         }
 
         const completeProfile = createDefaultProfile(finalProfile);

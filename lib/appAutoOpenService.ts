@@ -67,21 +67,25 @@ export class AppAutoOpenService {
       // En Android, las notificaciones de alta prioridad deberían abrir la app automáticamente
       // En iOS, las notificaciones con shouldShowAlert: true también deberían abrir la app
       
-      // Esperar un poco para que la app se abra
-      setTimeout(() => {
+      // Intentar múltiples veces para asegurar la apertura
+      const maxRetries = 5;
+      let retryCount = 0;
+      
+      const tryNavigate = () => {
         if (this.navigationRef && this.navigationRef.isReady()) {
           console.log('[AppAutoOpenService] Navegando a AlarmScreen...');
           this.navigateToAlarmScreen(data);
+        } else if (retryCount < maxRetries) {
+          retryCount++;
+          console.log(`[AppAutoOpenService] Navegación no disponible, reintentando... (${retryCount}/${maxRetries})`);
+          setTimeout(tryNavigate, 1000 * retryCount); // Delay incremental
         } else {
-          console.log('[AppAutoOpenService] Navegación no disponible, reintentando...');
-          // Reintentar después de un delay
-          setTimeout(() => {
-            if (this.navigationRef && this.navigationRef.isReady()) {
-              this.navigateToAlarmScreen(data);
-            }
-          }, 2000);
+          console.log('[AppAutoOpenService] Máximo de reintentos alcanzado, no se pudo navegar');
         }
-      }, 1000);
+      };
+      
+      // Iniciar el primer intento después de un delay inicial
+      setTimeout(tryNavigate, 500);
       
     } catch (error) {
       console.error('[AppAutoOpenService] Error abriendo app:', error);

@@ -115,8 +115,8 @@ export async function requestPermissions() {
         await Notifications.setNotificationChannelAsync('medications', {
           name: 'Medicamentos',
           description: 'Recordatorios de medicamentos',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 500, 250, 500],
+          importance: Notifications.AndroidImportance.MAX, // Máxima importancia
+          vibrationPattern: [0, 500, 250, 500, 250, 500], // Vibración más intensa
           lightColor: '#059669',
           sound: 'alarm.mp3', // Usar sonido personalizado
           enableVibrate: true,
@@ -124,14 +124,15 @@ export async function requestPermissions() {
           bypassDnd: true, // Pasar el modo No Molestar
           showBadge: true, // Mostrar badge
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+          // Configuraciones adicionales para mejor apertura automática
         });
         
         // Canal específico para citas
         await Notifications.setNotificationChannelAsync('appointments', {
           name: 'Citas',
           description: 'Recordatorios de citas médicas',
-          importance: Notifications.AndroidImportance.HIGH,
-          vibrationPattern: [0, 250, 500, 250],
+          importance: Notifications.AndroidImportance.MAX, // Máxima importancia
+          vibrationPattern: [0, 500, 250, 500, 250, 500], // Vibración más intensa
           lightColor: '#2563eb',
           sound: 'alarm.mp3', // Usar sonido personalizado
           enableVibrate: true,
@@ -139,6 +140,7 @@ export async function requestPermissions() {
           bypassDnd: true, // Pasar el modo No Molestar
           showBadge: true, // Mostrar badge
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+          // Configuraciones adicionales para mejor apertura automática
         });
         
         console.log('[Notifications] Canales de Android configurados correctamente');
@@ -245,6 +247,11 @@ export async function scheduleNotification({
           headsUp: true, // Mostrar como heads-up notification
           ongoing: false, // No hacer la notificación persistente
           autoCancel: false, // No cancelar automáticamente
+          // Configuraciones adicionales para mejor apertura automática
+          priority: Notifications.AndroidNotificationPriority.MAX, // Máxima prioridad
+          visibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+          showTimestamp: true, // Mostrar timestamp
+          localOnly: false, // Permitir sincronización con otros dispositivos
         }),
       },
       trigger,

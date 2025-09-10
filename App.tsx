@@ -18,6 +18,8 @@ import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
 import { backgroundNotificationHandler } from './lib/backgroundNotificationHandler';
 import { appAutoOpenService } from './lib/appAutoOpenService';
+import { alarmDisplayService } from './lib/alarmDisplayService';
+import { nativeAlarmService } from './lib/nativeAlarmService';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
@@ -43,6 +45,14 @@ export default function App() {
         // Configurar el servicio de apertura automática
         appAutoOpenService.setNavigationRef(navigationRef);
         const notificationListeners = appAutoOpenService.setupNotificationListeners();
+        
+        // Configurar el servicio de visualización de alarmas
+        alarmDisplayService.setNavigationRef(navigationRef);
+        const alarmListeners = alarmDisplayService.setupNotificationListeners();
+        
+        // Configurar el servicio nativo de alarmas
+        nativeAlarmService.setNavigationRef(navigationRef);
+        const nativeAlarmListeners = nativeAlarmService.setupNotificationListeners();
         
         // Solicitar permisos usando la función del módulo de notificaciones
         const permissionsGranted = await requestPermissions();
@@ -117,6 +127,8 @@ export default function App() {
     return () => {
       backgroundNotificationHandler.cleanup(backgroundListeners);
       appAutoOpenService.cleanup(notificationListeners);
+      alarmDisplayService.cleanup(alarmListeners);
+      nativeAlarmService.cleanup(nativeAlarmListeners);
       appStateSubscription?.remove();
     };
   }, []);

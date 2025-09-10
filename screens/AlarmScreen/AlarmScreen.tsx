@@ -53,6 +53,8 @@ export default function AlarmScreen({ navigation }: any) {
     Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
 
     let sound: Audio.Sound | null = null;
+    let vibrationInterval: NodeJS.Timeout | null = null;
+    
     (async () => {
       try {
         // Configurar el modo de audio para que se reproduzca incluso en modo silencioso
@@ -75,15 +77,29 @@ export default function AlarmScreen({ navigation }: any) {
           }
         );
         sound = result.sound;
+        
+        // Configurar vibración continua cada 3 segundos
+        vibrationInterval = setInterval(() => {
+          Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
+        }, 3000);
+        
       } catch (error) {
         console.error('[AlarmScreen] Error reproduciendo audio:', error);
         // Si no se puede reproducir el archivo, usar vibración más intensa
         Vibration.vibrate([0, 1000, 500, 1000, 500, 1000]);
+        
+        // Configurar vibración continua si no hay sonido
+        vibrationInterval = setInterval(() => {
+          Vibration.vibrate([0, 1000, 500, 1000, 500, 1000]);
+        }, 2000);
       }
     })();
 
     return () => {
       sound?.unloadAsync();
+      if (vibrationInterval) {
+        clearInterval(vibrationInterval);
+      }
     };
   }, []);
 
