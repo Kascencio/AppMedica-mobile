@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Vibration, ToastAndroid, Dimensions, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRoute } from '@react-navigation/native';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import { useKeepAwake } from 'expo-keep-awake';
 import { scheduleNotification } from '../../lib/notifications';
@@ -21,10 +20,9 @@ const mockAlarm = {
   time: '09:00',
 };
 
-export default function AlarmScreen({ navigation }: any) {
+export default function AlarmScreen(props: any) {
   useKeepAwake();
-  const route = useRoute();
-  const { kind, refId, scheduledFor, name, dosage, instructions, time } = route.params as any || {};
+  const { kind, refId, scheduledFor, name, dosage, instructions, time } = props || {};
   const { registerEvent } = useIntakeEvents();
   const [loading, setLoading] = React.useState(false);
   const [paramError, setParamError] = React.useState<string | null>(null);
@@ -163,7 +161,7 @@ export default function AlarmScreen({ navigation }: any) {
             dosage,
             instructions,
             time,
-            location: (route.params as any)?.location,
+            location: props.location,
           },
         });
         showToast('Evento registrado');
@@ -228,7 +226,7 @@ export default function AlarmScreen({ navigation }: any) {
           <View style={styles.medicationInfo}>
             <Text style={styles.medicationName}>{name || (kind === 'APPOINTMENT' ? 'Cita' : 'Medicamento')}</Text>
             <Text style={styles.medicationDosage}>
-              {kind === 'APPOINTMENT' ? ((route.params as any)?.location || 'Sin ubicación') : (dosage || '')}
+              {kind === 'APPOINTMENT' ? (props.location || 'Sin ubicación') : (dosage || '')}
             </Text>
           </View>
         </View>
