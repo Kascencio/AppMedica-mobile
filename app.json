@@ -36,7 +36,10 @@
           "color": "#2563eb",
           "sounds": [
             "./assets/alarm.mp3"
-          ]
+          ],
+          "mode": "production",
+          "androidMode": "default",
+          "androidCollapsedTitle": "RecuerdaMed"
         }
       ],
       "expo-background-fetch"

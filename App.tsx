@@ -19,6 +19,7 @@ import { DatabaseInitializer } from './components/DatabaseInitializer';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
 import { ALARM_BACKGROUND_FETCH_TASK, registerBackgroundFetchAsync } from './lib/alarmTask';
+import { backgroundNotificationHandler } from './lib/backgroundNotificationHandler';
 
 // Función para verificar y registrar la tarea en segundo plano
 const checkStatusAsync = async () => {
