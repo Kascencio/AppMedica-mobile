@@ -17,6 +17,11 @@ import { syncService } from './lib/syncService';
 import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
 import { backgroundNotificationHandler } from './lib/backgroundNotificationHandler';
+import { appAutoOpenService } from './lib/appAutoOpenService';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
+import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
+import { AppState } from 'react-native';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
@@ -34,6 +39,10 @@ export default function App() {
       try {
         // Configurar el manejador de notificaciones
         setNotificationHandler();
+        
+        // Configurar el servicio de apertura automática
+        appAutoOpenService.setNavigationRef(navigationRef);
+        const notificationListeners = appAutoOpenService.setupNotificationListeners();
         
         // Solicitar permisos usando la función del módulo de notificaciones
         const permissionsGranted = await requestPermissions();
@@ -63,9 +72,30 @@ export default function App() {
         // Inicializar servicio de notificaciones
         try {
           await notificationService.initialize();
+          
+          // Configurar canales de notificación después de inicializar
+          if (Platform.OS === 'android') {
+            try {
+              const { setupNotificationChannels } = await import('./lib/notificationChannels');
+              await setupNotificationChannels();
+              console.log('[App] Canales de notificación configurados correctamente');
+            } catch (channelError) {
+              console.error('[App] Error configurando canales de notificación:', channelError);
+            }
+          }
         } catch (notificationError) {
           console.error('[App] Error inicializando notificationService:', notificationError);
           // Continuar sin notificaciones
+        }
+        
+        // Registrar tarea en segundo plano para alarmas
+        try {
+          console.log('[App] Registrando tarea en segundo plano para alarmas...');
+          await registerBackgroundAlarmTask();
+          console.log('[App] Tarea en segundo plano registrada exitosamente');
+        } catch (backgroundTaskError) {
+          console.error('[App] Error registrando tarea en segundo plano:', backgroundTaskError);
+          // Continuar sin tarea en segundo plano
         }
       } catch (error) {
         console.error('[App] Error crítico en inicialización:', error);
@@ -75,10 +105,19 @@ export default function App() {
     
     // Configurar el manejador de notificaciones en segundo plano
     backgroundNotificationHandler.setNavigationRef(navigationRef);
-    const notificationListeners = backgroundNotificationHandler.setupNotificationListeners();
+    const backgroundListeners = backgroundNotificationHandler.setupNotificationListeners();
+    
+    // Configurar el estado de la app
+    const handleAppStateChange = (nextAppState: string) => {
+      appAutoOpenService.setAppState(nextAppState === 'active');
+    };
+    
+    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
     
     return () => {
-      backgroundNotificationHandler.cleanup(notificationListeners);
+      backgroundNotificationHandler.cleanup(backgroundListeners);
+      appAutoOpenService.cleanup(notificationListeners);
+      appStateSubscription?.remove();
     };
   }, []);
 
@@ -92,6 +131,8 @@ export default function App() {
           await fetchProfile();
         } catch (error) {
           console.log('[App] Error cargando perfil:', error);
+          // Si hay error, marcar como inicializado para evitar bucle infinito
+          useCurrentUser.getState().set({ initialized: true });
         }
       };
       loadProfileOnce();

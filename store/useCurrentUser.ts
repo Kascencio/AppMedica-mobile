@@ -100,6 +100,13 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
 
         // Obtener perfil detallado del backend
         const patientId = baseProfile.patientProfileId || baseProfile.id;
+        if (!patientId) {
+          console.log('[useCurrentUser] No hay ID de paciente disponible, usando perfil base.');
+          const completeProfile = createDefaultProfile({ ...localProfile, ...baseProfile });
+          await saveProfileLocally(completeProfile);
+          set({ profile: completeProfile, initialized: true });
+          return;
+        }
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME, { id: patientId.toString() });
         const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
 
@@ -132,6 +139,29 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
     } catch (error: any) {
         console.error('[useCurrentUser] Error en fetchProfile:', error);
         set({ error: error.message || 'Error desconocido al obtener perfil' });
+        
+        // Si hay error pero tenemos datos base del token, crear perfil mínimo
+        if (token) {
+          try {
+            const tokenPayload = JSON.parse(atob(token.split('.')[1]));
+            const baseProfile = {
+              id: tokenPayload.profileId || tokenPayload.sub,
+              userId: tokenPayload.sub,
+              patientProfileId: tokenPayload.profileId,
+              name: tokenPayload.patientName || 'Usuario',
+              role: tokenPayload.role || 'PATIENT',
+            };
+            const completeProfile = createDefaultProfile({ ...localProfile, ...baseProfile });
+            await saveProfileLocally(completeProfile);
+            set({ profile: completeProfile, initialized: true });
+            console.log('[useCurrentUser] Perfil mínimo creado desde token debido a error');
+          } catch (tokenError) {
+            console.error('[useCurrentUser] Error procesando token:', tokenError);
+            set({ initialized: true }); // Marcar como inicializado para evitar bucle
+          }
+        } else {
+          set({ initialized: true }); // Marcar como inicializado para evitar bucle
+        }
     } finally {
         set({ loading: false });
     }

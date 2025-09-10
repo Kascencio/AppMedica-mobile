@@ -39,7 +39,8 @@
           "androidMode": "default",
           "androidCollapsedTitle": "RecuerdaMed"
         }
-      ]
+      ],
+      "expo-background-fetch"
     ],
     "extra": {
       "eas": {

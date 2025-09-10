@@ -14,6 +14,16 @@ export function setNotificationHandler() {
           notification.request.content.data?.kind === 'MED' ||
           notification.request.content.data?.kind === 'APPOINTMENT' ||
           notification.request.content.data?.type === 'APPOINTMENT') {
+        
+        // Intentar abrir la app automáticamente
+        try {
+          console.log('[Notifications] Intentando abrir la app automáticamente...');
+          // La app se abrirá automáticamente cuando el usuario toque la notificación
+          // o cuando el sistema la muestre como alerta
+        } catch (error) {
+          console.error('[Notifications] Error abriendo app:', error);
+        }
+        
         return {
           shouldShowBanner: true, // Mostrar banner en el sistema
           shouldShowList: true,   // Mostrar en el panel de notificaciones
@@ -77,6 +87,17 @@ export async function requestPermissions() {
     // Solicitar permisos adicionales para Android
     if (Platform.OS === 'android') {
       await requestAndroidSpecificPermissions();
+    }
+    
+    // Configurar canales de notificación después de obtener permisos
+    if (Platform.OS === 'android') {
+      try {
+        const { setupNotificationChannels } = await import('./notificationChannels');
+        await setupNotificationChannels();
+        console.log('[Notifications] Canales configurados después de obtener permisos');
+      } catch (error) {
+        console.error('[Notifications] Error configurando canales después de permisos:', error);
+      }
     }
     
     // Configurar canales de Android
@@ -209,7 +230,7 @@ export async function scheduleNotification({
         body,
         data: notificationData,
         sound: (channelId === 'medications' || channelId === 'appointments') ? 'alarm.mp3' : 'default', // Usar sonido personalizado para alarmas
-        priority: Notifications.AndroidNotificationPriority.HIGH,
+        priority: Notifications.AndroidNotificationPriority.MAX, // Máxima prioridad para alarmas
         vibrate: [0, 500, 250, 500, 250, 500], // Vibración más intensa para alarmas
         categoryIdentifier: channelId, // Usar categoryIdentifier en lugar de channelId
         sticky: false, // No hacer la notificación persistente
@@ -217,6 +238,14 @@ export async function scheduleNotification({
         // Configuración adicional para mejor apertura automática
         badge: 1, // Mostrar badge
         launchImageName: 'SplashScreen', // Para iOS
+        // Configuración específica para Android
+        ...(Platform.OS === 'android' && {
+          // Configuración para que la notificación abra la app automáticamente
+          fullScreenIntent: true, // Mostrar en pantalla completa
+          headsUp: true, // Mostrar como heads-up notification
+          ongoing: false, // No hacer la notificación persistente
+          autoCancel: false, // No cancelar automáticamente
+        }),
       },
       trigger,
     });
@@ -353,11 +382,27 @@ export async function scheduleMedicationReminder({
     // Cancelar notificaciones existentes para este medicamento
     await cancelMedicationNotifications(id);
     
-    const [hours, minutes] = time.split(':').map(Number);
+    // Parsear la hora correctamente
+    let hours: number, minutes: number;
+    
+    if (time.includes(':')) {
+      const timeParts = time.split(':');
+      hours = parseInt(timeParts[0], 10);
+      minutes = parseInt(timeParts[1], 10);
+    } else if (time.includes(' ')) {
+      // Formato con AM/PM
+      const [timeStr, period] = time.split(' ');
+      const [h, m] = timeStr.split(':').map(Number);
+      hours = period.toUpperCase() === 'PM' && h !== 12 ? h + 12 : h;
+      minutes = m;
+    } else {
+      console.log('[Notifications] Formato de hora no reconocido:', time);
+      return;
+    }
     
     // Validar que las horas y minutos sean válidos
     if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-      console.log('[Notifications] Hora inválida:', time);
+      console.log('[Notifications] Hora inválida:', time, '-> horas:', hours, 'minutos:', minutes);
       return;
     }
 

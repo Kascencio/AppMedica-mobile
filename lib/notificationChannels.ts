@@ -25,28 +25,38 @@ export async function setupNotificationChannels() {
       enableLights: true,
     });
 
-    // Canal para medicamentos
+    // Canal para medicamentos - ALTA PRIORIDAD
     await Notifications.setNotificationChannelAsync('medications', {
       name: 'Medicamentos',
       description: 'Recordatorios de medicamentos',
-      importance: Notifications.AndroidImportance.HIGH,
+      importance: Notifications.AndroidImportance.MAX, // Máxima prioridad
       vibrationPattern: [0, 500, 250, 500, 250, 500],
       lightColor: '#059669',
-      sound: 'default',
+      sound: 'alarm.mp3', // Usar sonido personalizado
       enableVibrate: true,
       enableLights: true,
+      bypassDnd: true, // Pasar el modo No Molestar
+      showBadge: true, // Mostrar badge
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+      enableSound: true,
+      showOnLockScreen: true, // Mostrar en pantalla de bloqueo
     });
 
-    // Canal para citas
+    // Canal para citas - ALTA PRIORIDAD
     await Notifications.setNotificationChannelAsync('appointments', {
       name: 'Citas',
       description: 'Recordatorios de citas médicas',
-      importance: Notifications.AndroidImportance.HIGH,
+      importance: Notifications.AndroidImportance.MAX, // Máxima prioridad
       vibrationPattern: [0, 250, 500, 250, 500, 250],
       lightColor: '#2563eb',
-      sound: 'default',
+      sound: 'alarm.mp3', // Usar sonido personalizado
       enableVibrate: true,
       enableLights: true,
+      bypassDnd: true, // Pasar el modo No Molestar
+      showBadge: true, // Mostrar badge
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+      enableSound: true,
+      showOnLockScreen: true, // Mostrar en pantalla de bloqueo
     });
 
     console.log('[Channels] ✅ Canales configurados correctamente');

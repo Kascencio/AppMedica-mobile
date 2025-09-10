@@ -14,6 +14,10 @@ import { Clipboard } from 'react-native';
 import { UserProfile } from '../../types';
 
 import SyncStatus from '../../components/SyncStatus';
+import { BackgroundTaskStatus } from '../../components/BackgroundTaskStatus';
+import { NotificationTest } from '../../components/NotificationTest';
+import { QuickNotificationTest } from '../../components/QuickNotificationTest';
+import { notificationRepair } from '../../lib/notificationSystemRepair';
 
 
 export default function ProfileScreen() {
@@ -461,6 +465,39 @@ export default function ProfileScreen() {
         
         {/* Estado de sincronización */}
         <SyncStatus />
+        
+        {/* Estado de tarea en segundo plano */}
+        <BackgroundTaskStatus />
+        
+        {/* Herramientas de diagnóstico de notificaciones */}
+        <View style={styles.diagnosticBoxModern}>
+          <Text style={styles.diagnosticTitleModern}>🔧 Herramientas de Diagnóstico</Text>
+          <Text style={styles.diagnosticSubtitleModern}>Diagnosticar y reparar problemas de notificaciones</Text>
+          
+          <View style={styles.diagnosticButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.diagnosticButtonModern} 
+              onPress={() => notificationRepair.runFullDiagnostic()}
+            >
+              <Ionicons name="search" size={20} color="#fff" />
+              <Text style={styles.diagnosticButtonTextModern}>Diagnosticar</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.diagnosticButtonModern, { backgroundColor: '#f59e0b' }]} 
+              onPress={() => notificationRepair.runFullRepair()}
+            >
+              <Ionicons name="construct" size={20} color="#fff" />
+              <Text style={styles.diagnosticButtonTextModern}>Reparar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {/* Componente de pruebas de notificaciones */}
+        <NotificationTest />
+        
+        {/* Prueba rápida de notificaciones */}
+        <QuickNotificationTest />
         
         {/* Mensaje explicativo sobre notificaciones y alarmas */}
         <View style={styles.tipBoxModern}>
@@ -1077,5 +1114,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     flex: 1,
+  },
+  diagnosticBoxModern: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+  },
+  diagnosticTitleModern: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0c4a6e',
+    marginBottom: 4,
+  },
+  diagnosticSubtitleModern: {
+    fontSize: 14,
+    color: '#0c4a6e',
+    marginBottom: 12,
+  },
+  diagnosticButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  diagnosticButtonModern: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  diagnosticButtonTextModern: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
 });
