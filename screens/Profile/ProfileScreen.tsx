@@ -14,8 +14,7 @@ import { Clipboard } from 'react-native';
 import { UserProfile } from '../../types';
 
 import SyncStatus from '../../components/SyncStatus';
-import AlarmTest from '../../components/AlarmTest';
-import AdvancedAlarmTest from '../../components/AdvancedAlarmTest';
+// Módulos de pruebas de alarmas removidos
 
 
 export default function ProfileScreen() {
@@ -464,11 +463,7 @@ export default function ProfileScreen() {
         {/* Estado de sincronización */}
         <SyncStatus />
         
-        {/* Componente de prueba de alarmas */}
-        <AlarmTest />
-        
-        {/* Componente de pruebas avanzadas de alarmas */}
-        <AdvancedAlarmTest />
+        {/* Módulos de pruebas de alarmas removidos */}
         
         {/* Mensaje explicativo sobre notificaciones y alarmas */}
         <View style={styles.tipBoxModern}>

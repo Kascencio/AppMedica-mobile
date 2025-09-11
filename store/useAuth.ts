@@ -7,16 +7,21 @@ interface AuthState {
   userToken: string | null;
   isAuthenticated: boolean;
   loading: boolean;
+  userId: string | null;
+  userRole: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, role: 'PATIENT' | 'CAREGIVER', inviteCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   loadToken: () => Promise<void>;
+  fetchUserData: () => Promise<{ userId: string; role: string }>;
 }
 
 export const useAuth = create<AuthState>((set, get) => ({
   userToken: null,
   isAuthenticated: false,
   loading: false,
+  userId: null,
+  userRole: null,
 
   login: async (email: string, password: string) => {
     console.log('[useAuth] Iniciando login...');
@@ -91,7 +96,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   logout: async () => {
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('userProfile'); // Limpiar perfil local
-    set({ userToken: null, isAuthenticated: false });
+    set({ userToken: null, isAuthenticated: false, userId: null, userRole: null });
   },
 
   loadToken: async () => {
@@ -104,6 +109,33 @@ export const useAuth = create<AuthState>((set, get) => ({
       // En caso de error, limpiar estado y continuar
       set({ userToken: null, isAuthenticated: false, loading: false });
     }
+  },
+
+  fetchUserData: async () => {
+    const { userToken } = get();
+    if (!userToken) {
+      throw new Error('No hay token de autenticación');
+    }
+
+    console.log('[useAuth] Obteniendo datos del usuario desde /auth/me...');
+    const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.AUTH.ME), {
+      method: 'GET',
+      headers: {
+        ...API_CONFIG.DEFAULT_HEADERS,
+        'Authorization': `Bearer ${userToken}`,
+      },
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.message || 'Error al obtener datos del usuario');
+    }
+
+    const data = await res.json();
+    console.log('[useAuth] Datos del usuario obtenidos:', { userId: data.id, role: data.role });
+    
+    set({ userId: data.id, userRole: data.role });
+    return { userId: data.id, role: data.role };
   },
 }));
 

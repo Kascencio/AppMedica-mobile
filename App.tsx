@@ -11,15 +11,14 @@ import { useNavigationContainerRef } from '@react-navigation/native';
 import { useCurrentUser } from './store/useCurrentUser';
 import { useOffline } from './store/useOffline';
 import { useAutoSync } from './hooks/useAutoSync';
+import { useProfileValidation } from './hooks/useProfileValidation';
 import { Ionicons } from '@expo/vector-icons';
 import { setNotificationHandler, requestPermissions } from './lib/notifications';
 import { syncService } from './lib/syncService';
 import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
 import { backgroundNotificationHandler } from './lib/backgroundNotificationHandler';
-import { appAutoOpenService } from './lib/appAutoOpenService';
-import { alarmDisplayService } from './lib/alarmDisplayService';
-import { nativeAlarmService } from './lib/nativeAlarmService';
+import { backgroundAlarmHandler } from './lib/backgroundAlarmHandler';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
@@ -30,6 +29,7 @@ export default function App() {
   const { fetchProfile, profile, loading: loadingProfile } = useCurrentUser();
   const { initializeOffline } = useOffline();
   const autoSync = useAutoSync(); // Inicializar sincronización automática
+  const validatedProfile = useProfileValidation(); // Validar perfil automáticamente
   const navigationRef = useNavigationContainerRef();
   const [notiPerm, setNotiPerm] = React.useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [showPermModal, setShowPermModal] = React.useState(false);
@@ -37,22 +37,46 @@ export default function App() {
   // Solicitar permisos y mostrar modal si no están concedidos
   useEffect(() => {
     loadToken();
+    
+    // Declarar variables de listeners en el scope del useEffect
+    let backgroundAlarmListeners: any;
+    
     (async () => {
       try {
         // Configurar el manejador de notificaciones
         setNotificationHandler();
         
-        // Configurar el servicio de apertura automática
-        appAutoOpenService.setNavigationRef(navigationRef);
-        const notificationListeners = appAutoOpenService.setupNotificationListeners();
+        // Configurar listeners de respuesta a notificaciones (CRÍTICO para app cerrada)
+        const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+          console.log('[App] Respuesta a notificación recibida:', response);
+          const data = response.notification.request.content.data;
+          
+          // Verificar si es una alarma
+          if (data?.type === 'MEDICATION' || data?.kind === 'MED' || 
+              data?.type === 'APPOINTMENT' || data?.kind === 'APPOINTMENT') {
+            console.log('[App] Alarma detectada en respuesta, navegando a AlarmScreen...');
+            
+            // Navegar a AlarmScreen cuando se toca la notificación
+            setTimeout(() => {
+              if (navigationRef && navigationRef.isReady()) {
+                (navigationRef as any).navigate('AlarmScreen', {
+                  kind: data.kind || data.type,
+                  refId: data.medicationId || data.appointmentId,
+                  scheduledFor: data.scheduledFor,
+                  medicationName: data.medicationName,
+                  dosage: data.dosage,
+                  instructions: data.instructions,
+                  time: data.time,
+                  location: data.location,
+                });
+              }
+            }, 500);
+          }
+        });
         
-        // Configurar el servicio de visualización de alarmas
-        alarmDisplayService.setNavigationRef(navigationRef);
-        const alarmListeners = alarmDisplayService.setupNotificationListeners();
-        
-        // Configurar el servicio nativo de alarmas
-        nativeAlarmService.setNavigationRef(navigationRef);
-        const nativeAlarmListeners = nativeAlarmService.setupNotificationListeners();
+        // Configurar el manejador de alarmas en segundo plano (CRÍTICO para app cerrada)
+        backgroundAlarmHandler.setNavigationRef(navigationRef);
+        backgroundAlarmListeners = backgroundAlarmHandler.setupNotificationListeners();
         
         // Solicitar permisos usando la función del módulo de notificaciones
         const permissionsGranted = await requestPermissions();
@@ -119,17 +143,16 @@ export default function App() {
     
     // Configurar el estado de la app
     const handleAppStateChange = (nextAppState: string) => {
-      appAutoOpenService.setAppState(nextAppState === 'active');
+      console.log('[App] Estado de la app cambió:', nextAppState);
     };
     
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
     
     return () => {
       backgroundNotificationHandler.cleanup(backgroundListeners);
-      appAutoOpenService.cleanup(notificationListeners);
-      alarmDisplayService.cleanup(alarmListeners);
-      nativeAlarmService.cleanup(nativeAlarmListeners);
+      backgroundAlarmHandler.cleanup(backgroundAlarmListeners);
       appStateSubscription?.remove();
+      // El responseListener se limpia automáticamente cuando se desmonta el componente
     };
   }, []);
 
@@ -144,7 +167,7 @@ export default function App() {
         } catch (error) {
           console.log('[App] Error cargando perfil:', error);
           // Si hay error, marcar como inicializado para evitar bucle infinito
-          useCurrentUser.getState().set({ initialized: true });
+          console.log('[App] Error cargando perfil, continuando sin perfil');
         }
       };
       loadProfileOnce();

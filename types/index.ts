@@ -249,6 +249,13 @@ export interface NotificationStats {
     urgent: number;
   };
   byType: Record<string, number>;
+  // Nuevos campos del backend
+  percentages?: {
+    unread: number;
+    read: number;
+    archived: number;
+  };
+  lastUpdated?: string;
 }
 
 // Respuesta de autenticación

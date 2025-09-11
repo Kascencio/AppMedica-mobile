@@ -10,7 +10,7 @@ import OfflineIndicator from '../../components/OfflineIndicator';
 // import logo from '../../assets/logo.png';
 import { useNavigation } from '@react-navigation/native';
 import AlarmStatus from '../../components/AlarmStatus';
-import AlarmTest from '../../components/AlarmTest';
+// Módulo de pruebas de alarmas removido
 import COLORS from '../../constants/colors';
 import { scheduleSnoozeMedication } from '../../lib/notifications';
 
@@ -476,7 +476,7 @@ export default function HomeScreen() {
           </View>
           <Text style={styles.tipText}>{healthTip}</Text>
         </View>
-        <AlarmTest />
+        {/* Módulo de pruebas de alarmas removido */}
       </ScrollView>
     </View>
   );

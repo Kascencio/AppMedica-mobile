@@ -83,11 +83,17 @@ export const useNotifications = create<NotificationsState>((set, get) => ({
         throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
       }
 
-      const data: PaginatedResponse<Notification> = await response.json();
+      const data: any = await response.json();
       
+      // NUEVA ESTRUCTURA DEL BACKEND: items en lugar de data, meta en lugar de pagination
       set({
-        notifications: data.data,
-        pagination: data.pagination,
+        notifications: data.items || data.data || [],
+        pagination: data.meta || data.pagination || {
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          totalPages: 0
+        },
         loading: false,
       });
     } catch (error: any) {
@@ -346,7 +352,30 @@ export const useNotifications = create<NotificationsState>((set, get) => ({
         throw new Error(errorData.message || `Error ${response.status}: ${response.statusText}`);
       }
 
-      const stats: NotificationStats = await response.json();
+      const statsData: any = await response.json();
+      
+      // NUEVA ESTRUCTURA DEL BACKEND: agregar percentages y lastUpdated
+      const stats: NotificationStats = {
+        total: statsData.total || 0,
+        unread: statsData.unread || 0,
+        read: statsData.read || 0,
+        archived: statsData.archived || 0,
+        byPriority: {
+          low: statsData.byPriority?.LOW || statsData.byPriority?.low || 0,
+          medium: statsData.byPriority?.MEDIUM || statsData.byPriority?.medium || 0,
+          high: statsData.byPriority?.HIGH || statsData.byPriority?.high || 0,
+          urgent: statsData.byPriority?.URGENT || statsData.byPriority?.urgent || 0,
+        },
+        byType: statsData.byType || {},
+        // Nuevos campos del backend
+        percentages: statsData.percentages || {
+          unread: 0,
+          read: 0,
+          archived: 0
+        },
+        lastUpdated: statsData.lastUpdated || new Date().toISOString()
+      };
+      
       set({ stats });
     } catch (error: any) {
       console.error('[useNotifications] Error obteniendo estadísticas:', error);

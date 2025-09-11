@@ -63,7 +63,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
             const data = await res.json();
             console.log('[useTreatments] Respuesta del servidor:', JSON.stringify(data, null, 2));
             
-            // Asegurar que siempre sea un array
+            // Asegurar que siempre sea un array - NUEVA ESTRUCTURA DEL BACKEND
             let treatments = [];
             if (Array.isArray(data)) {
               treatments = data;

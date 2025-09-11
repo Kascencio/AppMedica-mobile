@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   },
   selectorButtonEmpty: {
     borderColor: COLORS.border.neutral,
-    backgroundColor: COLORS.background.light,
+    backgroundColor: COLORS.background.tertiary,
   },
   selectorButtonFilled: {
     borderColor: COLORS.primary,

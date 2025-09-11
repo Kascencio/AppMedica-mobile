@@ -72,7 +72,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
             const data = await res.json();
             console.log('[useMedications] Respuesta del servidor:', JSON.stringify(data, null, 2));
             
-            // Asegurar que siempre sea un array
+            // Asegurar que siempre sea un array - NUEVA ESTRUCTURA DEL BACKEND
             let medications = [];
             if (Array.isArray(data)) {
               medications = data;

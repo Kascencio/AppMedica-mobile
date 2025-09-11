@@ -85,9 +85,9 @@ export function useAlarms() {
         console.log(`[useAlarms] Cargando notificaciones de la API (intento ${attempt + 1}/${maxRetries})`);
         
         const response = await notificationService.getNotifications(filters);
-        setApiNotifications(response.items);
+        setApiNotifications(response.items || []);
         
-        console.log(`[useAlarms] Notificaciones de API cargadas exitosamente: ${response.items.length} items`);
+        console.log(`[useAlarms] Notificaciones de API cargadas exitosamente: ${(response.items || []).length} items`);
         return response;
       } catch (error) {
         console.error(`[useAlarms] Intento ${attempt + 1} falló cargando notificaciones de la API:`, error);

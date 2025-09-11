@@ -31,7 +31,7 @@ export async function forceRequestNotificationPermissions() {
         allowAlert: true,
         allowBadge: true,
         allowSound: true,
-        allowAnnouncements: true,
+        // allowAnnouncements: true, // Propiedad no disponible en esta versión
       },
     });
     

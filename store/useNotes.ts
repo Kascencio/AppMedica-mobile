@@ -86,7 +86,7 @@ export const useNotes = create<NotesState>((set, get) => ({
             const data = await res.json();
             console.log('[useNotes] Datos del servidor:', JSON.stringify(data, null, 2));
             
-            // Asegurar que siempre sea un array
+            // Asegurar que siempre sea un array - NUEVA ESTRUCTURA DEL BACKEND
             let notes = [];
             if (Array.isArray(data)) {
               notes = data;

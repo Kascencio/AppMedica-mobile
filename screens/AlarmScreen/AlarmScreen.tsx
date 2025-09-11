@@ -165,7 +165,7 @@ export default function AlarmScreen(props: any) {
           },
         });
         showToast('Evento registrado');
-        navigation.goBack();
+        // navigation.goBack(); // Comentado temporalmente hasta resolver el problema de navegación
       } catch (eventError) {
         console.error('[AlarmScreen] Error registrando evento:', eventError);
         showToast('Error al registrar evento');

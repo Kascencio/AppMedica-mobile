@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAlarms } from '../hooks/useAlarms';
-import { runAllTests, checkNotificationPermissions, checkAndroidChannels } from '../lib/notificationTest';
+import { runAllTests, cleanupTestNotifications, showSystemStats } from '../lib/alarmTest';
 import COLORS from '../constants/colors';
 
 interface AlarmStatusProps {
@@ -99,11 +99,52 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
           onPress: async () => {
             setLoading(true);
             try {
-              await runAllTests();
-              Alert.alert('Éxito', 'Pruebas ejecutadas correctamente');
-              await checkStatus();
+              const success = await runAllTests();
+              if (success) {
+                Alert.alert('Éxito', 'Pruebas ejecutadas correctamente');
+                await checkStatus();
+              } else {
+                Alert.alert('Error', 'Algunas pruebas fallaron. Revisa la consola para más detalles.');
+              }
             } catch (error) {
               Alert.alert('Error', 'Error ejecutando pruebas');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const showStats = async () => {
+    setLoading(true);
+    try {
+      await showSystemStats();
+      Alert.alert('Estadísticas', 'Las estadísticas se han mostrado en la consola');
+    } catch (error) {
+      Alert.alert('Error', 'Error obteniendo estadísticas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cleanupTests = async () => {
+    Alert.alert(
+      'Limpiar Pruebas',
+      '¿Quieres limpiar todas las notificaciones de prueba?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Limpiar',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await cleanupTestNotifications();
+              Alert.alert('Éxito', 'Notificaciones de prueba limpiadas');
+              await checkStatus();
+            } catch (error) {
+              Alert.alert('Error', 'Error limpiando notificaciones de prueba');
             } finally {
               setLoading(false);
             }
@@ -120,9 +161,9 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
   if (!systemStatus) {
     return (
       <View style={styles.container}>
-        <View style={styles.statusItem}>
+        <View style={styles.statItem}>
           <Ionicons name="help-circle" size={20} color={COLORS.text.secondary} />
-          <Text style={styles.statusText}>Verificando estado...</Text>
+          <Text style={styles.statText}>Verificando estado...</Text>
         </View>
       </View>
     );
@@ -173,17 +214,17 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
           <View style={styles.apiStatsRow}>
             <View style={styles.apiStatItem}>
               <Text style={styles.apiStatLabel}>Total</Text>
-              <Text style={styles.apiStatValue}>{apiStats.total}</Text>
+              <Text style={styles.apiStatValue}>{apiStats.total || 0}</Text>
             </View>
             <View style={styles.apiStatItem}>
               <Text style={styles.apiStatLabel}>No Leídas</Text>
-              <Text style={[styles.apiStatValue, { color: apiStats.unread > 0 ? COLORS.warning : COLORS.text.primary }]}>
-                {apiStats.unread}
+              <Text style={[styles.apiStatValue, { color: (apiStats.unread || 0) > 0 ? COLORS.warning : COLORS.text.primary }]}>
+                {apiStats.unread || 0}
               </Text>
             </View>
             <View style={styles.apiStatItem}>
               <Text style={styles.apiStatLabel}>Leídas</Text>
-              <Text style={styles.apiStatValue}>{apiStats.read}</Text>
+              <Text style={styles.apiStatValue}>{apiStats.read || 0}</Text>
             </View>
           </View>
           <View style={[styles.apiHealthIndicator, { backgroundColor: isApiHealthy ? COLORS.success + '20' : COLORS.error + '20' }]}>
@@ -304,6 +345,24 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
           <Ionicons name="flask" size={16} color={COLORS.warning} />
           <Text style={[styles.actionButtonText, { color: COLORS.warning }]}>Probar</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, styles.statsButton]}
+          onPress={showStats}
+          disabled={loading}
+        >
+          <Ionicons name="stats-chart" size={16} color={COLORS.primary} />
+          <Text style={[styles.actionButtonText, { color: COLORS.primary }]}>Estadísticas</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, styles.cleanupButton]}
+          onPress={cleanupTests}
+          disabled={loading}
+        >
+          <Ionicons name="trash" size={16} color={COLORS.text.secondary} />
+          <Text style={[styles.actionButtonText, { color: COLORS.text.secondary }]}>Limpiar</Text>
+        </TouchableOpacity>
       </View>
 
       {loading && (
@@ -354,6 +413,11 @@ const styles = StyleSheet.create({
   },
   statItem: {
     alignItems: 'center',
+  },
+  statText: {
+    fontSize: 14,
+    color: COLORS.text.secondary,
+    marginTop: 4,
   },
   statLabel: {
     fontSize: 12,
@@ -499,6 +563,14 @@ const styles = StyleSheet.create({
   testButton: {
     backgroundColor: COLORS.background.white,
     borderColor: COLORS.warning,
+  },
+  statsButton: {
+    backgroundColor: COLORS.background.white,
+    borderColor: COLORS.primary,
+  },
+  cleanupButton: {
+    backgroundColor: COLORS.background.white,
+    borderColor: COLORS.text.secondary,
   },
   actionButtonText: {
     fontSize: 12,

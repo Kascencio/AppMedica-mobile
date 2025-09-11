@@ -47,7 +47,10 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
         throw new Error(err.error || 'Error al obtener pacientes');
       }
       const data = await res.json();
-      set({ patients: data });
+      
+      // NUEVA ESTRUCTURA DEL BACKEND: items en lugar de data
+      const patients = data.items || data.data || data || [];
+      set({ patients });
     } catch (err: any) {
       set({ error: err.message });
     } finally {

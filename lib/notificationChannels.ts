@@ -38,8 +38,16 @@ export async function setupNotificationChannels() {
       bypassDnd: true, // Pasar el modo No Molestar
       showBadge: true, // Mostrar badge
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
-      enableSound: true,
       showOnLockScreen: true, // Mostrar en pantalla de bloqueo
+      // Configuración adicional para mejor apertura automática
+      enableBypassDnd: true, // Pasar el modo No Molestar
+      enableLights: true, // Luces LED
+      enableVibrate: true, // Vibración
+      // Configuraciones críticas para apertura automática
+      canBypassDnd: true, // Pasar el modo No Molestar
+      canShowBadge: true, // Mostrar badge
+      enableSound: true, // Habilitar sonido
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
     });
 
     // Canal para citas - ALTA PRIORIDAD
@@ -55,8 +63,16 @@ export async function setupNotificationChannels() {
       bypassDnd: true, // Pasar el modo No Molestar
       showBadge: true, // Mostrar badge
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
-      enableSound: true,
       showOnLockScreen: true, // Mostrar en pantalla de bloqueo
+      // Configuración adicional para mejor apertura automática
+      enableBypassDnd: true, // Pasar el modo No Molestar
+      enableLights: true, // Luces LED
+      enableVibrate: true, // Vibración
+      // Configuraciones críticas para apertura automática
+      canBypassDnd: true, // Pasar el modo No Molestar
+      canShowBadge: true, // Mostrar badge
+      enableSound: true, // Habilitar sonido
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
     });
 
     console.log('[Channels] ✅ Canales configurados correctamente');

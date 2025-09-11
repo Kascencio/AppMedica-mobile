@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontFamily: 'monospace',
     marginBottom: 8,
-    wordBreak: 'break-all',
+    // wordBreak: 'break-all', // Propiedad no disponible en React Native
   },
   previewImage: {
     width: 80,

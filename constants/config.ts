@@ -214,6 +214,28 @@ export function sanitizeData(data: any): any {
   return sanitized;
 }
 
+// Función para manejar respuestas de la API de forma consistente
+export function handleApiResponse<T>(response: any): {
+  data: T[];
+  pagination?: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+} {
+  // NUEVA ESTRUCTURA DEL BACKEND: items en lugar de data, meta en lugar de pagination
+  return {
+    data: response.items || response.data || [],
+    pagination: response.meta || response.pagination || {
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0
+    }
+  };
+}
+
 // Configuración de paginación por defecto
 export const DEFAULT_PAGINATION = {
   page: 1,

@@ -15,21 +15,20 @@ export function setNotificationHandler() {
           notification.request.content.data?.kind === 'APPOINTMENT' ||
           notification.request.content.data?.type === 'APPOINTMENT') {
         
-        // Intentar abrir la app automáticamente
-        try {
-          console.log('[Notifications] Intentando abrir la app automáticamente...');
-          // La app se abrirá automáticamente cuando el usuario toque la notificación
-          // o cuando el sistema la muestre como alerta
-        } catch (error) {
-          console.error('[Notifications] Error abriendo app:', error);
-        }
+        console.log('[Notifications] Alarma detectada, configurando para apertura automática...');
         
         return {
           shouldShowBanner: true, // Mostrar banner en el sistema
           shouldShowList: true,   // Mostrar en el panel de notificaciones
           shouldPlaySound: true,  // Reproducir sonido
           shouldSetBadge: true,   // Mostrar badge en el icono de la app
-          shouldShowAlert: true,  // Mostrar alerta (importante para apertura automática)
+          shouldShowAlert: true,  // Mostrar alerta (CRÍTICO para apertura automática)
+          // Configuración adicional para mejor apertura automática
+          shouldPresentBanner: true, // Presentar banner incluso en modo silencioso
+          shouldPresentList: true,   // Presentar en lista de notificaciones
+          shouldPresentSound: true,  // Presentar sonido
+          shouldPresentBadge: true,  // Presentar badge
+          shouldPresentAlert: true,  // Presentar alerta (CRÍTICO para apertura automática)
         };
       }
       
@@ -243,15 +242,33 @@ export async function scheduleNotification({
         // Configuración específica para Android
         ...(Platform.OS === 'android' && {
           // Configuración para que la notificación abra la app automáticamente
-          fullScreenIntent: true, // Mostrar en pantalla completa
+          fullScreenIntent: true, // Mostrar en pantalla completa (CRÍTICO para apertura automática)
           headsUp: true, // Mostrar como heads-up notification
           ongoing: false, // No hacer la notificación persistente
           autoCancel: false, // No cancelar automáticamente
           // Configuraciones adicionales para mejor apertura automática
           priority: Notifications.AndroidNotificationPriority.MAX, // Máxima prioridad
+          importance: Notifications.AndroidImportance.MAX, // Máxima importancia
           visibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
           showTimestamp: true, // Mostrar timestamp
           localOnly: false, // Permitir sincronización con otros dispositivos
+          // Configuración adicional para apertura automática
+          actions: [
+            {
+              identifier: 'TAKEN',
+              buttonTitle: 'Tomado',
+              textInput: { submitButtonTitle: 'Enviar' }
+            },
+            {
+              identifier: 'SNOOZE',
+              buttonTitle: 'Posponer 10m'
+            }
+          ],
+          // Configuraciones adicionales para mejor apertura automática
+          category: 'ALARM', // Categoría de alarma
+          color: '#FF231F7C', // Color de la notificación
+          smallIcon: 'ic_notification', // Icono pequeño
+          largeIcon: 'ic_launcher', // Icono grande
         }),
       },
       trigger,

@@ -66,7 +66,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             const data = await res.json();
             console.log('[useAppointments] Respuesta del servidor:', JSON.stringify(data, null, 2));
             
-            // Asegurar que siempre sea un array
+            // Asegurar que siempre sea un array - NUEVA ESTRUCTURA DEL BACKEND
             let appointments = [];
             if (Array.isArray(data)) {
               appointments = data;

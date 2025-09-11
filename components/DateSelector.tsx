@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   },
   dateButtonEmpty: {
     borderColor: COLORS.border.neutral,
-    backgroundColor: COLORS.background.light,
+    backgroundColor: COLORS.background.tertiary,
   },
   dateButtonFilled: {
     borderColor: COLORS.primary,
