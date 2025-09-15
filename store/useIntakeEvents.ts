@@ -96,6 +96,7 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
                 ...event,
                 isOffline: false,
                 syncStatus: 'synced',
+                createdAt: event.createdAt || event.updatedAt || new Date().toISOString(),
                 updatedAt: event.updatedAt || event.createdAt || new Date().toISOString()
               };
               await localDB.saveIntakeEvent(localEvent);
@@ -214,6 +215,7 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
               ...responseData,
               isOffline: false,
               syncStatus: 'synced',
+              createdAt: responseData.createdAt || responseData.updatedAt || new Date().toISOString(),
               updatedAt: responseData.updatedAt || responseData.createdAt || new Date().toISOString()
             };
             await localDB.saveIntakeEvent(localEvent);

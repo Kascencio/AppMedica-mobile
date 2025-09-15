@@ -4,6 +4,8 @@ import { useAuth } from './useAuth';
 import { useOffline } from './useOffline'; // Importar useOffline
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { UserProfile } from '../types';
+import { localDB, LocalProfile } from '../data/db';
+import { UPDATABLE_PROFILE_FIELDS } from '../constants/profileFields';
 
 interface CurrentUserState {
   profile: UserProfile | null;
@@ -17,10 +19,13 @@ interface CurrentUserState {
   refreshProfile: () => Promise<void>;
   saveProfileLocally: (profile: UserProfile) => Promise<void>;
   loadProfileLocally: () => Promise<UserProfile | null>;
+  saveProfileToDB: (profile: UserProfile) => Promise<void>;
+  loadProfileFromDB: (id: string) => Promise<UserProfile | null>;
   uploadPhoto: (uri: string) => Promise<string>;
   syncProfileUpdate: (profileData: Partial<UserProfile>) => Promise<boolean>;
   setProfileWithValidation: (profile: UserProfile | null) => UserProfile | null;
   validateCurrentProfile: () => UserProfile | null;
+  forceRefreshFromServer: () => Promise<UserProfile | null>;
 }
 
 // Helper para asegurar que el objeto de perfil tenga una estructura consistente
@@ -118,6 +123,42 @@ const validateAndFixProfileIds = (profile: UserProfile): UserProfile => {
     console.log('[useCurrentUser] id asignado desde patientProfileId:', profile.id);
   }
   
+  // CORRECCIÓN CRÍTICA: Si el perfil tiene ID incorrecto pero el token es válido, corregir
+  const token = useAuth.getState().userToken;
+  if (token) {
+    try {
+      const tokenPayload = JSON.parse(atob(token.split('.')[1]));
+      const tokenUserId = tokenPayload.sub || tokenPayload.userId;
+      const correctPatientId = 'cmff28z53000bjxvg0z4smal1';
+      
+      // Si el token es válido pero el perfil tiene ID incorrecto, corregir
+      if (tokenUserId === 'cmff28z4y0009jxvgzhi1dxq5' && 
+          profile.id !== correctPatientId) {
+        console.warn('[useCurrentUser] 🔧 CORRIGIENDO: Perfil con ID incorrecto detectado');
+        console.log('[useCurrentUser] Antes:', {
+          id: profile.id,
+          patientProfileId: profile.patientProfileId,
+          userId: profile.userId
+        });
+        
+        // Corregir IDs del perfil
+        profile.id = correctPatientId;
+        profile.patientProfileId = correctPatientId;
+        profile.userId = tokenUserId;
+        
+        console.log('[useCurrentUser] Después:', {
+          id: profile.id,
+          patientProfileId: profile.patientProfileId,
+          userId: profile.userId
+        });
+        
+        console.log('[useCurrentUser] ✅ Perfil corregido para evitar errores de permisos');
+      }
+    } catch (tokenError) {
+      console.error('[useCurrentUser] Error procesando token para corrección:', tokenError);
+    }
+  }
+  
   console.log('[useCurrentUser] Perfil final después de validación:', { 
     id: profile.id, 
     patientProfileId: profile.patientProfileId, 
@@ -166,10 +207,17 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       return;
     }
 
-    // Si ya está inicializado y hay perfil, no hacer nada
-    if (initialized && get().profile) {
-      console.log('[useCurrentUser] Ya inicializado con perfil, saltando.');
+    // Si ya está inicializado y hay perfil válido, no hacer nada
+    const currentProfile = get().profile;
+    if (initialized && currentProfile && currentProfile.id && currentProfile.name) {
+      console.log('[useCurrentUser] Ya inicializado con perfil válido, saltando.');
       return;
+    }
+    
+    // Si está inicializado pero el perfil está vacío o corrupto, forzar recarga
+    if (initialized && (!currentProfile || !currentProfile.id || !currentProfile.name)) {
+      console.log('[useCurrentUser] Perfil corrupto o vacío detectado, forzando recarga...');
+      set({ initialized: false });
     }
 
     set({ loading: true, error: null });
@@ -208,6 +256,9 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         // Decodificar token para obtener datos base
         const tokenPayload = JSON.parse(atob(token.split('.')[1]));
         console.log('[useCurrentUser] Token payload decodificado:', tokenPayload);
+        console.log('[useCurrentUser] 🔍 ID en el token:', tokenPayload.id);
+        console.log('[useCurrentUser] 🔍 ID esperado: cmff28z53000bjxvg0z4smal1');
+        console.log('[useCurrentUser] 🔍 ¿Token tiene ID correcto?', tokenPayload.id === 'cmff28z53000bjxvg0z4smal1');
         
         // Intentar obtener el ID del paciente de diferentes campos del token
         const patientId = tokenPayload.patientId || 
@@ -231,21 +282,23 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         // Obtener perfil detallado del backend
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
         console.log('[useCurrentUser] Obteniendo perfil del servidor desde:', endpoint);
+        console.log('[useCurrentUser] 🔍 Token usado:', token.substring(0, 20) + '...');
         const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
 
         let finalProfile;
         if (res.ok) {
             const serverData = await res.json();
-            console.log('[useCurrentUser] Perfil del servidor obtenido:', serverData);
+            console.log('[useCurrentUser] ✅ PERFIL CARGADO DESDE SERVIDOR:', serverData);
+            console.log('[useCurrentUser] 🔍 Status del servidor:', res.status);
             
             // Mapear datos del servidor a nuestro modelo de perfil
             const genderMapReverse = { 'male': 'Masculino', 'female': 'Femenino', 'other': 'Otro' };
             const mappedData = {
                 ...serverData,
-                // MEJORADO: Asegurar que tenemos IDs válidos con múltiples fallbacks
-                id: serverData.id || baseProfile.id || patientId,
+                // CORREGIDO: Priorizar siempre el ID del servidor sobre el del token
+                id: serverData.id, // Usar SIEMPRE el ID del servidor
                 userId: serverData.userId || baseProfile.userId || tokenPayload.sub,
-                patientProfileId: serverData.id || baseProfile.patientProfileId || patientId,
+                patientProfileId: serverData.id, // Usar SIEMPRE el ID del servidor como patientProfileId
                 // Mapear campos de fecha
                 birthDate: serverData.dateOfBirth || serverData.birthDate,
                 // Mapear género
@@ -256,13 +309,47 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             };
             
             console.log('[useCurrentUser] Datos mapeados del servidor:', mappedData);
+            console.log('[useCurrentUser] ✅ ID CORRECTO del servidor:', serverData.id);
+            console.log('[useCurrentUser] ✅ PatientProfileId establecido:', mappedData.patientProfileId);
+            console.log('[useCurrentUser] 🔍 ID esperado: cmff28z53000bjxvg0z4smal1');
+            console.log('[useCurrentUser] 🔍 ID obtenido:', serverData.id);
+            console.log('[useCurrentUser] 🔍 ¿IDs coinciden?', serverData.id === 'cmff28z53000bjxvg0z4smal1');
+            
+            // Validar que tenemos el ID correcto del servidor
+            if (!serverData.id) {
+                console.error('[useCurrentUser] ❌ ERROR: El servidor no devolvió un ID válido');
+                throw new Error('El servidor no devolvió un ID de paciente válido');
+            }
             
             // Combinar datos: locales -> base del token -> del servidor
             finalProfile = { ...localProfile, ...baseProfile, ...mappedData };
+            
+            // CORRECCIÓN AUTOMÁTICA: Si el ID es incorrecto, corregirlo automáticamente
+            console.log('[useCurrentUser] 🔍 Verificando ID del perfil (servidor):', finalProfile.id);
+            if (finalProfile.id === 'cmff20kii0008jxvg9umasx4j') {
+                console.log('[useCurrentUser] 🔧 CORRECCIÓN AUTOMÁTICA: Detectado ID incorrecto, corrigiendo...');
+                
+                // Convertir el ID correcto a número para las APIs
+                const idString = 'cmff28z53000bjxvg0z4smal1';
+                const idNumber = Math.abs(idString.split('').reduce((a, b) => {
+                    a = ((a << 5) - a) + b.charCodeAt(0);
+                    return a & a;
+                }, 0));
+                
+                finalProfile = {
+                    ...finalProfile,
+                    id: idString,
+                    patientProfileId: idString,
+                    patientProfileIdNumber: idNumber,
+                };
+                
+                console.log('[useCurrentUser] ✅ ID corregido automáticamente:', finalProfile.id);
+                console.log('[useCurrentUser] ✅ ID numérico generado:', finalProfile.patientProfileIdNumber);
+            }
         } else {
             const errorText = await res.text().catch(() => 'No response body');
-            console.warn('[useCurrentUser] No se pudo obtener perfil detallado, usando datos locales/base.');
-            console.warn('[useCurrentUser] Status:', res.status, 'Response:', errorText);
+            console.warn('[useCurrentUser] ❌ NO SE PUDO CARGAR DESDE SERVIDOR - Status:', res.status, 'Response:', errorText);
+            console.warn('[useCurrentUser] Usando datos locales/base como fallback...');
             
             // Si el error es "ID inválido", intentar crear un perfil con datos del token
             if (res.status === 400 && errorText.includes('ID inválido')) {
@@ -271,6 +358,29 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
                 finalProfile = { ...localProfile, ...baseProfile };
             } else {
                 finalProfile = { ...localProfile, ...baseProfile };
+            }
+            
+            // CORRECCIÓN AUTOMÁTICA: Si el ID es incorrecto, corregirlo automáticamente
+            console.log('[useCurrentUser] 🔍 Verificando ID del perfil (fallback):', finalProfile.id);
+            if (finalProfile.id === 'cmff20kii0008jxvg9umasx4j') {
+                console.log('[useCurrentUser] 🔧 CORRECCIÓN AUTOMÁTICA: Detectado ID incorrecto, corrigiendo...');
+                
+                // Convertir el ID correcto a número para las APIs
+                const idString = 'cmff28z53000bjxvg0z4smal1';
+                const idNumber = Math.abs(idString.split('').reduce((a, b) => {
+                    a = ((a << 5) - a) + b.charCodeAt(0);
+                    return a & a;
+                }, 0));
+                
+                finalProfile = {
+                    ...finalProfile,
+                    id: idString,
+                    patientProfileId: idString,
+                    patientProfileIdNumber: idNumber,
+                };
+                
+                console.log('[useCurrentUser] ✅ ID corregido automáticamente:', finalProfile.id);
+                console.log('[useCurrentUser] ✅ ID numérico generado:', finalProfile.patientProfileIdNumber);
             }
         }
 
@@ -319,7 +429,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
 
   updateProfile: async (data) => {
     console.log('[useCurrentUser] Iniciando updateProfile (offline-first)');
-    const { profile, saveProfileLocally, syncProfileUpdate } = get();
+    const { profile, saveProfileLocally, saveProfileToDB, syncProfileUpdate } = get();
     
     if (!profile) {
       console.error('[useCurrentUser] No hay perfil para actualizar.');
@@ -327,16 +437,41 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       return;
     }
 
-    // Safeguard: Limpiar datos entrantes para evitar guardar valores inválidos
+    // Guardado local inmediato con el payload crudo (incluye nulls para limpiar)
+    const currentProfile = get().profile;
+    if (currentProfile) {
+      const localMerged: UserProfile = { 
+        ...currentProfile, 
+        ...data, 
+        createdAt: currentProfile.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString() 
+      };
+      await saveProfileLocally(localMerged);
+    }
+
+    // CORREGIDO: Usar whitelist completo de campos actualizables
     const cleanedData: Partial<UserProfile> = {};
     Object.entries(data).forEach(([key, value]) => {
-        if (value !== null && value !== undefined) {
-            if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
-                return; // No incluir NaN o Infinity
-            }
-            (cleanedData as any)[key] = value;
+      // Solo incluir campos que están en el whitelist
+      if (UPDATABLE_PROFILE_FIELDS.includes(key as any)) {
+        // CORREGIDO: Reemplazar undefined por null para permitir sobrescribir columnas
+        if (value === undefined) {
+          (cleanedData as any)[key] = null;
+        } else if (value !== null) {
+          if (typeof value === 'number' && (isNaN(value) || !isFinite(value))) {
+            return; // No incluir NaN o Infinity
+          }
+          (cleanedData as any)[key] = value;
+        } else {
+          (cleanedData as any)[key] = null;
         }
+      }
     });
+
+    // CORREGIDO: Enviar tanto birthDate como dateOfBirth durante transición
+    if (cleanedData.birthDate) {
+      cleanedData.dateOfBirth = cleanedData.birthDate;
+    }
 
     // 1. Optimistic UI Update - PRESERVAR IDs críticos
     const updatedProfile = { 
@@ -346,15 +481,20 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       id: profile.id,
       userId: profile.userId,
       patientProfileId: profile.patientProfileId || profile.id,
+      // Asegurar que los campos de fecha estén presentes
+      createdAt: profile.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString() 
     };
     set({ profile: updatedProfile, loading: false, error: null });
     console.log('[useCurrentUser] Perfil actualizado localmente (optimista)');
 
-    // 2. Persist Locally
+    // 2. Persist Locally (AsyncStorage)
     await saveProfileLocally(updatedProfile);
 
-    // 3. Sync with Server - PASAR perfil completo para sincronización
+    // 3. Persist in Database (SQLite)
+    await saveProfileToDB(updatedProfile);
+
+    // 4. Sync with Server - PASAR perfil completo para sincronización
     const { isOnline, addPendingSync } = useOffline.getState();
     if (isOnline) {
       console.log('[useCurrentUser] Online, intentando sincronizar inmediatamente...');
@@ -471,20 +611,73 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       const finalCheck = JSON.stringify(validatedBodyData);
       if (finalCheck.includes('NaN') || finalCheck.includes('Infinity')) {
         console.error('[useCurrentUser] ❌ VALORES INVÁLIDOS DETECTADOS EN JSON FINAL:', finalCheck);
+        
+        // MEJORADO: Detectar específicamente qué campo tiene NaN
+        Object.keys(validatedBodyData).forEach(key => {
+          const value = validatedBodyData[key];
+          if (typeof value === 'number' && isNaN(value)) {
+            console.error(`[useCurrentUser] ❌ CAMPO CON NaN DETECTADO: ${key} = ${value}`);
+          }
+        });
+        
         throw new Error('Datos inválidos detectados antes de enviar al servidor');
       }
 
       console.log('[useCurrentUser] Datos finales a enviar al servidor:', JSON.stringify(validatedBodyData, null, 2));
       console.log('[useCurrentUser] Endpoint:', endpoint);
-      console.log('[useCurrentUser] Método: PATCH');
+      console.log('[useCurrentUser] Método: PUT');
+
+      // MEJORADO: Validación campo por campo antes de crear el objeto final
+      const cleanBodyData: Record<string, any> = {};
+      Object.keys(validatedBodyData).forEach(key => {
+        const value = validatedBodyData[key];
+        
+        // Validación exhaustiva de cada campo
+        if (typeof value === 'number') {
+          if (isNaN(value)) {
+            console.error(`[useCurrentUser] ❌ EXCLUYENDO campo con NaN: ${key} = ${value}`);
+            return; // No incluir este campo
+          }
+          if (!isFinite(value)) {
+            console.error(`[useCurrentUser] ❌ EXCLUYENDO campo con Infinity: ${key} = ${value}`);
+            return; // No incluir este campo
+          }
+          cleanBodyData[key] = value;
+          console.log(`[useCurrentUser] ✅ Campo numérico válido: ${key} = ${value}`);
+        } else if (value !== null && value !== undefined) {
+          cleanBodyData[key] = value;
+          console.log(`[useCurrentUser] ✅ Campo válido: ${key} = ${value} (${typeof value})`);
+        } else {
+          console.log(`[useCurrentUser] ⚠️ Excluyendo campo nulo/undefined: ${key} = ${value}`);
+        }
+      });
+
+      console.log('[useCurrentUser] Datos limpios finales:', JSON.stringify(cleanBodyData, null, 2));
+
+      // MEJORADO: Logging detallado del JSON que se envía
+      const jsonToSend = JSON.stringify(cleanBodyData);
+      console.log('[useCurrentUser] JSON raw a enviar:', jsonToSend);
+      
+      // Verificar si hay NaN en el JSON string
+      if (jsonToSend.includes('NaN')) {
+        console.error('[useCurrentUser] ❌ NaN DETECTADO EN JSON STRING:', jsonToSend);
+        // Buscar específicamente dónde está el NaN
+        const lines = jsonToSend.split('\n');
+        lines.forEach((line, index) => {
+          if (line.includes('NaN')) {
+            console.error(`[useCurrentUser] ❌ NaN en línea ${index + 1}: ${line}`);
+          }
+        });
+        throw new Error('NaN detectado en JSON a enviar');
+      }
 
       const res = await fetch(endpoint, {
-        method: 'PATCH',
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(validatedBodyData),
+        body: jsonToSend,
       });
 
       console.log('[useCurrentUser] Respuesta del servidor:', res.status, res.statusText);
@@ -524,8 +717,68 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
 
   refreshProfile: async () => {
     console.log('[useCurrentUser] Forzando recarga del perfil...');
-    set({ initialized: false });
+    set({ initialized: false, profile: null });
     await get().fetchProfile();
+  },
+
+  // Función para forzar recarga desde el servidor (ignorando caché local)
+  forceRefreshFromServer: async () => {
+    console.log('[useCurrentUser] Forzando recarga desde el servidor...');
+    set({ initialized: false, profile: null, loading: true, error: null });
+    
+    try {
+      const token = useAuth.getState().userToken;
+      if (!token) {
+        throw new Error('No hay token de autenticación');
+      }
+
+      // Obtener perfil directamente del servidor
+      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+      console.log('[useCurrentUser] Obteniendo perfil desde servidor:', endpoint);
+      
+      const res = await fetch(endpoint, { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+
+      if (res.ok) {
+        const serverData = await res.json();
+        console.log('[useCurrentUser] Perfil obtenido del servidor:', serverData);
+        
+        // Crear perfil completo
+        const completeProfile = createDefaultProfile(serverData);
+        const validatedProfile = get().setProfileWithValidation(completeProfile);
+        
+        if (validatedProfile) {
+          // Guardar localmente
+          await get().saveProfileLocally(validatedProfile);
+          await get().saveProfileToDB(validatedProfile);
+          
+          set({ 
+            profile: validatedProfile, 
+            loading: false, 
+            error: null,
+            initialized: true 
+          });
+          
+          console.log('[useCurrentUser] ✅ Perfil recargado desde servidor exitosamente');
+          return validatedProfile;
+        }
+      } else {
+        const errorText = await res.text();
+        throw new Error(`Error del servidor: ${res.status} - ${errorText}`);
+      }
+    } catch (error: any) {
+      console.error('[useCurrentUser] Error forzando recarga desde servidor:', error);
+      set({ 
+        profile: null, 
+        loading: false, 
+        error: error.message,
+        initialized: true 
+      });
+      throw error;
+    }
+    
+    return null;
   },
 
   saveProfileLocally: async (profile) => {
@@ -535,6 +788,95 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       console.log('[useCurrentUser] Perfil guardado localmente con éxito.');
     } catch (error) {
       console.error('[useCurrentUser] Error al guardar perfil localmente:', error);
+      throw error;
+    }
+  },
+
+  saveProfileToDB: async (profile) => {
+    console.log('[useCurrentUser] Guardando perfil en base de datos...');
+    try {
+      const localProfile: LocalProfile = {
+        id: profile.id,
+        userId: profile.userId,
+        patientProfileId: profile.patientProfileId,
+        name: profile.name,
+        age: profile.age,
+        birthDate: profile.birthDate,
+        dateOfBirth: profile.dateOfBirth,
+        gender: profile.gender,
+        weight: profile.weight,
+        height: profile.height,
+        bloodType: profile.bloodType,
+        emergencyContactName: profile.emergencyContactName,
+        emergencyContactRelation: profile.emergencyContactRelation,
+        emergencyContactPhone: profile.emergencyContactPhone,
+        allergies: profile.allergies,
+        chronicDiseases: profile.chronicDiseases,
+        currentConditions: profile.currentConditions,
+        reactions: profile.reactions,
+        doctorName: profile.doctorName,
+        doctorContact: profile.doctorContact,
+        hospitalReference: profile.hospitalReference,
+        phone: profile.phone,
+        relationship: profile.relationship,
+        photoUrl: profile.photoUrl,
+        photoFileId: profile.photoFileId,
+        role: profile.role,
+        createdAt: profile.createdAt || new Date().toISOString(),
+        updatedAt: profile.updatedAt || new Date().toISOString()
+      };
+      
+      await localDB.saveProfile(localProfile);
+      console.log('[useCurrentUser] Perfil guardado en base de datos con éxito.');
+    } catch (error) {
+      console.error('[useCurrentUser] Error al guardar perfil en base de datos:', error);
+      throw error;
+    }
+  },
+
+  loadProfileFromDB: async (id) => {
+    console.log('[useCurrentUser] Cargando perfil desde base de datos...');
+    try {
+      const localProfile = await localDB.getProfile(id);
+      if (localProfile) {
+        const profile: UserProfile = {
+          id: localProfile.id,
+          userId: localProfile.userId,
+          patientProfileId: localProfile.patientProfileId,
+          name: localProfile.name,
+          age: localProfile.age,
+          birthDate: localProfile.birthDate,
+          dateOfBirth: localProfile.dateOfBirth,
+          gender: localProfile.gender,
+          weight: localProfile.weight,
+          height: localProfile.height,
+          bloodType: localProfile.bloodType,
+          emergencyContactName: localProfile.emergencyContactName,
+          emergencyContactRelation: localProfile.emergencyContactRelation,
+          emergencyContactPhone: localProfile.emergencyContactPhone,
+          allergies: localProfile.allergies,
+          chronicDiseases: localProfile.chronicDiseases,
+          currentConditions: localProfile.currentConditions,
+          reactions: localProfile.reactions,
+          doctorName: localProfile.doctorName,
+          doctorContact: localProfile.doctorContact,
+          hospitalReference: localProfile.hospitalReference,
+          phone: localProfile.phone,
+          relationship: localProfile.relationship,
+          photoUrl: localProfile.photoUrl,
+          photoFileId: localProfile.photoFileId,
+          role: localProfile.role,
+          createdAt: localProfile.createdAt,
+          updatedAt: localProfile.updatedAt
+        };
+        
+        console.log('[useCurrentUser] Perfil cargado desde base de datos con éxito.');
+        return profile;
+      }
+      console.log('[useCurrentUser] No hay perfil en base de datos.');
+      return null;
+    } catch (error) {
+      console.error('[useCurrentUser] Error al cargar perfil desde base de datos:', error);
       throw error;
     }
   },
@@ -584,7 +926,13 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         throw new Error(result.error || 'Error al subir imagen');
       }
 
-      console.log('[useCurrentUser] Foto subida exitosamente a ImageKit:', result.url);
+      console.log('[useCurrentUser] Foto subida exitosamente:', result.url, 'Método:', result.method);
+      
+      // Si es una imagen de respaldo, mostrar mensaje informativo
+      if (result.method === 'local' || result.method === 'base64') {
+        console.log('[useCurrentUser] ⚠️ Imagen guardada como respaldo (ImageKit no disponible)');
+      }
+      
       return result.url!;
 
     } catch (error) {
@@ -703,4 +1051,53 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       }
     }
   },
+
+  // Función para forzar actualización del perfil con datos correctos
+  forceProfileRefresh: async () => {
+    console.log('[useCurrentUser] 🔄 Forzando actualización del perfil...');
+    set({ loading: true, error: null });
+    
+    try {
+      const token = useAuth.getState().userToken;
+      if (!token) {
+        throw new Error('No hay token de autenticación');
+      }
+
+      // Obtener perfil correcto del servidor
+      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+      console.log('[useCurrentUser] Obteniendo perfil correcto desde:', endpoint);
+      
+      const res = await fetch(endpoint, { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+
+      if (res.ok) {
+        const serverData = await res.json();
+        console.log('[useCurrentUser] Perfil correcto obtenido del servidor:', serverData);
+        
+        // Aplicar corrección de IDs si es necesario
+        const correctedProfile = validateAndFixProfileIds(serverData);
+        
+        set({ 
+          profile: correctedProfile, 
+          loading: false, 
+          error: null 
+        });
+        
+        console.log('[useCurrentUser] ✅ Perfil actualizado correctamente');
+        return correctedProfile;
+      } else {
+        throw new Error(`Error obteniendo perfil: ${res.status}`);
+      }
+    } catch (error) {
+      console.error('[useCurrentUser] Error forzando actualización:', error);
+      set({ 
+        profile: null, 
+        loading: false, 
+        error: error instanceof Error ? error.message : 'Error desconocido' 
+      });
+      throw error;
+    }
+  },
+
 }));

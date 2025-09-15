@@ -9,6 +9,7 @@ import {
   IMAGEKIT_CONFIG 
 } from '../constants/imagekit';
 import { useAuth } from '../store/useAuth';
+import { fallbackImageService } from './fallbackImageService';
 
 // Interfaz para las opciones de subida
 export interface UploadOptions {
@@ -25,6 +26,7 @@ export interface UploadResult {
   url?: string;
   fileId?: string;
   error?: string;
+  method?: 'imagekit' | 'local' | 'base64';
   metadata?: {
     width: number;
     height: number;
@@ -129,6 +131,7 @@ class ImageUploadService {
         success: true,
         url: result.url,
         fileId: result.fileId,
+        method: 'imagekit',
         metadata: {
           width: result.width,
           height: result.height,
@@ -138,11 +141,54 @@ class ImageUploadService {
       };
 
     } catch (error: any) {
-      console.error('[ImageUploadService] Error en subida:', error);
+      console.error('[ImageUploadService] Error en subida a ImageKit:', error);
+      
+      // Intentar usar servicio de respaldo
+      console.log('[ImageUploadService] 🔄 Intentando respaldo local...');
+      try {
+        const fallbackResult = await fallbackImageService.saveImageLocally(uri, options.userId);
+        
+        if (fallbackResult.success) {
+          console.log('[ImageUploadService] ✅ Imagen guardada localmente como respaldo');
+          return {
+            success: true,
+            url: fallbackResult.url,
+            method: 'local',
+            metadata: {
+              width: 0, // No disponible en respaldo local
+              height: 0,
+              size: 0,
+              format: getFileExtension(fileName),
+            },
+          };
+        } else {
+          // Si el respaldo local falla, intentar base64
+          console.log('[ImageUploadService] 🔄 Intentando respaldo base64...');
+          const base64Result = await fallbackImageService.saveImageAsBase64(uri, options.userId);
+          
+          if (base64Result.success) {
+            console.log('[ImageUploadService] ✅ Imagen guardada como base64 como respaldo');
+            return {
+              success: true,
+              url: base64Result.url,
+              method: 'base64',
+              metadata: {
+                width: 0, // No disponible en respaldo base64
+                height: 0,
+                size: 0,
+                format: getFileExtension(fileName),
+              },
+            };
+          }
+        }
+      } catch (fallbackError) {
+        console.error('[ImageUploadService] Error en servicios de respaldo:', fallbackError);
+      }
       
       return {
         success: false,
         error: error.message || 'Error desconocido al subir imagen',
+        method: 'imagekit',
       };
     }
   }

@@ -4,6 +4,7 @@ import { useCurrentUser } from './useCurrentUser';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { localDB, LocalAppointment } from '../data/db';
 import { syncService } from '../lib/syncService';
+import { alarmSchedulerEngine, AlarmConfig } from '../lib/alarmSchedulerEngine';
 
 interface Appointment {
   id: string;
@@ -26,6 +27,10 @@ interface AppointmentsState {
   createAppointment: (data: Partial<Appointment>) => Promise<void>;
   updateAppointment: (id: string, data: Partial<Appointment>) => Promise<void>;
   deleteAppointment: (id: string) => Promise<void>;
+  // Funciones de alarmas
+  scheduleAppointmentAlarms: (appointment: Appointment, alarmConfig: Partial<AlarmConfig>) => Promise<string[]>;
+  cancelAppointmentAlarms: (appointmentId: string) => Promise<number>;
+  rescheduleAppointmentAlarms: (appointment: Appointment, alarmConfig: Partial<AlarmConfig>) => Promise<string[]>;
 }
 
 export const useAppointments = create<AppointmentsState>((set, get) => ({
@@ -58,7 +63,10 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         try {
           console.log('[useAppointments] Obteniendo citas desde servidor...');
           
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}?patientProfileId=${patientId}`), {
+          // Usar el ID numérico si está disponible (el servidor espera número)
+          const numericPatientId = (profile as any).patientProfileIdNumber || patientId;
+          
+          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}?patientProfileId=${numericPatientId}`), {
             headers: { Authorization: `Bearer ${token}` },
           });
           
@@ -128,6 +136,74 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             return;
           } else {
             console.log('[useAppointments] Error de API:', res.status, res.statusText);
+            
+            // Manejar error específico de patientProfileId faltante
+            if (res.status === 400) {
+              const errorData = await res.json().catch(() => ({}));
+              if (errorData.error === 'Falta patientProfileId') {
+                console.log('[useAppointments] Servidor requiere patientProfileId en formato diferente');
+                // Intentar con POST y patientProfileId en el body
+                const retryRes = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE), {
+                  method: 'POST',
+                  headers: { 
+                    ...API_CONFIG.DEFAULT_HEADERS, 
+                    Authorization: `Bearer ${token}` 
+                  },
+                  body: JSON.stringify({ 
+                    patientProfileId: patientId, // Usar el ID del perfil
+                    action: 'list' // Operación de listado
+                  }),
+                });
+                
+                if (retryRes.ok) {
+                  const retryData = await retryRes.json();
+                  console.log('[useAppointments] Respuesta del servidor (retry):', JSON.stringify(retryData, null, 2));
+                  
+                  let appointments = [];
+                  if (retryData.items && Array.isArray(retryData.items)) {
+                    appointments = retryData.items;
+                  } else if (retryData && Array.isArray(retryData.appointments)) {
+                    appointments = retryData.appointments;
+                  }
+                  
+                  console.log('[useAppointments] Citas procesadas (retry):', appointments.length);
+                  
+                  // Guardar en base de datos local
+                  for (const appointment of appointments) {
+                    const localAppointment: LocalAppointment = {
+                      ...appointment,
+                      isOffline: false,
+                      syncStatus: 'synced',
+                      updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString()
+                    };
+                    await localDB.saveAppointment(localAppointment);
+                  }
+                  
+                  // Combinar con citas offline
+                  const offlineAppointments = await localDB.getAppointments(patientId);
+                  const offlineOnly = offlineAppointments.filter(apt => apt.isOffline);
+                  
+                  // Mapear las citas del servidor para que tengan el formato correcto
+                  const mappedAppointments = appointments.map((appointment: any) => ({
+                    ...appointment,
+                    title: appointment.title || appointment.doctorName || 'Sin título',
+                    dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
+                    doctorName: appointment.doctorName || appointment.title,
+                    // Asegurar que patientProfileId sea string
+                    patientProfileId: String(appointment.patientProfileId || patientId),
+                    // Asegurar que createdAt y updatedAt estén presentes
+                    createdAt: appointment.createdAt || new Date().toISOString(),
+                    updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString(),
+                  }));
+                  
+                  const allAppointments = [...mappedAppointments, ...offlineOnly];
+                  
+                  set({ appointments: allAppointments });
+                  return;
+                }
+              }
+            }
+            
             throw new Error('Error al obtener citas');
           }
         } catch (serverError) {
@@ -173,6 +249,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         throw new Error('No hay perfil de paciente disponible');
       }
       
+      // Usar el ID numérico si está disponible (el servidor espera número)
+      const numericPatientId = (profile as any).patientProfileIdNumber || patientId;
+      
       // VERIFICAR CONECTIVIDAD - NO PERMITIR AGREGAR SI ESTÁ OFFLINE
       if (!isOnline) {
         throw new Error('No hay conexión a internet. No se pueden agregar citas en modo offline.');
@@ -188,7 +267,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         
         const bodyData = { 
           ...data, 
-          patientProfileId: patientId
+          patientProfileId: numericPatientId // Usar el ID numérico si está disponible
         };
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE);
         
@@ -373,6 +452,91 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       set({ error: err.message });
     } finally {
       set({ loading: false });
+    }
+  },
+
+  // Funciones de alarmas
+  scheduleAppointmentAlarms: async (appointment, alarmConfig) => {
+    try {
+      console.log('[useAppointments] Programando alarmas para cita:', appointment.title);
+      
+      const appointmentDate = new Date(appointment.dateTime);
+      const reminderMinutes = alarmConfig.reminderMinutes || 60; // Recordatorio 1 hora antes por defecto
+      const reminderDate = new Date(appointmentDate.getTime() - reminderMinutes * 60 * 1000);
+      
+      const config: AlarmConfig = {
+        id: appointment.id,
+        type: 'appointment',
+        name: appointment.title,
+        time: reminderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+        frequency: 'daily', // Las citas son eventos únicos
+        startDate: reminderDate,
+        endDate: appointmentDate,
+        data: {
+          appointmentId: appointment.id,
+          appointmentTitle: appointment.title,
+          location: appointment.location,
+          description: appointment.description,
+          patientProfileId: appointment.patientProfileId,
+          scheduledFor: appointmentDate.toISOString(),
+          reminderMinutes,
+        },
+      };
+
+      const scheduledIds = await alarmSchedulerEngine.scheduleAlarmsFromConfig(config, 1); // Solo 1 ocurrencia
+      console.log(`[useAppointments] ${scheduledIds.length} alarmas programadas para ${appointment.title}`);
+      return scheduledIds;
+    } catch (error) {
+      console.error('[useAppointments] Error programando alarmas:', error);
+      throw error;
+    }
+  },
+
+  cancelAppointmentAlarms: async (appointmentId) => {
+    try {
+      console.log('[useAppointments] Cancelando alarmas para cita:', appointmentId);
+      const cancelledCount = await alarmSchedulerEngine.cancelAlarmsForElement('appointment', appointmentId);
+      console.log(`[useAppointments] ${cancelledCount} alarmas canceladas para cita ${appointmentId}`);
+      return cancelledCount;
+    } catch (error) {
+      console.error('[useAppointments] Error cancelando alarmas:', error);
+      throw error;
+    }
+  },
+
+  rescheduleAppointmentAlarms: async (appointment, alarmConfig) => {
+    try {
+      console.log('[useAppointments] Reprogramando alarmas para cita:', appointment.title);
+      
+      const appointmentDate = new Date(appointment.dateTime);
+      const reminderMinutes = alarmConfig.reminderMinutes || 60;
+      const reminderDate = new Date(appointmentDate.getTime() - reminderMinutes * 60 * 1000);
+      
+      const config: AlarmConfig = {
+        id: appointment.id,
+        type: 'appointment',
+        name: appointment.title,
+        time: reminderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
+        frequency: 'daily',
+        startDate: reminderDate,
+        endDate: appointmentDate,
+        data: {
+          appointmentId: appointment.id,
+          appointmentTitle: appointment.title,
+          location: appointment.location,
+          description: appointment.description,
+          patientProfileId: appointment.patientProfileId,
+          scheduledFor: appointmentDate.toISOString(),
+          reminderMinutes,
+        },
+      };
+
+      const scheduledIds = await alarmSchedulerEngine.rescheduleAlarmsForElement(config, 1);
+      console.log(`[useAppointments] ${scheduledIds.length} alarmas reprogramadas para ${appointment.title}`);
+      return scheduledIds;
+    } catch (error) {
+      console.error('[useAppointments] Error reprogramando alarmas:', error);
+      throw error;
     }
   },
 }));

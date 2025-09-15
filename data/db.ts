@@ -74,10 +74,41 @@ export interface LocalIntakeEvent {
   syncStatus: 'pending' | 'synced' | 'failed';
 }
 
+export interface LocalProfile {
+  id: string;
+  userId: string;
+  patientProfileId?: string;
+  name: string;
+  age?: number;
+  birthDate?: string;
+  dateOfBirth?: string; // Campo del backend
+  gender?: string;
+  weight?: number;
+  height?: number;
+  bloodType?: string;
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactPhone?: string;
+  allergies?: string;
+  chronicDiseases?: string;
+  currentConditions?: string;
+  reactions?: string;
+  doctorName?: string;
+  doctorContact?: string;
+  hospitalReference?: string;
+  phone?: string;
+  relationship?: string;
+  photoUrl?: string;
+  photoFileId?: string;
+  role?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SyncQueue {
   id: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
-  entity: 'medications' | 'appointments' | 'treatments' | 'notes' | 'intakeEvents';
+  entity: 'medications' | 'appointments' | 'treatments' | 'notes' | 'intakeEvents' | 'profile';
   data: any;
   createdAt: string;
   retryCount: number;
@@ -128,6 +159,11 @@ class LocalDatabase {
     if (!this.db) {
       await this.init();
     }
+  }
+
+  // Método público para acceder a la base de datos (para migraciones)
+  getDatabase(): SQLite.SQLiteDatabase | null {
+    return this.db;
   }
 
   private async createTables(): Promise<void> {
@@ -215,6 +251,39 @@ class LocalDatabase {
       );
     `;
 
+    const createProfilesTable = `
+      CREATE TABLE IF NOT EXISTS profiles (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        patientProfileId TEXT,
+        name TEXT NOT NULL,
+        age INTEGER,
+        birthDate TEXT,
+        dateOfBirth TEXT,
+        gender TEXT,
+        weight REAL,
+        height REAL,
+        bloodType TEXT,
+        emergencyContactName TEXT,
+        emergencyContactRelation TEXT,
+        emergencyContactPhone TEXT,
+        allergies TEXT,
+        chronicDiseases TEXT,
+        currentConditions TEXT,
+        reactions TEXT,
+        doctorName TEXT,
+        doctorContact TEXT,
+        hospitalReference TEXT,
+        phone TEXT,
+        relationship TEXT,
+        photoUrl TEXT,
+        photoFileId TEXT,
+        role TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+    `;
+
     const createSyncQueueTable = `
       CREATE TABLE IF NOT EXISTS sync_queue (
         id TEXT PRIMARY KEY,
@@ -226,12 +295,13 @@ class LocalDatabase {
       );
     `;
 
-          await this.db.execAsync(createMedicationsTable);
-      await this.db.execAsync(createAppointmentsTable);
-      await this.db.execAsync(createTreatmentsTable);
-      await this.db.execAsync(createNotesTable);
-      await this.db.execAsync(createIntakeEventsTable);
-      await this.db.execAsync(createSyncQueueTable);
+    await this.db.execAsync(createMedicationsTable);
+    await this.db.execAsync(createAppointmentsTable);
+    await this.db.execAsync(createTreatmentsTable);
+    await this.db.execAsync(createNotesTable);
+    await this.db.execAsync(createIntakeEventsTable);
+    await this.db.execAsync(createProfilesTable);
+    await this.db.execAsync(createSyncQueueTable);
   }
 
   private async runMigrations(): Promise<void> {
@@ -241,6 +311,15 @@ class LocalDatabase {
       // Importar y ejecutar migraciones
       const { addDoctorNameToAppointments } = await import('./migrations/add_doctor_name_to_appointments');
       await addDoctorNameToAppointments(this.db);
+      
+      // Ejecutar migración para corregir createdAt en perfiles
+      const { fixProfilesCreatedAt } = await import('./migrations/fix_profiles_created_at');
+      await fixProfilesCreatedAt(this);
+      
+      // Ejecutar migración para corregir createdAt en intake_events
+      const { fixIntakeEventsCreatedAt } = await import('./migrations/fix_intake_events_created_at');
+      await fixIntakeEventsCreatedAt(this);
+      
       console.log('[LocalDatabase] Migraciones ejecutadas correctamente');
     } catch (error) {
       console.error('[LocalDatabase] Error ejecutando migraciones:', error);
@@ -518,6 +597,75 @@ class LocalDatabase {
   async updateRetryCount(id: string, retryCount: number): Promise<void> {
     await this.ensureInitialized();
     await this.db!.runAsync('UPDATE sync_queue SET retryCount = ? WHERE id = ?', [retryCount, id]);
+  }
+
+  // Métodos para manejar perfiles
+  async saveProfile(profile: LocalProfile): Promise<void> {
+    await this.ensureInitialized();
+
+    const query = `
+      INSERT OR REPLACE INTO profiles (
+        id, userId, patientProfileId, name, age, birthDate, dateOfBirth,
+        gender, weight, height, bloodType, emergencyContactName,
+        emergencyContactRelation, emergencyContactPhone, allergies,
+        chronicDiseases, currentConditions, reactions, doctorName,
+        doctorContact, hospitalReference, phone, relationship,
+        photoUrl, photoFileId, role, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    await this.db!.runAsync(query, [
+      profile.id,
+      profile.userId,
+      profile.patientProfileId || null,
+      profile.name,
+      profile.age || null,
+      profile.birthDate || null,
+      profile.dateOfBirth || null,
+      profile.gender || null,
+      profile.weight || null,
+      profile.height || null,
+      profile.bloodType || null,
+      profile.emergencyContactName || null,
+      profile.emergencyContactRelation || null,
+      profile.emergencyContactPhone || null,
+      profile.allergies || null,
+      profile.chronicDiseases || null,
+      profile.currentConditions || null,
+      profile.reactions || null,
+      profile.doctorName || null,
+      profile.doctorContact || null,
+      profile.hospitalReference || null,
+      profile.phone || null,
+      profile.relationship || null,
+      profile.photoUrl || null,
+      profile.photoFileId || null,
+      profile.role || null,
+      profile.createdAt,
+      profile.updatedAt
+    ]);
+  }
+
+  async getProfile(id: string): Promise<LocalProfile | null> {
+    await this.ensureInitialized();
+
+    const query = `SELECT * FROM profiles WHERE id = ?`;
+    const result = await this.db!.getFirstAsync(query, [id]);
+    
+    return result as LocalProfile | null;
+  }
+
+  async updateProfile(id: string, updates: Partial<LocalProfile>): Promise<void> {
+    await this.ensureInitialized();
+
+    const fields = Object.keys(updates).filter(key => key !== 'id');
+    if (fields.length === 0) return;
+
+    const setClause = fields.map(field => `${field} = ?`).join(', ');
+    const values = fields.map(field => updates[field as keyof LocalProfile]).filter(value => value !== undefined);
+    
+    const query = `UPDATE profiles SET ${setClause}, updatedAt = ? WHERE id = ?`;
+    await this.db!.runAsync(query, [...values, new Date().toISOString(), id]);
   }
 
   // Método para limpiar datos antiguos

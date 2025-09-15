@@ -1,540 +1,641 @@
-import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Vibration, ToastAndroid, Dimensions, StatusBar } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useIntakeEvents } from '../../store/useIntakeEvents';
-import { useKeepAwake } from 'expo-keep-awake';
-import { scheduleNotification } from '../../lib/notifications';
-import { useCurrentUser } from '../../store/useCurrentUser';
-import * as Notifications from 'expo-notifications';
-import { Audio } from 'expo-av';
+// screens/AlarmScreen/AlarmScreen.tsx
+import React, { useEffect, useMemo, useState } from 'react';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  Platform, 
+  ToastAndroid, 
+  Animated, 
+  Dimensions,
+  StatusBar,
+  SafeAreaView
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import COLORS from '../../constants/colors';
+import * as Notifications from 'expo-notifications';
+import { useKeepAwake } from 'expo-keep-awake';
+import { unifiedAlarmService } from '../../lib/unifiedAlarmService';
+// import { scheduleSnooze10 } from '../../lib/notifications'; // Función eliminada
+import { COLORS } from '../../constants/colors';
+// importa tus stores reales:
+import { useCurrentUser } from '../../store/useCurrentUser';
+import { useIntakeEvents } from '../../store/useIntakeEvents';
 
 const { width, height } = Dimensions.get('window');
 
-// Mock de datos de alarma
-const mockAlarm = {
-  name: 'Paracetamol',
-  dosage: '500mg',
-  instructions: 'Tomar con agua',
-  time: '09:00',
-};
-
 export default function AlarmScreen(props: any) {
   useKeepAwake();
-  const { kind, refId, scheduledFor, name, dosage, instructions, time } = props || {};
-  const { registerEvent } = useIntakeEvents();
-  const [loading, setLoading] = React.useState(false);
-  const [paramError, setParamError] = React.useState<string | null>(null);
   const { profile } = useCurrentUser();
+  const { registerEvent } = useIntakeEvents();
+
+  // 1) Consolidar parámetros desde varias fuentes
+  const [ready, setReady] = useState(false);
+  const [params, setParams] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // 2) Animaciones
+  const pulseAnim = useMemo(() => new Animated.Value(1), []);
+  const slideAnim = useMemo(() => new Animated.Value(0), []);
+  const fadeAnim = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
-    console.log('AlarmScreen params:', { kind, refId, scheduledFor, name, dosage, instructions, time });
-    
-    // Validar parámetros mínimos
-    if (!kind || !refId) {
-      setParamError('Faltan datos para registrar el evento. Vuelve a abrir la app desde la notificación.');
-      return;
-    }
-    
-    // Si no hay scheduledFor, usar la fecha actual
-    if (!scheduledFor) {
-      console.log('No hay scheduledFor, usando fecha actual');
-    }
-    
-    setParamError(null);
-  }, [kind, refId, scheduledFor]);
-
-  // Vibración y sonido al abrir
-  useEffect(() => {
-    // Vibración más intensa para alarmas
-    Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
-
-    let sound: Audio.Sound | null = null;
-    let vibrationInterval: NodeJS.Timeout | null = null;
-    
     (async () => {
-      try {
-        // Configurar el modo de audio para que se reproduzca incluso en modo silencioso
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          staysActiveInBackground: true,
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: false,
-          playThroughEarpieceAndroid: false,
-        });
+      // a) route.params (React Navigation)
+      const rp = props?.route?.params ?? {};
+      // b) props directos (si montas este componente con AppRegistry)
+      const pp = props ?? {};
+      // c) desde la última respuesta de notificación (si abriste por acción)
+      const resp = await Notifications.getLastNotificationResponseAsync();
+      const rd = resp?.notification?.request?.content?.data ?? {};
 
-        const result = await Audio.Sound.createAsync(
-          require('../../assets/alarm.mp3'),
-          {
-            shouldPlay: true,
-            isLooping: true, // Repetir el sonido hasta que el usuario tome acción
-            volume: 1.0,
-            rate: 1.0,
-            shouldCorrectPitch: true,
-          }
-        );
-        sound = result.sound;
-        
-        // Configurar vibración continua cada 3 segundos
-        vibrationInterval = setInterval(() => {
-          Vibration.vibrate([0, 500, 200, 500, 200, 500, 200, 500]);
-        }, 3000);
-        
-      } catch (error) {
-        console.error('[AlarmScreen] Error reproduciendo audio:', error);
-        // Si no se puede reproducir el archivo, usar vibración más intensa
-        Vibration.vibrate([0, 1000, 500, 1000, 500, 1000]);
-        
-        // Configurar vibración continua si no hay sonido
-        vibrationInterval = setInterval(() => {
-          Vibration.vibrate([0, 1000, 500, 1000, 500, 1000]);
-        }, 2000);
+      const merged = {
+        kind: rp.kind ?? pp.kind ?? rd.kind ?? rd.type,
+        refId: rp.refId ?? pp.refId ?? rd.medicationId ?? rd.appointmentId ?? rd.refId,
+        scheduledFor: rp.scheduledFor ?? pp.scheduledFor ?? rd.scheduledFor ?? new Date().toISOString(),
+        name: rp.name ?? pp.name ?? rd.medicationName ?? rd.appointmentTitle ?? rd.name,
+        dosage: rp.dosage ?? pp.dosage ?? rd.dosage,
+        instructions: rp.instructions ?? pp.instructions ?? rd.instructions,
+        time: rp.time ?? pp.time ?? rd.time,
+        autoAction: rp.autoAction ?? pp.autoAction ?? rd.autoAction,
+      };
+
+      if (!merged.kind || !merged.refId) {
+        setError('Faltan datos mínimos de la alarma.');
+      } else {
+        setParams(merged);
       }
+      setReady(true);
     })();
-
-    return () => {
-      sound?.unloadAsync();
-      if (vibrationInterval) {
-        clearInterval(vibrationInterval);
-      }
-    };
   }, []);
+
+  // 3) Iniciar animaciones cuando la pantalla esté lista
+  useEffect(() => {
+    if (ready && params) {
+      // Animación de entrada
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      // Animación de pulso continuo
+      const pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulseAnimation.start();
+
+      // Limpiar animación al desmontar
+      return () => {
+        pulseAnimation.stop();
+      };
+    }
+  }, [ready, params]);
 
   const showToast = (msg: string) => {
     if (Platform.OS === 'android') ToastAndroid.show(msg, ToastAndroid.SHORT);
-    // Para iOS, podrías usar un modal o una librería de toast
   };
 
+  // 2) Acciones
   const handleAction = async (action: 'TAKEN' | 'SNOOZE' | 'SKIPPED') => {
-    if (!kind || !refId) {
-      setParamError('Faltan datos para registrar el evento.');
+    if (!params?.kind || !params?.refId) {
+      setError('No hay datos suficientes para registrar el evento.');
       return;
     }
-    
-    // Usar fecha actual si no hay scheduledFor
-    const eventDate = scheduledFor || new Date().toISOString();
-    setLoading(true);
-    
     try {
-      // Manejar posponer de forma segura
-      if (action === 'SNOOZE') {
-        try {
-          const snoozeDate = new Date();
-          snoozeDate.setMinutes(snoozeDate.getMinutes() + 10);
+      // detener efectos (vibración/sonido) usando el servicio unificado
+      unifiedAlarmService.stopAlarm();
 
-          await scheduleNotification({
-            title: `Recordatorio: ${name || 'Medicamento'}`,
-            body: `Dosis: ${dosage || ''}`,
-            data: {
-              kind,
-              refId,
-              scheduledFor: snoozeDate.toISOString(),
-              name,
-              dosage,
-              instructions,
-              time: snoozeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-              patientProfileId: profile?.patientProfileId || profile?.id,
-            },
-            trigger: {
-              type: Notifications.SchedulableTriggerInputTypes.DATE,
-              date: snoozeDate,
-            },
-            identifier: `snooze_${refId}_${Date.now()}`,
-            channelId: kind === 'APPOINTMENT' ? 'appointments' : 'medications',
-          });
-        } catch (snoozeError) {
-          console.error('[AlarmScreen] Error programando posponer:', snoozeError);
-          // Continuar con el registro del evento aunque falle la notificación
-        }
-      }
-      
-      // Registrar evento de forma segura
-      try {
-        await registerEvent({
-          kind,
-          refId,
-          scheduledFor: eventDate,
-          action,
-          meta: {
-            name,
-            dosage,
-            instructions,
-            time,
-            location: props.location,
+      if (action === 'SNOOZE') {
+        // Programar alarma pospuesta usando el servicio unificado
+        const snoozeDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+        await unifiedAlarmService.scheduleAlarm({
+          id: `snooze_${params.refId}_${Date.now()}`,
+          title: `⏰ ${params.name || 'Medicamento'} (pospuesto)`,
+          body: `Te recordaremos en 10 minutos`,
+          data: {
+            type: 'MEDICATION',
+            kind: 'MED',
+            medicationId: params.refId,
+            medicationName: params.name,
+            dosage: params.dosage,
+            scheduledFor: snoozeDate.toISOString(),
+            patientProfileId: profile?.patientProfileId || profile?.id,
+            isSnooze: true
           },
+          triggerDate: snoozeDate
         });
-        showToast('Evento registrado');
-        // navigation.goBack(); // Comentado temporalmente hasta resolver el problema de navegación
-      } catch (eventError) {
-        console.error('[AlarmScreen] Error registrando evento:', eventError);
-        showToast('Error al registrar evento');
-        setParamError('Error al registrar evento.');
+        showToast('Alarma pospuesta 10 min');
+      } else {
+        // registra evento en tu store/backend
+        await registerEvent({
+          kind: params.kind,
+          refId: params.refId,
+          action: action,
+          scheduledFor: params.scheduledFor,
+        });
+        
+        // Mensajes específicos según el tipo de alarma y acción
+        const isMedication = params?.kind === 'MED' || params?.type === 'MEDICATION';
+        const isAppointment = params?.kind === 'APPOINTMENT' || params?.type === 'APPOINTMENT';
+        const isTreatment = params?.kind === 'TREATMENT' || params?.type === 'TREATMENT';
+        
+        let message = '';
+        if (action === 'TAKEN') {
+          if (isMedication) message = 'Medicamento marcado como tomado';
+          else if (isAppointment) message = 'Asistencia a cita confirmada';
+          else if (isTreatment) message = 'Tratamiento marcado como realizado';
+          else message = 'Alarma confirmada';
+        } else if (action === 'SKIPPED') {
+          if (isMedication) message = 'Dosis omitida';
+          else if (isAppointment) message = 'Cita cancelada';
+          else if (isTreatment) message = 'Tratamiento omitido';
+          else message = 'Alarma omitida';
+        }
+        
+        showToast(message);
+      }
+
+      // cierra pantalla
+      // Detener alarma antes de cerrar
+      unifiedAlarmService.stopAlarm();
+      
+      if (props?.navigation?.goBack) {
+        props.navigation.goBack();
+      } else if (props?.navigation?.replace) {
+        props.navigation.replace('Home');
       }
     } catch (e) {
-      console.error('[AlarmScreen] Error general en handleAction:', e);
-      showToast('Error al procesar acción');
-      setParamError('Error al procesar acción.');
-    } finally {
-      setLoading(false);
+      console.error('[AlarmScreen] handleAction error', e);
+      setError('No se pudo procesar la acción.');
     }
   };
 
-  const getCurrentTime = () => {
-    const now = new Date();
-    return now.toLocaleTimeString('es-ES', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
+  // 3) Auto-acción si venía desde el botón de la notificación
+  useEffect(() => {
+    if (ready && params?.autoAction) {
+      // Ejecuta sin UI si quieres, o solo preselecciona
+      const map: any = { TAKEN: 'TAKEN', SNOOZE: 'SNOOZE', SKIPPED: 'SKIPPED' };
+      const act = map[params.autoAction];
+      if (act) handleAction(act);
+    }
+  }, [ready, params?.autoAction]);
+
+  // Limpiar efectos cuando el componente se desmonte
+  useEffect(() => {
+    return () => {
+      unifiedAlarmService.stopAlarm();
+    };
+  }, []);
+
+  if (!ready) return null;
+
+  // Función para obtener el emoji según el tipo de alarma
+  const getAlarmEmoji = () => {
+    if (params?.kind === 'MED' || params?.type === 'MEDICATION') return '💊';
+    if (params?.kind === 'APPOINTMENT' || params?.type === 'APPOINTMENT') return '📅';
+    if (params?.kind === 'TREATMENT' || params?.type === 'TREATMENT') return '🏥';
+    return '⏰';
+  };
+
+  // Función para obtener el color de la alarma
+  const getAlarmColor = () => {
+    if (params?.kind === 'MED' || params?.type === 'MEDICATION') return COLORS.medical.medication;
+    if (params?.kind === 'APPOINTMENT' || params?.type === 'APPOINTMENT') return COLORS.medical.appointment;
+    if (params?.kind === 'TREATMENT' || params?.type === 'TREATMENT') return COLORS.medical.treatment;
+    return COLORS.primary;
+  };
+
+  // Función para obtener los botones específicos según el tipo de alarma
+  const getAlarmButtons = () => {
+    const isMedication = params?.kind === 'MED' || params?.type === 'MEDICATION';
+    const isAppointment = params?.kind === 'APPOINTMENT' || params?.type === 'APPOINTMENT';
+    const isTreatment = params?.kind === 'TREATMENT' || params?.type === 'TREATMENT';
+
+    if (isMedication) {
+      return [
+        {
+          action: 'TAKEN',
+          label: 'Tomado',
+          icon: '✅',
+          colors: [COLORS.success, '#0d9488'],
+          description: 'Marcar medicamento como tomado'
+        },
+        {
+          action: 'SNOOZE',
+          label: 'Posponer',
+          icon: '⏰',
+          colors: [COLORS.warning, '#d97706'],
+          description: 'Recordar en 10 minutos'
+        },
+        {
+          action: 'SKIPPED',
+          label: 'Omitir',
+          icon: '❌',
+          colors: [COLORS.error, '#dc2626'],
+          description: 'Omitir esta dosis'
+        }
+      ];
+    }
+
+    if (isAppointment) {
+      return [
+        {
+          action: 'TAKEN',
+          label: 'Asistiré',
+          icon: '✅',
+          colors: [COLORS.success, '#0d9488'],
+          description: 'Confirmar asistencia a la cita'
+        },
+        {
+          action: 'SNOOZE',
+          label: 'Recordar',
+          icon: '⏰',
+          colors: [COLORS.warning, '#d97706'],
+          description: 'Recordar en 10 minutos'
+        },
+        {
+          action: 'SKIPPED',
+          label: 'Cancelar',
+          icon: '❌',
+          colors: [COLORS.error, '#dc2626'],
+          description: 'Cancelar la cita'
+        }
+      ];
+    }
+
+    if (isTreatment) {
+      return [
+        {
+          action: 'TAKEN',
+          label: 'Realizado',
+          icon: '✅',
+          colors: [COLORS.success, '#0d9488'],
+          description: 'Marcar tratamiento como realizado'
+        },
+        {
+          action: 'SNOOZE',
+          label: 'Posponer',
+          icon: '⏰',
+          colors: [COLORS.warning, '#d97706'],
+          description: 'Recordar en 10 minutos'
+        },
+        {
+          action: 'SKIPPED',
+          label: 'Omitir',
+          icon: '❌',
+          colors: [COLORS.error, '#dc2626'],
+          description: 'Omitir este tratamiento'
+        }
+      ];
+    }
+
+    // Botones por defecto para alarmas generales
+    return [
+      {
+        action: 'TAKEN',
+        label: 'Confirmar',
+        icon: '✅',
+        colors: [COLORS.success, '#0d9488'],
+        description: 'Confirmar la alarma'
+      },
+      {
+        action: 'SNOOZE',
+        label: 'Posponer',
+        icon: '⏰',
+        colors: [COLORS.warning, '#d97706'],
+        description: 'Recordar en 10 minutos'
+      },
+      {
+        action: 'SKIPPED',
+        label: 'Omitir',
+        icon: '❌',
+        colors: [COLORS.error, '#dc2626'],
+        description: 'Omitir esta alarma'
+      }
+    ];
+  };
+
+  // Función para obtener el título específico según el tipo
+  const getAlarmTitle = () => {
+    const isMedication = params?.kind === 'MED' || params?.type === 'MEDICATION';
+    const isAppointment = params?.kind === 'APPOINTMENT' || params?.type === 'APPOINTMENT';
+    const isTreatment = params?.kind === 'TREATMENT' || params?.type === 'TREATMENT';
+
+    if (isMedication) return '💊 Recordatorio de Medicamento';
+    if (isAppointment) return '📅 Recordatorio de Cita';
+    if (isTreatment) return '🏥 Recordatorio de Tratamiento';
+    return '⏰ Alarma';
   };
 
   return (
-    <LinearGradient 
-      colors={[COLORS.background.primary, COLORS.background.secondary, COLORS.background.tertiary]} 
-      style={styles.container}
-    >
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
       
-      {/* Header con animación de pulso */}
-      <View style={styles.header}>
-        <View style={styles.alarmIconContainer}>
-          <View style={styles.alarmIconPulse} />
-          <Ionicons name="alarm" size={80} color={COLORS.primary} style={styles.alarmIcon} />
-        </View>
-        <Text style={styles.title}>
-          {kind === 'APPOINTMENT' ? '¡Hora de tu cita!' : '¡Hora de tu medicamento!'}
-        </Text>
-        <Text style={styles.subtitle}>
-          {kind === 'APPOINTMENT' 
-            ? 'Es importante llegar a tiempo a tus citas médicas' 
-            : 'Es importante mantener tu horario de medicación'
-          }
-        </Text>
-      </View>
-
-      {/* Información del medicamento o cita */}
-      <View style={styles.medicationCard}>
-        <View style={styles.medicationHeader}>
-          <View style={styles.medicationIcon}>
-            <Ionicons 
-              name={kind === 'APPOINTMENT' ? 'calendar' : 'medical'} 
-              size={32} 
-              color={kind === 'APPOINTMENT' ? COLORS.medical.appointment : COLORS.medical.medication} 
-            />
-          </View>
-          <View style={styles.medicationInfo}>
-            <Text style={styles.medicationName}>{name || (kind === 'APPOINTMENT' ? 'Cita' : 'Medicamento')}</Text>
-            <Text style={styles.medicationDosage}>
-              {kind === 'APPOINTMENT' ? (props.location || 'Sin ubicación') : (dosage || '')}
-            </Text>
-          </View>
-        </View>
-        
-        {instructions && (
-          <View style={styles.instructionsContainer}>
-            <Ionicons name="information-circle" size={20} color={COLORS.text.secondary} />
-            <Text style={styles.instructions}>{instructions}</Text>
-          </View>
-        )}
-        
-        <View style={styles.timeContainer}>
-          <Ionicons name="time" size={24} color={COLORS.primary} />
-          <Text style={styles.timeText}>
-            {time || (scheduledFor ? new Date(scheduledFor).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : getCurrentTime())}
-          </Text>
-        </View>
-      </View>
-
-      {/* Mensaje de error */}
-      {paramError && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle" size={20} color={COLORS.error} />
-          <Text style={styles.errorText}>{paramError}</Text>
-        </View>
-      )}
-
-      {/* Botones de acción */}
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
+      {/* Fondo con gradiente */}
+      <LinearGradient
+        colors={[COLORS.primary, COLORS.primaryDark]}
+        style={styles.background}
+      >
+        {/* Contenido principal */}
+        <Animated.View 
           style={[
-            styles.actionButton, 
-            styles.takenButton,
-            { opacity: loading || !!paramError ? 0.6 : 1 }
+            styles.content,
+            {
+              opacity: fadeAnim,
+              transform: [
+                {
+                  translateY: slideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+            },
           ]}
-          onPress={() => handleAction('TAKEN')}
-          disabled={loading || !!paramError}
-          accessibilityLabel="Marcar como tomado"
-          accessibilityRole="button"
         >
-          <LinearGradient
-            colors={[COLORS.success, COLORS.primary]}
-            style={styles.actionButtonGradient}
+          {/* Icono de alarma con animación de pulso */}
+          <Animated.View
+            style={[
+              styles.iconContainer,
+              {
+                transform: [{ scale: pulseAnim }],
+              },
+            ]}
           >
-            <Ionicons name="checkmark-circle" size={32} color={COLORS.text.inverse} />
-            <Text style={styles.actionButtonText}>
-              {loading ? 'Guardando...' : (kind === 'APPOINTMENT' ? 'Asistí' : 'Tomado')}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            <View style={[styles.iconBackground, { backgroundColor: getAlarmColor() }]}>
+              <Text style={styles.iconText}>{getAlarmEmoji()}</Text>
+            </View>
+          </Animated.View>
 
-        <TouchableOpacity
-          style={[
-            styles.actionButton, 
-            styles.snoozeButton,
-            { opacity: loading || !!paramError ? 0.6 : 1 }
-          ]}
-          onPress={() => handleAction('SNOOZE')}
-          disabled={loading || !!paramError}
-          accessibilityLabel="Posponer 10 minutos"
-          accessibilityRole="button"
-        >
-          <LinearGradient
-            colors={[COLORS.warning, COLORS.accent.orange]}
-            style={styles.actionButtonGradient}
-          >
-            <Ionicons name="time" size={32} color={COLORS.text.inverse} />
-            <Text style={styles.actionButtonText}>
-              {loading ? 'Guardando...' : 'Posponer 10m'}
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
+          {/* Título de la alarma */}
+          <Text style={styles.title}>{getAlarmTitle()}</Text>
+          <Text style={styles.subtitle}>{params?.name || 'Alarma'}</Text>
+          
+          {/* Información adicional */}
+          {!!params?.dosage && (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoLabel}>Dosis:</Text>
+              <Text style={styles.infoValue}>{params.dosage}</Text>
+            </View>
+          )}
+          
+          {!!params?.instructions && (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoLabel}>Instrucciones:</Text>
+              <Text style={styles.infoValue}>{params.instructions}</Text>
+            </View>
+          )}
 
-        <TouchableOpacity
-          style={[
-            styles.actionButton, 
-            styles.skipButton,
-            { opacity: loading || !!paramError ? 0.6 : 1 }
-          ]}
-          onPress={() => handleAction('SKIPPED')}
-          disabled={loading || !!paramError}
-          accessibilityLabel="Saltar toma"
-          accessibilityRole="button"
-        >
-          <LinearGradient
-            colors={[COLORS.error, '#dc2626']}
-            style={styles.actionButtonGradient}
-          >
-            <Ionicons name="close-circle" size={32} color={COLORS.text.inverse} />
-            <Text style={styles.actionButtonText}>
-              {loading ? 'Guardando...' : 'Saltar'}
+          {/* Hora programada */}
+          <View style={styles.timeCard}>
+            <Text style={styles.timeLabel}>Hora programada:</Text>
+            <Text style={styles.timeValue}>
+              {new Date(params?.scheduledFor).toLocaleTimeString('es-ES', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
             </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
+          </View>
 
-      {/* Footer informativo */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          Mantén un registro de tu adherencia para mejores resultados
-        </Text>
-      </View>
-    </LinearGradient>
+          {/* Mensaje de error */}
+          {!!error && (
+            <View style={styles.errorCard}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {/* Botones de acción dinámicos */}
+          <View style={styles.buttonsContainer}>
+            {getAlarmButtons().map((button, index) => (
+              <TouchableOpacity 
+                key={button.action}
+                style={[styles.actionButton]} 
+                onPress={() => handleAction(button.action as 'TAKEN' | 'SNOOZE' | 'SKIPPED')}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={button.colors as [string, string]}
+                  style={styles.buttonGradient}
+                >
+                  <Text style={styles.buttonIcon}>{button.icon}</Text>
+                  <View style={styles.buttonTextContainer}>
+                    <Text style={styles.buttonText}>{button.label}</Text>
+                    <Text style={styles.buttonDescription}>{button.description}</Text>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Animated.View>
+      </LinearGradient>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: StatusBar.currentHeight || 0,
-  },
-  
-  header: {
-    alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 30,
-    paddingHorizontal: 24,
-  },
-  
-  alarmIconContainer: {
-    position: 'relative',
-    marginBottom: 20,
-  },
-  
-  alarmIconPulse: {
-    position: 'absolute',
-    top: -10,
-    left: -10,
-    right: -10,
-    bottom: -10,
-    borderRadius: 50,
     backgroundColor: COLORS.primary,
-    opacity: 0.3,
-    transform: [{ scale: 1.2 }],
+  },
+  background: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  content: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 40,
   },
   
-  alarmIcon: {
-    zIndex: 1,
+  // Icono de alarma
+  iconContainer: {
+    marginBottom: 32,
+  },
+  iconBackground: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.shadow.dark,
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  iconText: {
+    fontSize: 48,
   },
   
+  // Título
   title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: COLORS.text.primary,
+    fontSize: 28,
+    fontWeight: '700',
+    color: COLORS.text.inverse,
     textAlign: 'center',
     marginBottom: 8,
-    letterSpacing: -0.5,
+    textShadowColor: COLORS.shadow.dark,
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
-  
   subtitle: {
-    fontSize: 16,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  
-  medicationCard: {
-    backgroundColor: COLORS.background.card,
-    marginHorizontal: 24,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: COLORS.shadow.dark,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 8,
-    marginBottom: 24,
-  },
-  
-  medicationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  
-  medicationIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.background.tertiary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  
-  medicationInfo: {
-    flex: 1,
-  },
-  
-  medicationName: {
     fontSize: 24,
-    fontWeight: '700',
-    color: COLORS.text.primary,
+    fontWeight: '600',
+    color: COLORS.text.inverse,
+    textAlign: 'center',
+    marginBottom: 24,
+    opacity: 0.9,
+    textShadowColor: COLORS.shadow.dark,
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  
+  // Tarjetas de información
+  infoCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  infoLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text.inverse,
+    opacity: 0.9,
     marginBottom: 4,
   },
-  
-  medicationDosage: {
-    fontSize: 18,
-    color: COLORS.text.secondary,
-    fontWeight: '500',
-  },
-  
-  instructionsContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: COLORS.background.tertiary,
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  
-  instructions: {
+  infoValue: {
     fontSize: 16,
-    color: COLORS.text.primary,
-    marginLeft: 8,
-    flex: 1,
-    lineHeight: 22,
+    fontWeight: '500',
+    color: COLORS.text.inverse,
   },
   
-  timeContainer: {
-    flexDirection: 'row',
+  // Tarjeta de tiempo
+  timeCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 32,
+    width: '100%',
+    maxWidth: 280,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.background.secondary,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
-  
-  timeText: {
-    fontSize: 20,
+  timeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text.inverse,
+    opacity: 0.9,
+    marginBottom: 8,
+  },
+  timeValue: {
+    fontSize: 24,
     fontWeight: '700',
-    color: COLORS.primary,
-    marginLeft: 8,
+    color: COLORS.text.inverse,
   },
   
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.error + '10',
-    borderColor: COLORS.error + '20',
-    borderWidth: 1,
+  // Mensaje de error
+  errorCard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
     borderRadius: 12,
     padding: 16,
-    marginHorizontal: 24,
     marginBottom: 24,
+    width: '100%',
+    maxWidth: 320,
   },
-  
   errorText: {
-    fontSize: 14,
-    color: COLORS.error,
-    marginLeft: 8,
-    flex: 1,
+    color: COLORS.text.inverse,
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   
-  actionsContainer: {
-    paddingHorizontal: 24,
-    marginBottom: 24,
+  // Contenedor de botones
+  buttonsContainer: {
+    width: '100%',
+    maxWidth: 320,
+    gap: 16,
   },
   
+  // Botones de acción
   actionButton: {
-    marginBottom: 16,
-    borderRadius: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
     shadowColor: COLORS.shadow.dark,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 6,
   },
-  
-  actionButtonGradient: {
+  buttonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
+    paddingVertical: 16,
     paddingHorizontal: 24,
-    borderRadius: 16,
+    gap: 12,
   },
-  
-  actionButtonText: {
+  buttonIcon: {
+    fontSize: 24,
+  },
+  buttonTextContainer: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  buttonText: {
     color: COLORS.text.inverse,
-    fontWeight: '700',
     fontSize: 18,
-    marginLeft: 12,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  buttonDescription: {
+    color: COLORS.text.inverse,
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.8,
   },
   
+  // Estilos específicos de botones
   takenButton: {
-    // Estilos específicos para el botón "Tomado"
+    // Estilo específico para botón "Tomada"
   },
-  
   snoozeButton: {
-    // Estilos específicos para el botón "Posponer"
+    // Estilo específico para botón "Posponer"
   },
-  
   skipButton: {
-    // Estilos específicos para el botón "Saltar"
-  },
-  
-  footer: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    alignItems: 'center',
-  },
-  
-  footerText: {
-    fontSize: 14,
-    color: COLORS.text.tertiary,
-    textAlign: 'center',
-    lineHeight: 20,
+    // Estilo específico para botón "Omitir"
   },
 });

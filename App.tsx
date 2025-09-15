@@ -13,12 +13,12 @@ import { useOffline } from './store/useOffline';
 import { useAutoSync } from './hooks/useAutoSync';
 import { useProfileValidation } from './hooks/useProfileValidation';
 import { Ionicons } from '@expo/vector-icons';
-import { setNotificationHandler, requestPermissions } from './lib/notifications';
+import { requestPermissions, initNotificationSystem, checkAutoOpenPermissions } from './lib/notifications';
 import { syncService } from './lib/syncService';
 import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
-import { backgroundNotificationHandler } from './lib/backgroundNotificationHandler';
-import { backgroundAlarmHandler } from './lib/backgroundAlarmHandler';
+import { unifiedAlarmService } from './lib/unifiedAlarmService';
+import { enhancedAutoOpenService } from './lib/enhancedAutoOpenService';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
@@ -39,49 +39,35 @@ export default function App() {
     loadToken();
     
     // Declarar variables de listeners en el scope del useEffect
-    let backgroundAlarmListeners: any;
+    let unifiedAlarmListeners: any[] | undefined;
     
     (async () => {
       try {
-        // Configurar el manejador de notificaciones
-        setNotificationHandler();
+        // Inicializar sistema de alarmas unificado
+        await initNotificationSystem();
+        unifiedAlarmService.setNavigationRef(navigationRef);
+        console.log('[App] Sistema de alarmas unificado inicializado correctamente');
         
-        // Configurar listeners de respuesta a notificaciones (CRÍTICO para app cerrada)
-        const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-          console.log('[App] Respuesta a notificación recibida:', response);
-          const data = response.notification.request.content.data;
-          
-          // Verificar si es una alarma
-          if (data?.type === 'MEDICATION' || data?.kind === 'MED' || 
-              data?.type === 'APPOINTMENT' || data?.kind === 'APPOINTMENT') {
-            console.log('[App] Alarma detectada en respuesta, navegando a AlarmScreen...');
-            
-            // Navegar a AlarmScreen cuando se toca la notificación
-            setTimeout(() => {
-              if (navigationRef && navigationRef.isReady()) {
-                (navigationRef as any).navigate('AlarmScreen', {
-                  kind: data.kind || data.type,
-                  refId: data.medicationId || data.appointmentId,
-                  scheduledFor: data.scheduledFor,
-                  medicationName: data.medicationName,
-                  dosage: data.dosage,
-                  instructions: data.instructions,
-                  time: data.time,
-                  location: data.location,
-                });
-              }
-            }, 500);
-          }
-        });
-        
-        // Configurar el manejador de alarmas en segundo plano (CRÍTICO para app cerrada)
-        backgroundAlarmHandler.setNavigationRef(navigationRef);
-        backgroundAlarmListeners = backgroundAlarmHandler.setupNotificationListeners();
+        // Inicializar servicio mejorado de apertura automática
+        enhancedAutoOpenService.setNavigationRef(navigationRef);
+        await enhancedAutoOpenService.initialize();
+        console.log('[App] Servicio de apertura automática mejorado inicializado correctamente');
         
         // Solicitar permisos usando la función del módulo de notificaciones
         const permissionsGranted = await requestPermissions();
+        
+        // Verificar estado completo de permisos para apertura automática
+        const autoOpenPermissions = await checkAutoOpenPermissions();
+        console.log('[App] Estado de permisos de apertura automática:', autoOpenPermissions);
+        
         if (permissionsGranted) {
           setNotiPerm('granted');
+          
+          // Si no todos los permisos de apertura automática están concedidos, mostrar modal
+          if (!autoOpenPermissions.allGranted) {
+            console.log('[App] ⚠️ Faltan permisos para apertura automática');
+            setShowPermModal(true);
+          }
         } else {
           setNotiPerm('denied');
           setShowPermModal(true);
@@ -137,9 +123,6 @@ export default function App() {
       }
     })();
     
-    // Configurar el manejador de notificaciones en segundo plano
-    backgroundNotificationHandler.setNavigationRef(navigationRef);
-    const backgroundListeners = backgroundNotificationHandler.setupNotificationListeners();
     
     // Configurar el estado de la app
     const handleAppStateChange = (nextAppState: string) => {
@@ -149,10 +132,9 @@ export default function App() {
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
     
     return () => {
-      backgroundNotificationHandler.cleanup(backgroundListeners);
-      backgroundAlarmHandler.cleanup(backgroundAlarmListeners);
+      unifiedAlarmService.cleanup();
+      enhancedAutoOpenService.cleanup();
       appStateSubscription?.remove();
-      // El responseListener se limpia automáticamente cuando se desmonta el componente
     };
   }, []);
 
@@ -198,14 +180,42 @@ export default function App() {
       </NavigationContainer>
       <Modal visible={showPermModal} transparent animationType="fade">
         <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.3)', justifyContent:'center', alignItems:'center' }}>
-          <View style={{ backgroundColor:'#fff', borderRadius:16, padding:28, width:'85%', alignItems:'center' }}>
-            <Ionicons name="notifications-off" size={48} color="#ef4444" style={{ marginBottom: 12 }} />
-            <Text style={{ fontSize:18, fontWeight:'bold', color:'#ef4444', marginBottom:8 }}>Permiso de notificaciones requerido</Text>
-            <Text style={{ color:'#334155', textAlign:'center', marginBottom:16 }}>
-              Para que las alarmas funcionen correctamente, activa las notificaciones para esta app en la configuración del sistema.
+          <View style={{ backgroundColor:'#fff', borderRadius:16, padding:28, width:'90%', alignItems:'center' }}>
+            <Ionicons name="phone-portrait" size={48} color="#2563eb" style={{ marginBottom: 12 }} />
+            <Text style={{ fontSize:18, fontWeight:'bold', color:'#2563eb', marginBottom:8, textAlign:'center' }}>
+              Configuración de Apertura Automática
             </Text>
-            <Button title="Abrir configuración" onPress={openSettings} />
-            <Button title="Cerrar" onPress={() => setShowPermModal(false)} color="#64748b" />
+            <Text style={{ color:'#334155', textAlign:'center', marginBottom:16, lineHeight:22 }}>
+              Para que las alarmas abran la aplicación automáticamente cuando esté cerrada, necesitas configurar los siguientes permisos:
+            </Text>
+            
+            <View style={{ marginBottom: 20, width: '100%' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <Ionicons name="notifications" size={20} color="#059669" />
+                <Text style={{ marginLeft: 8, color: '#334155', flex: 1 }}>
+                  Notificaciones habilitadas
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <Ionicons name="phone-portrait" size={20} color="#059669" />
+                <Text style={{ marginLeft: 8, color: '#334155', flex: 1 }}>
+                  "Aparecer arriba de las apps"
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="battery-half" size={20} color="#059669" />
+                <Text style={{ marginLeft: 8, color: '#334155', flex: 1 }}>
+                  Optimización de batería desactivada
+                </Text>
+              </View>
+            </View>
+            
+            <Text style={{ color:'#64748b', textAlign:'center', marginBottom:20, fontSize:14 }}>
+              Estos permisos garantizan que nunca pierdas una alarma importante.
+            </Text>
+            
+            <Button title="Configurar Permisos" onPress={openSettings} />
+            <Button title="Configurar Más Tarde" onPress={() => setShowPermModal(false)} color="#64748b" />
           </View>
         </View>
       </Modal>

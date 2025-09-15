@@ -3,16 +3,13 @@ import { Alert } from 'react-native';
 import { 
   scheduleMedicationReminder, 
   scheduleAppointmentReminder, 
-  scheduleSnoozeMedication,
-  cancelMedicationNotifications,
-  cancelAppointmentNotifications,
   getScheduledNotifications,
   getNotificationStats,
-  cleanupOldNotifications,
   requestPermissions,
-  syncNotificationsWithBackend,
-  repairNotifications
+  initNotificationSystem
 } from '../lib/notifications';
+import { alarmErrorHandler } from '../lib/alarmErrorHandler';
+import { unifiedAlarmService } from '../lib/unifiedAlarmService';
 import { notificationService, ApiNotification, NotificationStats as ApiNotificationStats } from '../lib/notificationService';
 import { useCurrentUser } from '../store/useCurrentUser';
 import * as Notifications from 'expo-notifications';
@@ -31,7 +28,7 @@ export interface AlarmConfig {
   data?: any;
 }
 
-export function useAlarms() {
+export function useAlarms(navigationRef?: any) {
   const [alarms, setAlarms] = useState<any[]>([]);
   const [apiNotifications, setApiNotifications] = useState<ApiNotification[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -39,6 +36,8 @@ export function useAlarms() {
   const [loading, setLoading] = useState(false);
   const [apiLoading, setApiLoading] = useState(false);
   const { profile } = useCurrentUser();
+
+  // NavigationRef opcional: el sistema unificado ya maneja navegación en App.tsx
 
   // Cargar alarmas programadas (locales) con retry
   const loadAlarms = useCallback(async () => {
@@ -85,9 +84,9 @@ export function useAlarms() {
         console.log(`[useAlarms] Cargando notificaciones de la API (intento ${attempt + 1}/${maxRetries})`);
         
         const response = await notificationService.getNotifications(filters);
-        setApiNotifications(response.items || []);
+        setApiNotifications(response || []);
         
-        console.log(`[useAlarms] Notificaciones de API cargadas exitosamente: ${(response.items || []).length} items`);
+        console.log(`[useAlarms] Notificaciones de API cargadas exitosamente: ${(response || []).length} items`);
         return response;
       } catch (error) {
         console.error(`[useAlarms] Intento ${attempt + 1} falló cargando notificaciones de la API:`, error);
@@ -145,16 +144,31 @@ export function useAlarms() {
         throw new Error('Perfil de usuario no disponible');
       }
 
-      // Programar localmente
+      // Parsear la hora configurada
+      const { parseTimeString, nextDateAtHourMinute } = await import('../utils/alarmTime');
+      const timeData = parseTimeString(config.time);
+      if (!timeData) {
+        throw new Error(`Hora inválida: ${config.time}`);
+      }
+
+      // Calcular la próxima fecha con la hora exacta configurada
+      const scheduledDate = nextDateAtHourMinute(timeData.hour, timeData.minute, config.startDate);
+      console.log(`[useAlarms] Programando ${config.name} para: ${scheduledDate.toISOString()} (${config.time})`);
+      
       await scheduleMedicationReminder({
-        id: config.id,
-        name: config.name,
-        dosage: config.dosage,
-        time: config.time,
-        frequency: config.frequency || 'daily',
-        startDate: config.startDate,
-        endDate: config.endDate,
-        patientProfileId: profile.patientProfileId || profile.id,
+        title: `⏰ ${config.name}`,
+        body: `Es hora de tomar ${config.dosage || 'tu medicamento'}`,
+        date: scheduledDate,
+        data: {
+          type: 'MEDICATION',
+          kind: 'MED',
+          medicationId: config.id,
+          medicationName: config.name,
+          dosage: config.dosage,
+          patientProfileId: profile.patientProfileId || profile.id,
+          scheduledFor: scheduledDate.toISOString(),
+          time: config.time,
+        }
       });
 
       // Crear en la API también
@@ -196,14 +210,24 @@ export function useAlarms() {
         throw new Error('Perfil de usuario no disponible');
       }
 
-      // Programar localmente
+      // Calcular la fecha del recordatorio con los minutos especificados antes de la cita
+      const reminderDate = new Date(config.dateTime.getTime() - (config.reminderMinutes || 60) * 60 * 1000);
+      console.log(`[useAlarms] Programando cita ${config.title} para: ${reminderDate.toISOString()} (${config.reminderMinutes || 60} min antes)`);
+      
       await scheduleAppointmentReminder({
-        id: config.id,
-        title: config.title,
-        location: config.location,
-        dateTime: config.dateTime,
-        reminderMinutes: config.reminderMinutes || 60,
-        patientProfileId: profile.patientProfileId || profile.id,
+        title: `📅 ${config.title}`,
+        body: `Tu cita es en ${config.location ? `${config.location} - ` : ''}${config.dateTime.toLocaleString()}`,
+        date: reminderDate,
+        data: {
+          type: 'APPOINTMENT',
+          kind: 'APPOINTMENT',
+          appointmentId: config.id,
+          appointmentTitle: config.title,
+          location: config.location,
+          patientProfileId: profile.patientProfileId || profile.id,
+          scheduledFor: config.dateTime.toISOString(),
+          reminderMinutes: config.reminderMinutes || 60,
+        }
       });
 
       // Crear en la API también
@@ -243,12 +267,21 @@ export function useAlarms() {
         throw new Error('Perfil de usuario no disponible');
       }
 
-      const snoozeId = await scheduleSnoozeMedication({
-        id: config.id,
-        name: config.name,
-        dosage: config.dosage,
-        snoozeMinutes: config.snoozeMinutes || 10,
-        patientProfileId: profile.patientProfileId || profile.id,
+      // Programar alarma pospuesta usando el servicio unificado
+      const snoozeId = await unifiedAlarmService.scheduleAlarm({
+        id: `snooze_${config.id}_${Date.now()}`,
+        title: `🔔 Pospuesto: ${config.name}`,
+        body: `Alarma pospuesta ${config.snoozeMinutes || 10} minutos`,
+        data: {
+          type: 'MEDICATION',
+          kind: 'MED',
+          medicationId: config.id,
+          medicationName: config.name,
+          dosage: config.dosage,
+          snoozeMinutes: config.snoozeMinutes || 10,
+          patientProfileId: profile.patientProfileId || profile.id,
+        },
+        triggerDate: new Date(Date.now() + (config.snoozeMinutes || 10) * 60 * 1000)
       });
 
       // Recargar alarmas
@@ -265,7 +298,16 @@ export function useAlarms() {
   // Cancelar alarma de medicamento
   const cancelMedicationAlarm = useCallback(async (medicationId: string) => {
     try {
-      await cancelMedicationNotifications(medicationId);
+      // Cancelar alarmas de medicamento específico
+      const scheduledAlarms = await getScheduledNotifications();
+      const medicationAlarms = scheduledAlarms.filter(alarm => 
+        alarm.content.data?.medicationId === medicationId || 
+        alarm.content.data?.type === 'MEDICATION'
+      );
+      
+      for (const alarm of medicationAlarms) {
+        await unifiedAlarmService.cancelAlarm(alarm.identifier);
+      }
       await loadAlarms();
       return true;
     } catch (error) {
@@ -277,7 +319,16 @@ export function useAlarms() {
   // Cancelar alarma de cita
   const cancelAppointmentAlarm = useCallback(async (appointmentId: string) => {
     try {
-      await cancelAppointmentNotifications(appointmentId);
+      // Cancelar alarmas de cita específica
+      const scheduledAlarms = await getScheduledNotifications();
+      const appointmentAlarms = scheduledAlarms.filter(alarm => 
+        alarm.content.data?.appointmentId === appointmentId || 
+        alarm.content.data?.type === 'APPOINTMENT'
+      );
+      
+      for (const alarm of appointmentAlarms) {
+        await unifiedAlarmService.cancelAlarm(alarm.identifier);
+      }
       await loadAlarms();
       return true;
     } catch (error) {
@@ -325,7 +376,7 @@ export function useAlarms() {
   // Limpiar alarmas antiguas
   const cleanupAlarms = useCallback(async () => {
     try {
-      await cleanupOldNotifications();
+      // await cleanupOldNotifications(); // Función removida
       await loadAlarms();
       return true;
     } catch (error) {
@@ -483,13 +534,14 @@ export function useAlarms() {
       }
 
       // 2. Limpiar notificaciones corruptas
-      await cleanupOldNotifications();
+      // await cleanupOldNotifications(); // Función removida
 
       // 3. Sincronizar con almacenamiento
-      await syncNotificationsWithBackend();
+      // await syncNotificationsWithBackend(); // Función removida
 
       // 4. Reparar notificaciones corruptas
-      await repairNotifications();
+      // Reinicializar sistema de notificaciones
+      await initNotificationSystem();
 
       // 5. Sincronizar cola pendiente de la API
       await syncPendingQueue();
@@ -567,5 +619,31 @@ export function useAlarms() {
     isAlarmActive,
     checkAlarmSystemStatus,
     repairAlarmSystem,
+    
+    // Diagnóstico y pruebas
+    runAlarmTests: async () => {
+      try {
+        // Obtener estado del servicio unificado
+        const status = unifiedAlarmService.getStatus();
+        const scheduledAlarms = await unifiedAlarmService.getScheduledAlarms();
+        
+        return {
+          success: status.isInitialized,
+          results: {
+            isInitialized: status.isInitialized,
+            isAlarmActive: status.isAlarmActive,
+            appState: status.appState,
+            listenersCount: status.listenersCount,
+            scheduledAlarms: scheduledAlarms.length,
+            errorStats: alarmErrorHandler.getErrorStats()
+          }
+        };
+      } catch (error) {
+        console.error('[useAlarms] Error ejecutando pruebas:', error);
+        return { success: false, results: { error: error instanceof Error ? error.message : String(error) } };
+      }
+    },
+    getErrorStats: () => alarmErrorHandler.getErrorStats(),
+    clearErrorHistory: () => alarmErrorHandler.clearErrorHistory(),
   };
 }

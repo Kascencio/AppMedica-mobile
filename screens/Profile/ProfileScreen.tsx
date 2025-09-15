@@ -12,10 +12,28 @@ import { useInviteCodes } from '../../store/useInviteCodes';
 import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
 import { UserProfile } from '../../types';
+import { scheduleNotification } from '../../lib/notifications';
 
 import SyncStatus from '../../components/SyncStatus';
-// Módulos de pruebas de alarmas removidos
+import AlarmTestCenter from '../../components/AlarmTestCenter';
 
+// === Helpers de normalización ===
+const s = (v?: string | null) => {
+  const t = (v ?? '').trim();
+  return t === '' ? null : t;
+};
+const i = (v?: string | null) => {
+  const t = (v ?? '').trim();
+  if (t === '') return null;
+  const n = parseInt(t, 10);
+  return Number.isFinite(n) ? n : null;
+};
+const f = (v?: string | null) => {
+  const t = (v ?? '').trim();
+  if (t === '') return null;
+  const n = parseFloat(t);
+  return Number.isFinite(n) ? n : null;
+};
 
 export default function ProfileScreen() {
   console.log('[ProfileScreen] Componente montándose/re-renderizando...');
@@ -77,6 +95,33 @@ export default function ProfileScreen() {
     console.log('[ProfileScreen] Forzando recarga completa del perfil...');
     refreshProfile();
     setFormInitialized(false); // Resetear para que se vuelva a inicializar el formulario
+  };
+
+  const handleQuickAlarmTest = async () => {
+    try {
+      const id = `profile_test_${Date.now()}`;
+      const triggerTime = new Date(Date.now() + 5000);
+      await scheduleNotification({
+        id,
+        title: '🧪 Test de Alarma',
+        body: 'Se activará en 5 segundos',
+        data: {
+          type: 'MEDICATION',
+          kind: 'MED',
+          refId: 'profile_test',
+          medicationId: 'profile_test',
+          medicationName: 'Prueba rápida',
+          scheduledFor: triggerTime.toISOString(),
+          time: new Date().toLocaleTimeString(),
+          test: true,
+        },
+        seconds: 5,
+        channelId: 'medications'
+      });
+      Alert.alert('Alarma programada', 'Se activará en 5 segundos. Cierra la app para probar auto-apertura.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo programar la alarma de prueba');
+    }
   };
 
   // Sincronizar formulario cuando cambie el perfil (inicialización y actualizaciones)
@@ -149,26 +194,96 @@ export default function ProfileScreen() {
 
   const pickImage = async () => {
     try {
+      console.log('[ProfileScreen] 🖼️ Iniciando selección de imagen...');
+      
+      // Verificar permisos
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permisos requeridos', 'Necesitas conceder permisos para acceder a la galería');
+        return;
+      }
+      
       let result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.5,
+        quality: 0.8, // Aumentar calidad para mejor resultado
       });
       
-      if (!result.canceled && result.assets && result.assets[0].uri) {
-        console.log('[ProfileScreen] Imagen seleccionada:', result.assets[0].uri);
-        
-        // Subir la imagen al servidor (o guardar localmente por ahora)
-        const { uploadPhoto } = useCurrentUser.getState();
-        const uploadedUrl = await uploadPhoto(result.assets[0].uri);
-        
-        console.log('[ProfileScreen] URL de imagen subida:', uploadedUrl);
-        setForm({ ...form, photoUrl: uploadedUrl });
+      if (result.canceled) {
+        console.log('[ProfileScreen] Selección de imagen cancelada por el usuario');
+        return;
       }
-    } catch (error) {
-      console.error('[ProfileScreen] Error al seleccionar/subir imagen:', error);
-      Alert.alert('Error', 'No se pudo procesar la imagen seleccionada');
+      
+      if (!result.assets || !result.assets[0]) {
+        console.log('[ProfileScreen] No se seleccionó ninguna imagen');
+        return;
+      }
+      
+      const asset = result.assets[0];
+      console.log('[ProfileScreen] ✅ Imagen seleccionada:', asset.uri);
+      console.log('[ProfileScreen] 📏 Dimensiones:', asset.width, 'x', asset.height);
+      console.log('[ProfileScreen] 💾 Tamaño:', asset.fileSize ? `${(asset.fileSize / 1024).toFixed(1)}KB` : 'Desconocido');
+      
+      // Verificar que tenemos perfil
+      const currentProfile = useCurrentUser.getState().profile;
+      if (!currentProfile?.id) {
+        console.error('[ProfileScreen] ❌ No hay perfil cargado para subir imagen');
+        Alert.alert('Error', 'No se pudo cargar tu perfil. Por favor, recarga la aplicación.');
+        return;
+      }
+      
+      console.log('[ProfileScreen] 🚀 Subiendo imagen para perfil ID:', currentProfile.id);
+      
+      // Mostrar indicador de carga
+      Alert.alert('Subiendo imagen', 'Por favor espera mientras se sube tu imagen...', [], { cancelable: false });
+      
+      // Subir la imagen al servidor
+      const { uploadPhoto } = useCurrentUser.getState();
+      const uploadedUrl = await uploadPhoto(asset.uri);
+      
+      console.log('[ProfileScreen] ✅ URL de imagen subida exitosamente:', uploadedUrl);
+      
+      // Actualizar el formulario con la nueva URL
+      setForm({ ...form, photoUrl: uploadedUrl });
+      
+      // Verificar si es una imagen de respaldo
+      const isFallbackImage = uploadedUrl.startsWith('file://') || 
+                             uploadedUrl.startsWith('data:image/') || 
+                             uploadedUrl.includes('_profile_photo_');
+      
+      if (isFallbackImage) {
+        Alert.alert(
+          'Imagen guardada localmente', 
+          'Tu foto se ha guardado en tu dispositivo. Se sincronizará con el servidor cuando sea posible.'
+        );
+      } else {
+        Alert.alert('Éxito', 'Tu foto de perfil se ha actualizado correctamente');
+      }
+      
+    } catch (error: any) {
+      console.error('[ProfileScreen] ❌ Error al seleccionar/subir imagen:', error);
+      
+      let errorMessage = 'No se pudo procesar la imagen seleccionada';
+      
+      // Mensajes de error más específicos
+      if (error.message?.includes('No autenticado')) {
+        errorMessage = 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.';
+      } else if (error.message?.includes('Perfil no encontrado')) {
+        errorMessage = 'No se pudo encontrar tu perfil. Por favor, recarga la aplicación.';
+      } else if (error.message?.includes('tipo de archivo no soportado')) {
+        errorMessage = 'El tipo de archivo no es compatible. Usa JPG, PNG, WebP o GIF.';
+      } else if (error.message?.includes('demasiado grande')) {
+        errorMessage = 'La imagen es demasiado grande. El tamaño máximo es 10MB.';
+      } else if (error.message?.includes('no existe')) {
+        errorMessage = 'El archivo seleccionado no existe o no se puede acceder.';
+      } else if (error.message?.includes('ImageKit')) {
+        errorMessage = 'Error al subir la imagen al servidor. Inténtalo de nuevo.';
+      } else if (error.message) {
+        errorMessage = `Error: ${error.message}`;
+      }
+      
+      Alert.alert('Error al subir imagen', errorMessage);
     }
   };
 
@@ -176,143 +291,137 @@ export default function ProfileScreen() {
     setForm(prevForm => ({ ...prevForm, [key]: value }));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     console.log('[ProfileScreen] ========== INICIO handleSave ==========');
     setError(null);
     setSaveError(null);
 
-    // --- 1. VALIDACIÓN MEJORADA ---
+    // --- Validaciones mínimas ---
     if (!form.name.trim()) {
-      return setError('El nombre es obligatorio.');
+      setError('El nombre es obligatorio.');
+      return false;
     }
     if (!form.birthDate.trim()) {
-      return setError('La fecha de nacimiento es obligatoria.');
+      setError('La fecha de nacimiento es obligatoria.');
+      return false;
     }
     if (!form.gender.trim()) {
-      return setError('El género es obligatorio.');
-    }
-    
-    // Validar formato de fecha
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate) || isNaN(new Date(form.birthDate).getTime())) {
-      return setError('La fecha de nacimiento no es válida (formato YYYY-MM-DD).');
-    }
-    if (new Date(form.birthDate) > new Date()) {
-      return setError('La fecha de nacimiento no puede ser en el futuro.');
+      setError('El género es obligatorio.');
+      return false;
     }
 
-    // Validar campos numéricos
-    if (form.weight && form.weight.trim() !== '') {
-      const weight = parseFloat(form.weight);
-      if (isNaN(weight) || !isFinite(weight) || weight < 0) {
-        return setError('El peso debe ser un número válido mayor o igual a 0.');
+    // Validación de fecha YYYY-MM-DD
+    const isISODate = /^\d{4}-\d{2}-\d{2}$/.test(form.birthDate.trim());
+    if (!isISODate) {
+      setError('La fecha de nacimiento no es válida (formato YYYY-MM-DD).');
+      return false;
+    }
+    if (new Date(form.birthDate) > new Date()) {
+      setError('La fecha de nacimiento no puede ser en el futuro.');
+      return false;
+    }
+
+    // Validaciones numéricas (opcionales)
+    if (form.weight?.trim()) {
+      const n = parseFloat(form.weight);
+      if (!Number.isFinite(n) || n < 0) {
+        setError('El peso debe ser un número válido mayor o igual a 0.');
+        return false;
       }
     }
-    if (form.height && form.height.trim() !== '') {
-      const height = parseInt(form.height, 10);
-      if (isNaN(height) || !isFinite(height) || height < 0) {
-        return setError('La altura debe ser un número entero válido mayor o igual a 0.');
+    if (form.height?.trim()) {
+      const n = parseInt(form.height, 10);
+      if (!Number.isFinite(n) || n < 0) {
+        setError('La estatura debe ser un número válido mayor o igual a 0.');
+        return false;
       }
     }
 
     setSaving(true);
     try {
-      // --- 2. PREPARACIÓN Y LIMPIEZA DE DATOS MEJORADA ---
-      const dataToSave: Record<string, any> = {};
+      // --- Normaliza y arma SIEMPRE el objeto completo ---
+      const dataToSave: Partial<UserProfile> = {
+        // Identidad básica
+        name: s(form.name) || undefined,
+        gender: s(form.gender) || undefined,
 
-      // Mapear y limpiar cada campo del formulario
-      Object.entries(form).forEach(([key, value]) => {
-        const K = key as keyof typeof form;
-        let finalValue: any = value;
+        // Fechas (compat)
+        birthDate: form.birthDate,           // preferente
+        dateOfBirth: form.birthDate,         // compat si el backend/local lo usa
 
-        // Limpiar strings
-        if (typeof finalValue === 'string') {
-          finalValue = finalValue.trim();
-        }
+        // Biométricos
+        weight: f(form.weight) || undefined,
+        height: i(form.height) || undefined,
+        bloodType: s(form.bloodType) || undefined,
 
-        // Solo convertir a undefined si es realmente vacío (no para campos obligatorios)
-        if (finalValue === '' && !['name', 'birthDate', 'gender'].includes(K)) {
-          finalValue = undefined;
-        }
+        // Contacto de emergencia
+        emergencyContactName: s(form.emergencyContactName) || undefined,
+        emergencyContactRelation: s(form.emergencyContactRelation) || undefined,
+        emergencyContactPhone: s(form.emergencyContactPhone) || undefined,
 
-        // Manejo mejorado de campos numéricos
-        if (K === 'weight' || K === 'height') {
-          if (finalValue && finalValue !== '') {
-            const num = K === 'weight' ? parseFloat(finalValue) : parseInt(finalValue, 10);
-            if (!isNaN(num) && isFinite(num) && num >= 0) { // Permitir 0
-              finalValue = num;
-            } else {
-              finalValue = undefined;
-            }
-          } else {
-            finalValue = undefined;
-          }
-        }
-        
-        // Asignar el valor limpio si no es undefined
-        if (finalValue !== undefined) {
-          dataToSave[K] = finalValue;
-        }
-      });
-      
-      console.log('[ProfileScreen] Datos a guardar (limpios y filtrados):', dataToSave);
+        // Salud
+        allergies: s(form.allergies) || undefined,
+        chronicDiseases: s(form.chronicDiseases) || undefined,
+        currentConditions: s(form.currentConditions) || undefined,
+        reactions: s(form.reactions) || undefined,
 
-      // --- 3. VALIDACIÓN ADICIONAL ---
-      if (Object.keys(dataToSave).length === 0) {
-        throw new Error('No hay datos válidos para guardar');
+        // Médico tratante / referencia
+        doctorName: s(form.doctorName) || undefined,
+        doctorContact: s(form.doctorContact) || undefined,
+        hospitalReference: s(form.hospitalReference) || undefined,
+
+        // Foto
+        photoUrl: s(form.photoUrl) || undefined,
+      };
+
+      // 1) Actualiza store + sincroniza (usa tu flujo existente)
+      await useCurrentUser.getState().updateProfile(dataToSave);
+
+      // 2) **Persistencia local COMPLETA** (incluyendo nulls para limpiar campos)
+      const { saveProfileLocally } = useCurrentUser.getState();
+      const current = useCurrentUser.getState().profile;
+      if (current) {
+        const mergedLocal: UserProfile = {
+          ...current,               // lo que ya hubiera
+          ...dataToSave,            // lo nuevo (incluye undefined para "borrar")
+          updatedAt: new Date().toISOString(),
+        };
+        await saveProfileLocally(mergedLocal);
       }
 
-      // --- 4. GUARDADO CON VALIDACIÓN DE PERSISTENCIA ---
-      await updateProfile(dataToSave);
-      
-      // Verificar que el perfil se guardó correctamente
-      const updatedProfile = useCurrentUser.getState().profile;
-      if (!updatedProfile) {
-        throw new Error('Error: El perfil no se actualizó correctamente');
-      }
-
-      // Verificar que los datos se guardaron localmente
-      try {
-        const localProfile = await useCurrentUser.getState().loadProfileLocally();
-        if (!localProfile) {
-          console.warn('[ProfileScreen] Advertencia: No se pudo verificar el guardado local');
-        } else {
-          console.log('[ProfileScreen] Guardado local verificado correctamente');
-        }
-      } catch (localError) {
-        console.error('[ProfileScreen] Error al verificar guardado local:', localError);
-      }
-      
-      console.log('[ProfileScreen] Perfil guardado exitosamente');
-      setLastSavedProfile(updatedProfile);
-      setRetryCount(0); // Resetear contador en caso de éxito
+      setRetryCount(0);
       Alert.alert('Éxito', 'Perfil actualizado correctamente.');
-
+      return true;
     } catch (e: any) {
       console.error('[ProfileScreen] Error al guardar:', e);
-      const errorMessage = e.message || 'Ocurrió un error al guardar el perfil.';
-      setError(errorMessage);
-      setSaveError(errorMessage);
-      Alert.alert('Error', errorMessage);
+      const msg = e?.message ?? 'Ocurrió un error al guardar el perfil.';
+      setError(msg);
+      setSaveError(msg);
+      // Re-lanzamos para que el wrapper de reintentos lo capte
+      throw e;
     } finally {
       setSaving(false);
     }
   };
 
-  // Sistema de reintentos para operaciones de guardado
   const handleSaveWithRetry = async () => {
     const maxRetries = 3;
-    
+
     try {
-      await handleSave();
-    } catch (error) {
-      if (retryCount < maxRetries) {
-        setRetryCount(prev => prev + 1);
-        console.log(`[ProfileScreen] Reintentando guardado (${retryCount + 1}/${maxRetries})`);
-        setTimeout(() => handleSaveWithRetry(), 1000 * (retryCount + 1)); // Backoff exponencial
-      } else {
-        setSaveError('No se pudo guardar el perfil después de varios intentos');
-        Alert.alert('Error', 'No se pudo guardar el perfil después de varios intentos. Por favor, inténtalo de nuevo.');
-      }
+      const ok = await handleSave(); // ahora lanza error si falla
+      if (ok) return;
+    } catch (e) {
+      // continúa a la lógica de reintento
+    }
+
+    if (retryCount < maxRetries) {
+      const next = retryCount + 1;
+      setRetryCount(next);
+      console.log(`[ProfileScreen] Reintentando guardado (${next}/${maxRetries})`);
+      setTimeout(() => handleSaveWithRetry(), 1000 * next); // backoff simple
+    } else {
+      setSaveError('No se pudo guardar el perfil después de varios intentos');
+      Alert.alert('Error', 'No se pudo guardar el perfil después de varios intentos. Por favor, inténtalo de nuevo.');
     }
   };
 
@@ -463,7 +572,22 @@ export default function ProfileScreen() {
         {/* Estado de sincronización */}
         <SyncStatus />
         
-        {/* Módulos de pruebas de alarmas removidos */}
+        {/* Alarm Tester rápido */}
+        <View style={{ width: '100%', marginTop: 12, marginBottom: 12 }}>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 }}>Alarm Tester</Text>
+          <TouchableOpacity 
+            onPress={handleQuickAlarmTest}
+            style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+            accessibilityLabel="Programar alarma de prueba"
+            accessibilityRole="button"
+          >
+            <Ionicons name="alarm" size={20} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Programar alarma de prueba (5s)</Text>
+          </TouchableOpacity>
+        </View>
+        
+        {/* Centro de Tests de Alarmas */}
+        <AlarmTestCenter />
         
         {/* Mensaje explicativo sobre notificaciones y alarmas */}
         <View style={styles.tipBoxModern}>
@@ -626,6 +750,9 @@ export default function ProfileScreen() {
              hasUnsavedChanges() ? 'Guardar cambios' : 'Guardar'}
           </Text>
         </TouchableOpacity>
+      
+        
+        
         {/* Solo mostrar botón de código de invitación para pacientes */}
         {profile?.role === 'PATIENT' && (
           <>

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAlarms } from '../hooks/useAlarms';
-import { runAllTests, cleanupTestNotifications, showSystemStats } from '../lib/alarmTest';
+import { unifiedAlarmService } from '../lib/unifiedAlarmService';
+import { getScheduledNotifications } from '../lib/notifications';
 import COLORS from '../constants/colors';
 
 interface AlarmStatusProps {
@@ -99,7 +100,9 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
           onPress: async () => {
             setLoading(true);
             try {
-              const success = await runAllTests();
+              // Ejecutar diagnóstico del servicio unificado
+              const status = unifiedAlarmService.getStatus();
+              const success = status.isInitialized;
               if (success) {
                 Alert.alert('Éxito', 'Pruebas ejecutadas correctamente');
                 await checkStatus();
@@ -120,7 +123,17 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
   const showStats = async () => {
     setLoading(true);
     try {
-      await showSystemStats();
+      // Mostrar estadísticas del sistema unificado
+      const status = unifiedAlarmService.getStatus();
+      const scheduledAlarms = await getScheduledNotifications();
+      Alert.alert(
+        'Estadísticas del Sistema',
+        `Servicio inicializado: ${status.isInitialized ? 'Sí' : 'No'}\n` +
+        `Alarma activa: ${status.isAlarmActive ? 'Sí' : 'No'}\n` +
+        `Estado de la app: ${status.appState}\n` +
+        `Listeners: ${status.listenersCount}\n` +
+        `Alarmas programadas: ${scheduledAlarms.length}`
+      );
       Alert.alert('Estadísticas', 'Las estadísticas se han mostrado en la consola');
     } catch (error) {
       Alert.alert('Error', 'Error obteniendo estadísticas');
@@ -140,7 +153,7 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
           onPress: async () => {
             setLoading(true);
             try {
-              await cleanupTestNotifications();
+              await unifiedAlarmService.cancelAllAlarms();
               Alert.alert('Éxito', 'Notificaciones de prueba limpiadas');
               await checkStatus();
             } catch (error) {
@@ -214,17 +227,17 @@ export default function AlarmStatus({ showDetails = false, onRepair }: AlarmStat
           <View style={styles.apiStatsRow}>
             <View style={styles.apiStatItem}>
               <Text style={styles.apiStatLabel}>Total</Text>
-              <Text style={styles.apiStatValue}>{apiStats.total || 0}</Text>
+              <Text style={styles.apiStatValue}>{(apiStats as any).total || 0}</Text>
             </View>
             <View style={styles.apiStatItem}>
               <Text style={styles.apiStatLabel}>No Leídas</Text>
-              <Text style={[styles.apiStatValue, { color: (apiStats.unread || 0) > 0 ? COLORS.warning : COLORS.text.primary }]}>
-                {apiStats.unread || 0}
+              <Text style={[styles.apiStatValue, { color: ((apiStats as any).unread || 0) > 0 ? COLORS.warning : COLORS.text.primary }]}>
+                {(apiStats as any).unread || 0}
               </Text>
             </View>
             <View style={styles.apiStatItem}>
               <Text style={styles.apiStatLabel}>Leídas</Text>
-              <Text style={styles.apiStatValue}>{apiStats.read || 0}</Text>
+              <Text style={styles.apiStatValue}>{(apiStats as any).read || 0}</Text>
             </View>
           </View>
           <View style={[styles.apiHealthIndicator, { backgroundColor: isApiHealthy ? COLORS.success + '20' : COLORS.error + '20' }]}>

@@ -25,7 +25,7 @@ class MainApplication : Application(), ReactApplication {
             val packages = PackageList(this).packages
             // Packages that cannot be autolinked yet can be added manually here, for example:
             // packages.add(MyReactNativePackage())
-            packages.add(CustomAlarmPackage())
+            // packages.add(CustomAlarmPackage()) // CustomAlarmPackage eliminado - usando Expo Notifications
             return packages
           }
 

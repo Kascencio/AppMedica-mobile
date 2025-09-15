@@ -8,7 +8,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppointments } from '../../store/useAppointments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useState } from 'react';
-import { scheduleNotification, cancelNotification, cancelAppointmentNotifications } from '../../lib/notifications';
+import { cancelNotification, cancelAppointmentNotifications } from '../../lib/notifications';
 import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
@@ -31,7 +31,7 @@ const appointmentSchema = z.object({
 type AppointmentForm = z.infer<typeof appointmentSchema>;
 
 export default function AppointmentsScreen() {
-  const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment } = useAppointments();
+  const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment, scheduleAppointmentAlarms, cancelAppointmentAlarms, rescheduleAppointmentAlarms } = useAppointments();
   const { profile } = useCurrentUser();
   const { selectedPatientId, patients } = useCaregiver();
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
@@ -170,153 +170,33 @@ export default function AppointmentsScreen() {
         const newAppt = appointments.find(a => a.title === data.doctorName && a.dateTime === date.toISOString());
         apptId = newAppt?.id;
       }
-      // Programar notificaciones según la configuración
+      // Programar alarmas para la cita usando el nuevo sistema
       if (apptId) {
-        if (frequencyType === 'daily') {
-          for (const t of selectedTimes) {
-            const now = new Date();
-            let firstDate = new Date(now);
-            firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-            if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 1);
-            if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            const nowLog = new Date();
-            console.log('[CITA] Hora actual:', nowLog.toISOString());
-            console.log('[CITA] Programando notificación para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Recordatorio de cita: ${data.doctorName}`,
-              body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-            });
-            const id = await scheduleNotification({
-              title: `Recordatorio de cita: ${data.doctorName}`,
-              body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: t.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.DAILY,
-                hour: t.getHours(), 
-                minute: t.getMinutes() 
-              },
-            });
-            // Guardar tanto la notificación inicial como la repetitiva
-            const firstNotificationId = `appt_${apptId}_first_${t.getHours()}_${t.getMinutes()}`;
-            notificationIdsRef.current[firstNotificationId] = id;
-            notificationIdsRef.current[`${apptId}_${t.getHours()}_${t.getMinutes()}`] = id;
+        const appointment = {
+          id: apptId,
+          title: data.doctorName,
+          dateTime: date.toISOString(),
+          location: data.location,
+          description: data.notes,
+          patientProfileId: profile?.patientProfileId || profile?.id,
+        };
+
+        const alarmConfig = {
+          reminderMinutes: 60, // Recordatorio 1 hora antes por defecto
+        };
+
+        try {
+          if (editingAppointment) {
+            // Reprogramar alarmas existentes
+            await rescheduleAppointmentAlarms(appointment, alarmConfig);
+          } else {
+            // Programar nuevas alarmas
+            await scheduleAppointmentAlarms(appointment, alarmConfig);
           }
-        } else if (frequencyType === 'daysOfWeek') {
-          for (const t of selectedTimes) {
-            for (const day of daysOfWeek) {
-              const now = new Date();
-              let firstDate = new Date(now);
-              firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
-              firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-              if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
-              if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-              console.log('Programando notificación CITA para:', firstDate.toISOString());
-              await scheduleNotification({
-                title: `Recordatorio de cita: ${data.doctorName}`,
-                body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-              });
-              const id = await scheduleNotification({
-                title: `Recordatorio de cita: ${data.doctorName}`,
-                body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: t.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-                trigger: { 
-                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-                  weekday: day + 1, 
-                  hour: t.getHours(), 
-                  minute: t.getMinutes() 
-                },
-              });
-              // Guardar tanto la notificación inicial como la repetitiva
-              const firstNotificationId = `appt_${apptId}_first_${day}_${t.getHours()}_${t.getMinutes()}`;
-              notificationIdsRef.current[firstNotificationId] = id;
-              notificationIdsRef.current[`${apptId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
-            }
-          }
-        } else if (frequencyType === 'everyXHours') {
-          if (selectedTimes.length > 0) {
-            const base = selectedTimes[0];
-            const interval = parseInt(everyXHours) || 8;
-            let firstDate = new Date();
-            firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
-            if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
-            if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            console.log('Programando notificación CITA para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Recordatorio de cita: ${data.doctorName}`,
-              body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-            });
-            const id = await scheduleNotification({
-              title: `Recordatorio de cita: ${data.doctorName}`,
-              body: `Ubicación: ${data.location}`,
-              data: {
-                kind: 'APPOINTMENT',
-                refId: apptId,
-                scheduledFor: base.toISOString(),
-                name: data.doctorName,
-                dosage: '',
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60,
-                repeats: true
-              },
-            });
-            notificationIdsRef.current[`${apptId}_every${interval}h`] = id;
-          }
+          console.log('[AppointmentsScreen] Alarmas programadas exitosamente');
+        } catch (alarmError) {
+          console.error('[AppointmentsScreen] Error programando alarmas:', alarmError);
+          Alert.alert('Advertencia', 'La cita se guardó pero hubo un problema programando las alarmas. Puedes configurarlas manualmente después.');
         }
       }
       reset();
@@ -333,9 +213,16 @@ export default function AppointmentsScreen() {
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Eliminar', style: 'destructive', onPress: async () => {
-            await deleteAppointment(id);
-            // Cancelar todas las notificaciones de esta cita
-            await cancelAppointmentNotifications(id);
+            try {
+              // Cancelar alarmas primero
+              await cancelAppointmentAlarms(id);
+              // Eliminar cita
+              await deleteAppointment(id);
+              console.log('[AppointmentsScreen] Cita eliminada y alarmas canceladas');
+            } catch (error) {
+              console.error('[AppointmentsScreen] Error eliminando cita:', error);
+              Alert.alert('Error', 'Hubo un problema eliminando la cita. Inténtalo de nuevo.');
+            }
           }
         },
       ]

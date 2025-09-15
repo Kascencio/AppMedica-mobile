@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMedications } from '../../store/useMedications';
-import { scheduleNotification, cancelNotification, scheduleMedicationReminder } from '../../lib/notifications';
+import { cancelNotification } from '../../lib/notifications';
+import { validateMedication } from '../../lib/medicationValidator';
 import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,7 +19,7 @@ import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
 export default function MedicationsScreen() {
-  const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication } = useMedications();
+  const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication, scheduleMedicationAlarms, cancelMedicationAlarms, rescheduleMedicationAlarms } = useMedications();
   const { profile } = useCurrentUser();
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
   const isTablet = dimensions.width > 768;
@@ -135,52 +136,17 @@ export default function MedicationsScreen() {
     setDaysOfWeek([]);
     setEveryXHours('8');
   };
-  const scheduleMedNotification = async (med: any) => {
-    if (!med.startDate) return;
-    const date = new Date(med.startDate);
-    const id = await scheduleNotification({
-      title: `Toma tu medicamento: ${med.name}`,
-      body: `Dosis: ${med.dosage}`,
-      data: { 
-        type: 'MEDICATION',
-        kind: 'MED',
-        medId: med.id,
-        medicationId: med.id,
-        medicationName: med.name,
-        dosage: med.dosage,
-        instructions: med.notes,
-        scheduledFor: date.toISOString(),
-        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: date.getHours(),
-        minute: date.getMinutes(),
-      },
-    });
-    notificationIdsRef.current[med.id] = id;
-  };
-  const cancelMedNotification = async (medId: string) => {
-    // Buscar todas las notificaciones relacionadas con este medicamento
-    const keysToDelete: string[] = [];
-    
-    for (const [key, notificationId] of Object.entries(notificationIdsRef.current)) {
-      if (key.includes(medId) || key.startsWith(`med_${medId}`)) {
-        await cancelNotification(notificationId);
-        keysToDelete.push(key);
-      }
-    }
-    
-    // Eliminar las claves del objeto
-    keysToDelete.forEach(key => {
-      delete notificationIdsRef.current[key];
-    });
-    
-    console.log(`[MedicationsScreen] Canceladas ${keysToDelete.length} notificaciones para medicamento ${medId}`);
-  };
+  // Las funciones de notificaciones se manejan ahora a través del nuevo sistema de alarmas
   // onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
     try {
+      // Validar datos usando el validador
+      const validation = validateMedication(data);
+      if (!validation.isValid) {
+        Alert.alert('Error de validación', validation.errors.join('\n'));
+        return;
+      }
+      
       let medId = editingMed?.id;
       if (editingMed) {
         await updateMedication(editingMed.id, {
@@ -193,7 +159,6 @@ export default function MedicationsScreen() {
           notes: data.notes,
         });
         medId = editingMed.id;
-        await cancelMedNotification(medId);
       } else {
         await createMedication({
           name: data.name,
@@ -208,91 +173,39 @@ export default function MedicationsScreen() {
         const newMed = medications.find(m => m.name === data.name && m.startDate === data.startDate?.toISOString());
         medId = newMed?.id;
       }
-      // Programar notificaciones según la configuración
+      // Programar alarmas según la configuración usando el nuevo sistema
       if (medId) {
-        if (frequencyType === 'daily') {
-          for (const t of selectedTimes) {
-            // Convertir Date a string HH:MM para scheduleMedicationReminder (formato 24 horas)
-            const timeString = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            
-            // Usar la función centralizada de programación de medicamentos
-            await scheduleMedicationReminder({
-              id: medId,
-              name: data.name,
-              dosage: data.dosage,
-              time: timeString,
-              frequency: 'daily',
-              startDate: data.startDate,
-              endDate: data.endDate,
-              patientProfileId: profile?.patientProfileId || profile?.id,
-            });
-            
-            console.log(`[MEDICAMENTO] Alarma programada: ${data.name} a las ${timeString}`);
+        const medication = {
+          id: medId,
+          name: data.name,
+          dosage: data.dosage,
+          type: data.type,
+          frequency: data.frequency,
+          startDate: data.startDate?.toISOString(),
+          endDate: data.endDate?.toISOString(),
+          notes: data.notes,
+          time: selectedTimes.length > 0 ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '09:00',
+          patientProfileId: profile?.patientProfileId || profile?.id,
+        };
+
+        const alarmConfig = {
+          frequency: (frequencyType === 'daily' ? 'daily' : frequencyType === 'daysOfWeek' ? 'weekly' : 'interval') as 'daily' | 'weekly' | 'interval',
+          daysOfWeek: frequencyType === 'daysOfWeek' ? daysOfWeek : undefined,
+          intervalHours: frequencyType === 'everyXHours' ? parseInt(everyXHours) : undefined,
+        };
+
+        try {
+          if (editingMed) {
+            // Reprogramar alarmas existentes
+            await rescheduleMedicationAlarms(medication, alarmConfig);
+          } else {
+            // Programar nuevas alarmas
+            await scheduleMedicationAlarms(medication, alarmConfig);
           }
-        } else if (frequencyType === 'daysOfWeek') {
-          for (const t of selectedTimes) {
-            const timeString = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            
-            // Para días específicos, programar notificaciones individuales para cada día
-            for (const day of daysOfWeek) {
-              const now = new Date();
-              let firstDate = new Date(now);
-              firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
-              firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-              if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
-              if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-              
-              await scheduleNotification({
-                title: `💊 ${data.name}`,
-                body: `Es hora de tomar ${data.dosage}`,
-                data: {
-                  type: 'MEDICATION',
-                  kind: 'MED',
-                  refId: medId,
-                  scheduledFor: firstDate.toISOString(),
-                  name: data.name,
-                  dosage: data.dosage,
-                  instructions: data.notes,
-                  time: timeString,
-                  patientProfileId: profile?.patientProfileId || profile?.id,
-                },
-                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-                identifier: `med_${medId}_${day}_${t.getHours()}_${t.getMinutes()}`,
-              });
-            }
-          }
-        } else if (frequencyType === 'everyXHours') {
-          if (selectedTimes.length > 0) {
-            const base = selectedTimes[0];
-            const timeString = base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            const interval = parseInt(everyXHours) || 8;
-            
-            // Programar notificaciones cada X horas
-            let firstDate = new Date();
-            firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
-            if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
-            if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            
-            await scheduleNotification({
-              title: `💊 ${data.name}`,
-              body: `Es hora de tomar ${data.dosage}`,
-              data: {
-                type: 'MEDICATION',
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: timeString,
-                patientProfileId: profile?.patientProfileId || profile?.id,
-              },
-              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-              identifier: `med_${medId}_interval_${interval}h`,
-            });
-            
-            console.log(`[MEDICAMENTO] Alarma programada cada ${interval} horas: ${data.name} a las ${timeString}`);
-          }
+          console.log('[MedicationsScreen] Alarmas programadas exitosamente');
+        } catch (alarmError) {
+          console.error('[MedicationsScreen] Error programando alarmas:', alarmError);
+          Alert.alert('Advertencia', 'El medicamento se guardó pero hubo un problema programando las alarmas. Puedes configurarlas manualmente después.');
         }
       }
       reset();
@@ -300,7 +213,7 @@ export default function MedicationsScreen() {
       setEditingMed(null);
     } catch (e) {}
   };
-  // onDelete para cancelar notificaciones
+  // onDelete para cancelar alarmas y eliminar medicamento
   const onDelete = async (id: string) => {
     Alert.alert(
       'Eliminar medicamento',
@@ -308,8 +221,16 @@ export default function MedicationsScreen() {
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Eliminar', style: 'destructive', onPress: async () => {
-            await deleteMedication(id);
-            await cancelMedNotification(id);
+            try {
+              // Cancelar alarmas primero
+              await cancelMedicationAlarms(id);
+              // Eliminar medicamento
+              await deleteMedication(id);
+              console.log('[MedicationsScreen] Medicamento eliminado y alarmas canceladas');
+            } catch (error) {
+              console.error('[MedicationsScreen] Error eliminando medicamento:', error);
+              Alert.alert('Error', 'Hubo un problema eliminando el medicamento. Inténtalo de nuevo.');
+            }
           }
         },
       ]

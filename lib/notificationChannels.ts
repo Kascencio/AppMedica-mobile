@@ -25,12 +25,12 @@ export async function setupNotificationChannels() {
       enableLights: true,
     });
 
-    // Canal para medicamentos - ALTA PRIORIDAD
+    // Canal para medicamentos - MÁXIMA PRIORIDAD PARA APERTURA AUTOMÁTICA
     await Notifications.setNotificationChannelAsync('medications', {
       name: 'Medicamentos',
-      description: 'Recordatorios de medicamentos',
+      description: 'Recordatorios de medicamentos - Apertura automática habilitada',
       importance: Notifications.AndroidImportance.MAX, // Máxima prioridad
-      vibrationPattern: [0, 500, 250, 500, 250, 500],
+      vibrationPattern: [0, 500, 250, 500, 250, 500, 250, 500], // Patrón más largo
       lightColor: '#059669',
       sound: 'alarm.mp3', // Usar sonido personalizado
       enableVibrate: true,
@@ -39,23 +39,31 @@ export async function setupNotificationChannels() {
       showBadge: true, // Mostrar badge
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
       showOnLockScreen: true, // Mostrar en pantalla de bloqueo
-      // Configuración adicional para mejor apertura automática
-      enableBypassDnd: true, // Pasar el modo No Molestar
-      enableLights: true, // Luces LED
-      enableVibrate: true, // Vibración
       // Configuraciones críticas para apertura automática
       canBypassDnd: true, // Pasar el modo No Molestar
       canShowBadge: true, // Mostrar badge
       enableSound: true, // Habilitar sonido
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+      // Configuraciones adicionales para mejor apertura automática
+      enableBypassDnd: true, // Pasar el modo No Molestar
+      enableLights: true, // Luces LED
+      enableVibrate: true, // Vibración
+      // Configuraciones específicas para apertura automática cuando app está minimizada
+      fullScreenIntent: true, // Permitir pantalla completa
+      autoCancel: false, // No cancelar automáticamente
+      ongoing: true, // Notificación persistente
+      showTimestamp: true, // Mostrar timestamp
+      // Configuraciones de visibilidad
+      visibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      // Configuraciones de prioridad
+      priority: Notifications.AndroidNotificationPriority.MAX,
     });
 
-    // Canal para citas - ALTA PRIORIDAD
+    // Canal para citas - MÁXIMA PRIORIDAD PARA APERTURA AUTOMÁTICA
     await Notifications.setNotificationChannelAsync('appointments', {
       name: 'Citas',
-      description: 'Recordatorios de citas médicas',
+      description: 'Recordatorios de citas médicas - Apertura automática habilitada',
       importance: Notifications.AndroidImportance.MAX, // Máxima prioridad
-      vibrationPattern: [0, 250, 500, 250, 500, 250],
+      vibrationPattern: [0, 250, 500, 250, 500, 250, 500, 250], // Patrón más largo
       lightColor: '#2563eb',
       sound: 'alarm.mp3', // Usar sonido personalizado
       enableVibrate: true,
@@ -64,15 +72,23 @@ export async function setupNotificationChannels() {
       showBadge: true, // Mostrar badge
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
       showOnLockScreen: true, // Mostrar en pantalla de bloqueo
-      // Configuración adicional para mejor apertura automática
-      enableBypassDnd: true, // Pasar el modo No Molestar
-      enableLights: true, // Luces LED
-      enableVibrate: true, // Vibración
       // Configuraciones críticas para apertura automática
       canBypassDnd: true, // Pasar el modo No Molestar
       canShowBadge: true, // Mostrar badge
       enableSound: true, // Habilitar sonido
-      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC, // Visible en pantalla de bloqueo
+      // Configuraciones adicionales para mejor apertura automática
+      enableBypassDnd: true, // Pasar el modo No Molestar
+      enableLights: true, // Luces LED
+      enableVibrate: true, // Vibración
+      // Configuraciones específicas para apertura automática cuando app está minimizada
+      fullScreenIntent: true, // Permitir pantalla completa
+      autoCancel: false, // No cancelar automáticamente
+      ongoing: true, // Notificación persistente
+      showTimestamp: true, // Mostrar timestamp
+      // Configuraciones de visibilidad
+      visibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      // Configuraciones de prioridad
+      priority: Notifications.AndroidNotificationPriority.MAX,
     });
 
     console.log('[Channels] ✅ Canales configurados correctamente');

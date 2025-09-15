@@ -8,13 +8,14 @@ import OfflineIndicator from '../../components/OfflineIndicator';
 import AlarmScheduler from '../../components/AlarmScheduler';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
+import { validateTreatment } from '../../lib/treatmentValidator';
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
 const isLandscape = width > height;
 
 export default function TreatmentsScreen() {
-  const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment } = useTreatments();
+  const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment, scheduleTreatmentAlarms, cancelTreatmentAlarms, rescheduleTreatmentAlarms } = useTreatments();
   const { profile } = useCurrentUser();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState<any>(null);
@@ -73,34 +74,78 @@ export default function TreatmentsScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.name.trim()) {
-      Alert.alert('Error', 'El nombre del tratamiento es obligatorio');
-      return;
-    }
-
     try {
       const treatmentData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
         startDate: formData.startDate || new Date().toISOString(),
-        endDate: formData.endDate || null,
+        endDate: formData.endDate || undefined,
         frequency: formData.frequency,
         notes: formData.notes.trim(),
         patientProfileId: profile?.patientProfileId || profile?.id
       };
 
+      // Validar datos antes de enviar
+      const validation = validateTreatment(treatmentData);
+      if (!validation.isValid) {
+        Alert.alert('Error de validación', validation.errors.join('\n'));
+        return;
+      }
+
+      let treatmentId = editingTreatment?.id;
+      
       if (editingTreatment) {
         await updateTreatment(editingTreatment.id, {
           ...treatmentData,
           endDate: treatmentData.endDate || undefined
         });
+        treatmentId = editingTreatment.id;
         Alert.alert('Éxito', 'Tratamiento actualizado correctamente');
       } else {
         await createTreatment({
           ...treatmentData,
           endDate: treatmentData.endDate || undefined
         });
+        // Obtener el ID del tratamiento recién creado
+        await new Promise(res => setTimeout(res, 500));
+        const newTreatment = treatments.find(t => t.title === treatmentData.name && t.startDate === treatmentData.startDate);
+        treatmentId = newTreatment?.id;
         Alert.alert('Éxito', 'Tratamiento creado correctamente');
+      }
+
+      // Programar alarmas para el tratamiento
+      if (treatmentId) {
+        const treatment = {
+          id: treatmentId,
+          title: treatmentData.name,
+          description: treatmentData.description,
+          startDate: treatmentData.startDate,
+          endDate: treatmentData.endDate,
+          frequency: treatmentData.frequency,
+          notes: treatmentData.notes,
+          patientProfileId: treatmentData.patientProfileId,
+        };
+
+        const alarmConfig = {
+          frequency: (frequencyType === 'daily' ? 'daily' : frequencyType === 'daysOfWeek' ? 'weekly' : 'interval') as 'daily' | 'weekly' | 'interval',
+          daysOfWeek: frequencyType === 'daysOfWeek' ? daysOfWeek : undefined,
+          intervalHours: frequencyType === 'everyXHours' ? parseInt(everyXHours) : undefined,
+          time: selectedTimes.length > 0 ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '09:00',
+        };
+
+        try {
+          if (editingTreatment) {
+            // Reprogramar alarmas existentes
+            await rescheduleTreatmentAlarms(treatment, alarmConfig);
+          } else {
+            // Programar nuevas alarmas
+            await scheduleTreatmentAlarms(treatment, alarmConfig);
+          }
+          console.log('[TreatmentsScreen] Alarmas programadas exitosamente');
+        } catch (alarmError) {
+          console.error('[TreatmentsScreen] Error programando alarmas:', alarmError);
+          Alert.alert('Advertencia', 'El tratamiento se guardó pero hubo un problema programando las alarmas. Puedes configurarlas manualmente después.');
+        }
       }
 
       setModalVisible(false);
@@ -130,9 +175,14 @@ export default function TreatmentsScreen() {
           style: 'destructive', 
           onPress: async () => {
             try {
+              // Cancelar alarmas primero
+              await cancelTreatmentAlarms(id);
+              // Eliminar tratamiento
               await deleteTreatment(id);
               Alert.alert('Éxito', 'Tratamiento eliminado correctamente');
+              console.log('[TreatmentsScreen] Tratamiento eliminado y alarmas canceladas');
             } catch (error) {
+              console.error('[TreatmentsScreen] Error eliminando tratamiento:', error);
               Alert.alert('Error', 'No se pudo eliminar el tratamiento');
             }
           }

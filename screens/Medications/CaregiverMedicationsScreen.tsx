@@ -7,6 +7,7 @@ import * as z from 'zod';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useMedications } from '../../store/useMedications';
 import { scheduleNotification, cancelNotification, scheduleMedicationReminder } from '../../lib/notifications';
+import { validateMedication } from '../../lib/medicationValidator';
 import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -171,6 +172,13 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   // Modifica onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
     try {
+      // Validar datos usando el validador
+      const validation = validateMedication(data);
+      if (!validation.isValid) {
+        Alert.alert('Error de validación', validation.errors.join('\n'));
+        return;
+      }
+      
       let medId = editingMed?.id;
       if (editingMed) {
         await updateMedication(editingMed.id, {
