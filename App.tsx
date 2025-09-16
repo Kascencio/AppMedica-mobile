@@ -37,6 +37,26 @@ export default function App() {
   const [notiPerm, setNotiPerm] = React.useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [showPermModal, setShowPermModal] = React.useState(false);
 
+  // Helper: navegar a AlarmScreen desde data sin deep link
+  const navigateToAlarmFromData = React.useCallback((data: any) => {
+    if (!data) return;
+    const kind = data.kind || (data.type === 'MEDICATION' ? 'MED' : data.type === 'APPOINTMENT' ? 'APPOINTMENT' : data.type === 'TREATMENT' ? 'TREATMENT' : 'ALARM');
+    const refId = data.medicationId || data.appointmentId || data.refId || 'unknown';
+    const params = {
+      kind,
+      refId,
+      scheduledFor: data.scheduledFor,
+      name: data.medicationName || data.appointmentTitle || data.name,
+      dosage: data.dosage || '',
+      instructions: data.instructions || data.notes || '',
+      time: data.time,
+      location: data.location || ''
+    } as any;
+    if (navigationRef.isReady()) {
+      navigationRef.navigate('AlarmScreen' as never, params as never);
+    }
+  }, [navigationRef]);
+
   // Solicitar permisos y mostrar modal si no están concedidos
   useEffect(() => {
     loadToken();
@@ -170,6 +190,13 @@ export default function App() {
           LinkingExpo.openURL(url);
           return; // Procesado, salir
         }
+        // Fallback si no hay deepLink
+        const data = initialNotification.request.content.data as any;
+        const looksLikeAlarm = data?.kind === 'MED' || data?.kind === 'APPOINTMENT' || data?.type === 'MEDICATION' || data?.type === 'APPOINTMENT';
+        if (looksLikeAlarm) {
+          navigateToAlarmFromData(data);
+          return;
+        }
       }
 
       // Prioridad 2: Respuesta a notificación que abrió la app (toque del usuario)
@@ -178,7 +205,12 @@ export default function App() {
         url = (lastResponse.notification.request.content.data as any)?.deepLink;
         if (url) {
           LinkingExpo.openURL(url);
+          return;
         }
+        // Fallback si no hay deepLink
+        const data = lastResponse.notification.request.content.data as any;
+        const looksLikeAlarm2 = data?.kind === 'MED' || data?.kind === 'APPOINTMENT' || data?.type === 'MEDICATION' || data?.type === 'APPOINTMENT';
+        if (looksLikeAlarm2) navigateToAlarmFromData(data);
       }
     };
 
@@ -186,9 +218,13 @@ export default function App() {
 
     // Listener para toques en notificaciones con la app en segundo plano
     const sub = Notifications.addNotificationResponseReceivedListener((res) => {
-      const url = (res.notification.request.content.data as any)?.deepLink as string | undefined;
+      const data = res.notification.request.content.data as any;
+      const url = data?.deepLink as string | undefined;
       if (url) {
         LinkingExpo.openURL(url);
+      } else {
+        const looksLikeAlarm = data?.kind === 'MED' || data?.kind === 'APPOINTMENT' || data?.type === 'MEDICATION' || data?.type === 'APPOINTMENT';
+        if (looksLikeAlarm) navigateToAlarmFromData(data);
       }
     });
     return () => sub.remove();
@@ -197,12 +233,11 @@ export default function App() {
   // Foreground: sonar y abrir UI (single source of truth)
   useEffect(() => {
     const subFg = Notifications.addNotificationReceivedListener((n) => {
-      if (AppState.currentState === 'active') {
-        const data = n.request.content.data as any;
-        // Evitar doble disparo si viene de deep link inmediato
-        if (data?.isAlarm) {
-          unifiedAlarmService.onNotificationReceivedInForeground?.(data);
-        }
+      if (AppState.currentState !== 'active') return;
+      const data = n.request.content.data as any;
+      const looksLikeAlarm = data?.isAlarm === true || data?.kind === 'MED' || data?.kind === 'APPOINTMENT' || data?.type === 'MEDICATION' || data?.type === 'APPOINTMENT';
+      if (looksLikeAlarm) {
+        unifiedAlarmService.onNotificationReceivedInForeground?.(data);
       }
     });
     return () => subFg.remove();

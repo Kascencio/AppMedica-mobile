@@ -272,6 +272,11 @@ export const useNotes = create<NotesState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear modificaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden modificar notas en modo offline.');
+      }
+
       if (!profile?.id) {
         throw new Error('No hay perfil de paciente disponible');
       }
@@ -288,8 +293,8 @@ export const useNotes = create<NotesState>((set, get) => ({
         ...noteToUpdate,
         ...data,
         updatedAt: new Date().toISOString(),
-        isOffline: true,
-        syncStatus: 'pending',
+        isOffline: false,
+        syncStatus: 'synced',
         createdAt: noteToUpdate.createdAt || new Date().toISOString(),
         patientProfileId: profile.id,
       };
@@ -303,7 +308,7 @@ export const useNotes = create<NotesState>((set, get) => ({
       set({ notes: updatedNotes });
       
       // Si estamos online, intentar sincronizar con el servidor
-      if (isOnline && token) {
+      if (token) {
         try {
           console.log('[useNotes] Sincronizando actualización con servidor...');
           
@@ -337,19 +342,12 @@ export const useNotes = create<NotesState>((set, get) => ({
             );
             set({ notes: finalNotes });
             
-          } else {
-            console.log('[useNotes] Error actualizando en servidor, agregando a cola de sincronización');
-            await syncService.addToSyncQueue('UPDATE', 'notes', { id, ...data });
           }
           
         } catch (syncError: any) {
           console.log('[useNotes] Error sincronizando actualización:', syncError);
-          await syncService.addToSyncQueue('UPDATE', 'notes', { id, ...data });
+          throw new Error('Error sincronizando nota con el servidor');
         }
-      } else {
-        // Si estamos offline, agregar a cola de sincronización
-        console.log('[useNotes] Modo offline, agregando a cola de sincronización');
-        await syncService.addToSyncQueue('UPDATE', 'notes', { id, ...data });
       }
       
     } catch (err: any) {
@@ -371,6 +369,11 @@ export const useNotes = create<NotesState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear eliminaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden eliminar notas en modo offline.');
+      }
+
       if (!profile?.id) {
         throw new Error('No hay perfil de paciente disponible');
       }
@@ -384,7 +387,7 @@ export const useNotes = create<NotesState>((set, get) => ({
       set({ notes: filteredNotes });
       
       // Si estamos online, intentar sincronizar con el servidor
-      if (isOnline && token) {
+      if (token) {
         try {
           console.log('[useNotes] Sincronizando eliminación con servidor...');
           
@@ -395,21 +398,16 @@ export const useNotes = create<NotesState>((set, get) => ({
             headers: { Authorization: `Bearer ${token}` },
           });
           
-          if (!res.ok) {
-            console.log('[useNotes] Error eliminando en servidor, agregando a cola de sincronización');
-            await syncService.addToSyncQueue('DELETE', 'notes', { id });
-          } else {
+          if (res.ok) {
             console.log('[useNotes] Nota eliminada exitosamente en servidor');
+          } else {
+            throw new Error('Error eliminando nota en el servidor');
           }
           
         } catch (syncError: any) {
           console.log('[useNotes] Error sincronizando eliminación:', syncError);
-          await syncService.addToSyncQueue('DELETE', 'notes', { id });
+          throw new Error('Error sincronizando con el servidor');
         }
-      } else {
-        // Si estamos offline, agregar a cola de sincronización
-        console.log('[useNotes] Modo offline, agregando a cola de sincronización');
-        await syncService.addToSyncQueue('DELETE', 'notes', { id });
       }
       
     } catch (err: any) {

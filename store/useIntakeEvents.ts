@@ -177,9 +177,34 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
         throw new Error('No hay perfil de paciente disponible');
       }
       
-      // Bloquear registro en modo offline: solo permitir cuando hay red real
+      // Permitir registrar en offline: guardar local y encolar para sync
       if (!isOnline) {
-        throw new Error('Sin conexión a internet. El registro de tomas solo está disponible online.');
+        const localEvent: LocalIntakeEvent = {
+          id: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          kind: data.kind,
+          refId: data.refId,
+          scheduledFor: data.scheduledFor,
+          action: data.action,
+          at: new Date().toISOString(),
+          meta: (data as any).meta ? JSON.stringify((data as any).meta) : undefined,
+          patientProfileId: profile.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isOffline: true,
+          syncStatus: 'pending'
+        };
+
+        await localDB.saveIntakeEvent(localEvent);
+        await (await import('../lib/syncService')).syncService.addToSyncQueue('CREATE', 'intakeEvents', {
+          ...data,
+          patientProfileId: profile.id,
+          at: localEvent.at
+        });
+
+        // Actualizar lista local
+        const current = get().events;
+        set({ events: [localEvent, ...current] });
+        return;
       }
 
       // Si estamos online, intentar sincronizar con el servidor
@@ -290,12 +315,58 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
               console.log('[useIntakeEvents] Error con notificación alternativa:', notificationError.message);
             }
             
-            // Continuar con el guardado local
+            // Si tampoco es posible, guardar local y encolar
+            const fallbackLocal: LocalIntakeEvent = {
+              id: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+              kind: data.kind,
+              refId: data.refId,
+              scheduledFor: data.scheduledFor,
+              action: data.action,
+              at: new Date().toISOString(),
+              meta: (data as any).meta ? JSON.stringify((data as any).meta) : undefined,
+              patientProfileId: profile.id,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              isOffline: true,
+              syncStatus: 'pending'
+            };
+            await localDB.saveIntakeEvent(fallbackLocal);
+            await (await import('../lib/syncService')).syncService.addToSyncQueue('CREATE', 'intakeEvents', {
+              ...data,
+              patientProfileId: profile.id,
+              at: fallbackLocal.at
+            });
+            const current = get().events;
+            set({ events: [fallbackLocal, ...current] });
+            return;
           } else {
             // Si falla la API, continuar con guardado local
             const errorData = await res.json().catch(() => ({}));
             console.log('[useIntakeEvents] Error de API:', errorData.message || 'Error desconocido');
-            console.log('[useIntakeEvents] Continuando con guardado local...');
+            console.log('[useIntakeEvents] Continuando con guardado local y encolando para sincronización...');
+            const fallbackLocal: LocalIntakeEvent = {
+              id: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+              kind: data.kind,
+              refId: data.refId,
+              scheduledFor: data.scheduledFor,
+              action: data.action,
+              at: new Date().toISOString(),
+              meta: (data as any).meta ? JSON.stringify((data as any).meta) : undefined,
+              patientProfileId: profile.id,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              isOffline: true,
+              syncStatus: 'pending'
+            };
+            await localDB.saveIntakeEvent(fallbackLocal);
+            await (await import('../lib/syncService')).syncService.addToSyncQueue('CREATE', 'intakeEvents', {
+              ...data,
+              patientProfileId: profile.id,
+              at: fallbackLocal.at
+            });
+            const current = get().events;
+            set({ events: [fallbackLocal, ...current] });
+            return;
           }
           
         } catch (serverError: any) {
@@ -304,8 +375,30 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
         }
       }
       
-      // Si llegó aquí es porque estamos online pero la sincronización falló
-      throw new Error('No se pudo registrar el evento en el servidor. Intente nuevamente.');
+      // Si llegó aquí es porque estamos online pero la sincronización falló: guardar local y encolar
+      const fallbackLocal: LocalIntakeEvent = {
+        id: `local_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        kind: data.kind,
+        refId: data.refId,
+        scheduledFor: data.scheduledFor,
+        action: data.action,
+        at: new Date().toISOString(),
+        meta: (data as any).meta ? JSON.stringify((data as any).meta) : undefined,
+        patientProfileId: profile.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isOffline: true,
+        syncStatus: 'pending'
+      };
+      await localDB.saveIntakeEvent(fallbackLocal);
+      await (await import('../lib/syncService')).syncService.addToSyncQueue('CREATE', 'intakeEvents', {
+        ...data,
+        patientProfileId: profile.id,
+        at: fallbackLocal.at
+      });
+      const current = get().events;
+      set({ events: [fallbackLocal, ...current] });
+      return;
       
     } catch (err: any) {
       console.log('[useIntakeEvents] Error en registerEvent:', err.message);

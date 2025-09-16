@@ -219,10 +219,25 @@ export const useNotifications = create<NotificationsState>((set, get) => ({
       set({ error: null });
       
       const token = useAuth.getState().userToken;
-      if (!token) throw new Error('No autenticado');
+      const { syncService } = await import('../lib/syncService');
+      const online = await syncService.isOnline();
+      if (!token && online) throw new Error('No autenticado');
 
       const url = buildApiUrl(API_CONFIG.ENDPOINTS.NOTIFICATIONS.READ, { id });
       
+      // Si offline: actualizar local y encolar
+      if (!online) {
+        const currentNotifications = get().notifications;
+        const updatedNotifications = currentNotifications.map(notification =>
+          notification.id === id 
+            ? { ...notification, status: NOTIFICATION_STATUSES.READ, readAt: new Date().toISOString() }
+            : notification
+        );
+        set({ notifications: updatedNotifications });
+        await (await import('../lib/syncService')).syncService.addToSyncQueue('UPDATE', 'notifications', { id, operation: 'READ' });
+        return true;
+      }
+
       const response = await fetch(url, {
         method: 'PATCH',
         headers: {
@@ -259,10 +274,25 @@ export const useNotifications = create<NotificationsState>((set, get) => ({
       set({ error: null });
       
       const token = useAuth.getState().userToken;
-      if (!token) throw new Error('No autenticado');
+      const { syncService } = await import('../lib/syncService');
+      const online = await syncService.isOnline();
+      if (!token && online) throw new Error('No autenticado');
 
       const url = buildApiUrl(API_CONFIG.ENDPOINTS.NOTIFICATIONS.ARCHIVE, { id });
       
+      // Si offline: actualizar local y encolar
+      if (!online) {
+        const currentNotifications = get().notifications;
+        const updatedNotifications = currentNotifications.map(notification =>
+          notification.id === id 
+            ? { ...notification, status: NOTIFICATION_STATUSES.ARCHIVED }
+            : notification
+        );
+        set({ notifications: updatedNotifications });
+        await (await import('../lib/syncService')).syncService.addToSyncQueue('UPDATE', 'notifications', { id, operation: 'ARCHIVE' });
+        return true;
+      }
+
       const response = await fetch(url, {
         method: 'PATCH',
         headers: {

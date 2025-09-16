@@ -377,6 +377,11 @@ export const useMedications = create<MedicationsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear modificaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden modificar medicamentos en modo offline.');
+      }
+
       if (!profile?.id) throw new Error('No hay perfil de paciente');
       
       // Actualizar localmente primero
@@ -410,7 +415,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
       set({ medications: updatedMedications });
       
       // Si estamos online, intentar sincronizar
-      if (isOnline && token) {
+      if (token) {
         try {
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}/${id}`), {
             method: 'PUT',
@@ -433,9 +438,6 @@ export const useMedications = create<MedicationsState>((set, get) => ({
         } catch (syncError) {
           await syncService.addToSyncQueue('UPDATE', 'medications', { id, ...data });
         }
-      } else {
-        // Si estamos offline, agregar a cola de sincronización
-        await syncService.addToSyncQueue('UPDATE', 'medications', { id, ...data });
       }
     } catch (err: any) {
       set({ error: err.message });
@@ -451,6 +453,11 @@ export const useMedications = create<MedicationsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear eliminaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden eliminar medicamentos en modo offline.');
+      }
+
       if (!profile?.id) throw new Error('No hay perfil de paciente');
       
       // Eliminar localmente primero
@@ -462,7 +469,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
       await localDB.deleteMedication(id);
       
       // Si estamos online, intentar sincronizar
-      if (isOnline && token) {
+      if (token) {
         try {
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}/${id}?patientProfileId=${profile.id}`), {
             method: 'DELETE',
@@ -475,8 +482,6 @@ export const useMedications = create<MedicationsState>((set, get) => ({
         } catch (syncError) {
           await syncService.addToSyncQueue('DELETE', 'medications', { id });
         }
-      } else {
-        await syncService.addToSyncQueue('DELETE', 'medications', { id });
       }
     } catch (err: any) {
       set({ error: err.message });

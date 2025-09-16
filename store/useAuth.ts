@@ -95,6 +95,14 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
+      // Parar sincronización y cerrar listeners
+      try {
+        const { syncService } = await import('../lib/syncService');
+        await syncService.cleanup();
+      } catch (e) {
+        console.error('[useAuth] Error limpiando syncService en logout:', e);
+      }
+
       // Borrar token y perfil en AsyncStorage
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userProfile');

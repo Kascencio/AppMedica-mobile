@@ -139,6 +139,9 @@ class SyncService {
       case 'intakeEvents':
         await this.syncIntakeEvent(item, headers);
         break;
+      case 'notifications':
+        await this.syncNotification(item, headers);
+        break;
       default:
         throw new Error(`Entidad no soportada: ${item.entity}`);
     }
@@ -279,7 +282,40 @@ class SyncService {
     }
   }
 
-  async addToSyncQueue(action: 'CREATE' | 'UPDATE' | 'DELETE', entity: 'medications' | 'appointments' | 'treatments' | 'notes' | 'intakeEvents', data: any): Promise<void> {
+  private async syncNotification(item: SyncQueue, headers: any): Promise<void> {
+    // soportar marcar como leída/archivar/eliminar como UPDATEs o DELETEs
+    const base = buildApiUrl(API_CONFIG.ENDPOINTS.NOTIFICATIONS.BASE);
+    const byId = (id: string) => buildApiUrl(API_CONFIG.ENDPOINTS.NOTIFICATIONS.BY_ID, { id });
+    const read = (id: string) => buildApiUrl(API_CONFIG.ENDPOINTS.NOTIFICATIONS.READ, { id });
+    const archive = (id: string) => buildApiUrl(API_CONFIG.ENDPOINTS.NOTIFICATIONS.ARCHIVE, { id });
+
+    switch (item.action) {
+      case 'UPDATE': {
+        const { id, operation, data } = item.data || {};
+        if (!id) return;
+        if (operation === 'READ') {
+          await fetch(read(id), { method: 'PATCH', headers });
+        } else if (operation === 'ARCHIVE') {
+          await fetch(archive(id), { method: 'PATCH', headers });
+        } else {
+          await fetch(byId(id), { method: 'PATCH', headers, body: JSON.stringify(data || {}) });
+        }
+        break;
+      }
+      case 'DELETE': {
+        const { id } = item.data || {};
+        if (!id) return;
+        await fetch(byId(id), { method: 'DELETE', headers });
+        break;
+      }
+      case 'CREATE': {
+        await fetch(base, { method: 'POST', headers, body: JSON.stringify(item.data) });
+        break;
+      }
+    }
+  }
+
+  async addToSyncQueue(action: 'CREATE' | 'UPDATE' | 'DELETE', entity: 'medications' | 'appointments' | 'treatments' | 'notes' | 'intakeEvents' | 'notifications', data: any): Promise<void> {
     const syncItem: SyncQueue = {
       id: `sync_${Date.now()}_${Math.random()}`,
       action,

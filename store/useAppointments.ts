@@ -346,6 +346,11 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear modificaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden modificar citas en modo offline.');
+      }
+
       if (!patientId) throw new Error('No hay perfil de paciente');
       
       // Actualizar localmente primero
@@ -379,7 +384,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       set({ appointments: updatedAppointments });
       
       // Si estamos online, intentar sincronizar
-      if (isOnline && token) {
+      if (token) {
         try {
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}/${id}`), {
             method: 'PUT',
@@ -402,9 +407,6 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         } catch (syncError) {
           await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...data });
         }
-      } else {
-        // Si estamos offline, agregar a cola de sincronización
-        await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...data });
       }
     } catch (err: any) {
       set({ error: err.message });
@@ -421,6 +423,11 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear eliminaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden eliminar citas en modo offline.');
+      }
+
       if (!patientId) throw new Error('No hay perfil de paciente');
       
       // Eliminar localmente primero
@@ -432,7 +439,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       await localDB.deleteAppointment(id);
       
       // Si estamos online, intentar sincronizar
-      if (isOnline && token) {
+      if (token) {
         try {
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}/${id}?patientProfileId=${patientId}`), {
             method: 'DELETE',
@@ -445,8 +452,6 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         } catch (syncError) {
           await syncService.addToSyncQueue('DELETE', 'appointments', { id });
         }
-      } else {
-        await syncService.addToSyncQueue('DELETE', 'appointments', { id });
       }
     } catch (err: any) {
       set({ error: err.message });

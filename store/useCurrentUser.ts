@@ -702,6 +702,9 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       await get().saveProfileLocally(finalProfile);
 
       console.log('[useCurrentUser] Sincronización de perfil exitosa.');
+      try {
+        await AsyncStorage.setItem('lastProfileSync', new Date().toISOString());
+      } catch {}
       return true;
     } catch (err: any) {
       console.error('[useCurrentUser] Error en syncProfileUpdate:', err.message);

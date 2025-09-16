@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { checkNetworkConnectivity } from '../lib/network';
 
 export default function SyncStatus() {
   const [lastSync, setLastSync] = useState<string | null>(null);
@@ -13,12 +14,22 @@ export default function SyncStatus() {
 
   const loadSyncStatus = async () => {
     try {
+      // Verificar conectividad real primero
+      const online = await checkNetworkConnectivity();
       const lastSyncTime = await AsyncStorage.getItem('lastProfileSync');
-      if (lastSyncTime) {
-        setLastSync(lastSyncTime);
+
+      if (online) {
+        // Si hay conectividad, no mostrar "local" aunque no haya timestamp aún
+        if (lastSyncTime) setLastSync(lastSyncTime);
         setSyncStatus('synced');
       } else {
-        setSyncStatus('local');
+        // Sin conectividad: mostrar estado local solo si no hay última sync
+        if (lastSyncTime) {
+          setLastSync(lastSyncTime);
+          setSyncStatus('synced');
+        } else {
+          setSyncStatus('local');
+        }
       }
     } catch (error) {
       setSyncStatus('error');

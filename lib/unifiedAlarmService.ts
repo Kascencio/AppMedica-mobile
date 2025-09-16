@@ -3,7 +3,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform, AppState, Alert } from 'react-native';
 import * as Linking from 'expo-linking';
 import { ensureAlarmChannel } from './notificationChannels';
-import { displayFullScreenAlarm } from './androidFullScreen';
+import { displayFullScreenAlarm, scheduleFullScreenAlarm } from './androidFullScreen';
 import { AlarmAudioManager, alarmAudioManager } from './alarmAudioManager';
 import { alarmErrorHandler, AlarmErrorCodes, handleAlarmError } from './alarmErrorHandler';
 
@@ -148,16 +148,17 @@ export class UnifiedAlarmService {
         }),
       };
 
-      // Android Pro: usar Notifee para full-screen SOLO si es realmente inmediato (<= 1.5s)
-      // y no es un test (para evitar disparos inmediatos al programar pruebas)
+      // Android: programar apertura full-screen con Notifee siempre que sea posible
       if (Platform.OS === 'android') {
-        const now = Date.now();
-        const ts = triggerDate.getTime();
-        const msUntil = ts - now;
-        const isTest = !!(data && (data as any).test);
-        if (!isTest && msUntil <= 1500) {
-          // disparo inmediato con full-screen
-          await displayFullScreenAlarm({ title, body, deepLink });
+        try {
+          await scheduleFullScreenAlarm({ id, title, body, deepLink, date: triggerDate });
+        } catch (e) {
+          // fallback: si es muy inmediato, usar displayFullScreenAlarm
+          const now = Date.now();
+          const msUntil = triggerDate.getTime() - now;
+          if (msUntil <= 1500) {
+            await displayFullScreenAlarm({ title, body, deepLink });
+          }
         }
       }
 
@@ -215,7 +216,7 @@ export class UnifiedAlarmService {
       }, 120000);
       
       // Navegar a AlarmScreen
-      this.navigateToAlarmScreen(data);
+      await this.navigateToAlarmScreen(data);
       
       // Mostrar alerta del sistema como respaldo usando System Alert Window
       setTimeout(async () => {
@@ -243,7 +244,7 @@ export class UnifiedAlarmService {
   /**
    * Navegar a AlarmScreen
    */
-  private navigateToAlarmScreen(data: any): void {
+  private async navigateToAlarmScreen(data: any): Promise<void> {
     try {
       const typeSlug = ((): 'medication' | 'appointment' | 'treatment' | 'alarm' => {
         const t = (data?.type || data?.kind || '').toString().toUpperCase();
@@ -256,9 +257,13 @@ export class UnifiedAlarmService {
       const url = data?.deepLink || `recuerdamed://alarm/${typeSlug}/${bizId}`;
 
       if (!this.navigationRef || !this.navigationRef.isReady()) {
-        console.log('[UnifiedAlarmService] Navegación no lista, abriendo deep link');
-        Linking.openURL(url);
-        return;
+        console.log('[UnifiedAlarmService] Navegación no lista, esperando disponibilidad...');
+        const ready = await this.waitForNavigationReady(3500);
+        if (!ready) {
+          console.log('[UnifiedAlarmService] Navegación aún no lista, abriendo deep link');
+          Linking.openURL(url);
+          return;
+        }
       }
 
       // Si la navegación está lista, navegar por nombre de pantalla
@@ -284,7 +289,7 @@ export class UnifiedAlarmService {
   public async onNotificationReceivedInForeground(data?: any): Promise<void> {
     try {
       await this.audioManager.startAlarm();
-      this.navigateToAlarmScreen(data || {});
+      await this.navigateToAlarmScreen(data || {});
     } catch (error) {
       handleAlarmError(error, 'onNotificationReceivedInForeground');
     }
@@ -639,6 +644,24 @@ export class UnifiedAlarmService {
       appState: this.appState,
       listenersCount: this.notificationListeners.length,
     };
+  }
+
+  /**
+   * Esperar a que la navegación esté lista antes de navegar
+   */
+  private async waitForNavigationReady(timeoutMs: number = 3000): Promise<boolean> {
+    try {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (this.navigationRef && this.navigationRef.isReady && this.navigationRef.isReady()) {
+          return true;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return false;
+    } catch {
+      return false;
+    }
   }
 }
 

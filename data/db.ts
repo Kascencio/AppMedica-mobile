@@ -108,7 +108,7 @@ export interface LocalProfile {
 export interface SyncQueue {
   id: string;
   action: 'CREATE' | 'UPDATE' | 'DELETE';
-  entity: 'medications' | 'appointments' | 'treatments' | 'notes' | 'intakeEvents' | 'profile';
+  entity: 'medications' | 'appointments' | 'treatments' | 'notes' | 'intakeEvents' | 'profile' | 'notifications';
   data: any;
   createdAt: string;
   retryCount: number;

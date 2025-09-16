@@ -390,6 +390,11 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear modificaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden modificar tratamientos en modo offline.');
+      }
+
       if (!profile?.id) throw new Error('No hay perfil de paciente');
       
       // Actualizar localmente primero
@@ -423,7 +428,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       set({ treatments: updatedTreatments });
       
       // Si estamos online, intentar sincronizar
-      if (isOnline && token) {
+      if (token) {
         try {
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${id}`), {
             method: 'PUT',
@@ -446,9 +451,6 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         } catch (syncError) {
           await syncService.addToSyncQueue('UPDATE', 'treatments', { id, ...data });
         }
-      } else {
-        // Si estamos offline, agregar a cola de sincronización
-        await syncService.addToSyncQueue('UPDATE', 'treatments', { id, ...data });
       }
     } catch (err: any) {
       set({ error: err.message });
@@ -464,6 +466,11 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Bloquear eliminaciones en modo offline
+      if (!isOnline) {
+        throw new Error('No hay conexión a internet. No se pueden eliminar tratamientos en modo offline.');
+      }
+
       if (!profile?.id) throw new Error('No hay perfil de paciente');
       
       // Eliminar localmente primero
@@ -475,7 +482,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       await localDB.deleteTreatment(id);
       
       // Si estamos online, intentar sincronizar
-      if (isOnline && token) {
+      if (token) {
         try {
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${id}?patientProfileId=${profile.id}`), {
             method: 'DELETE',
@@ -488,8 +495,6 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         } catch (syncError) {
           await syncService.addToSyncQueue('DELETE', 'treatments', { id });
         }
-      } else {
-        await syncService.addToSyncQueue('DELETE', 'treatments', { id });
       }
     } catch (err: any) {
       set({ error: err.message });
