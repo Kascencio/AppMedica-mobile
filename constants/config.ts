@@ -38,6 +38,7 @@ export const API_CONFIG = {
     PERMISSIONS: {
       BASE: '/permissions',
       CAREGIVER: '/permissions/caregiver',
+      BY_PATIENT: '/permissions/by-patient/:patientId',
       BY_ID: '/permissions/:id',
     },
     MEDICATIONS: {

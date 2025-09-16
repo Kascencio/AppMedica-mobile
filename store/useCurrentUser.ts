@@ -933,6 +933,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         console.log('[useCurrentUser] ⚠️ Imagen guardada como respaldo (ImageKit no disponible)');
       }
       
+      // Retornar URL de servidor si existe; si no, retornar local/base64 sin marcar error
       return result.url!;
 
     } catch (error) {

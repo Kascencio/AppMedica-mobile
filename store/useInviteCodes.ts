@@ -113,9 +113,11 @@ export const useInviteCodes = create<InviteCodesState>((set, get) => ({
         throw new Error('El código de invitación es requerido');
       }
 
-      // Validar formato del código (8 caracteres alfanuméricos)
+      // Aceptar códigos con o sin guion y normalizar a XXXX-XXXX
+      const raw = code.trim().toUpperCase();
+      const normalized = raw.includes('-') ? raw : `${raw.slice(0,4)}-${raw.slice(4,8)}`;
       const codeRegex = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
-      if (!codeRegex.test(code.trim())) {
+      if (!codeRegex.test(normalized)) {
         throw new Error('Formato de código inválido. Debe ser XXXX-XXXX');
       }
 
@@ -129,7 +131,7 @@ export const useInviteCodes = create<InviteCodesState>((set, get) => ({
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          inviteCode: code.trim(),
+          code: normalized,
         }),
       });
 

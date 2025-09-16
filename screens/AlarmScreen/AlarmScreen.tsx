@@ -70,6 +70,14 @@ export default function AlarmScreen(props: any) {
     })();
   }, []);
 
+  // Iniciar efectos de alarma al presentar la pantalla (cubre lanzamientos headless)
+  useEffect(() => {
+    if (ready && params) {
+      console.log('[AlarmScreen] Pantalla lista, iniciando efectos de alarma...');
+      unifiedAlarmService.startAlarmEffects(params);
+    }
+  }, [ready, params]);
+
   // 3) Iniciar animaciones cuando la pantalla esté lista
   useEffect(() => {
     if (ready && params) {

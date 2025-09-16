@@ -690,6 +690,24 @@ class LocalDatabase {
     this.isInitializing = false;
     this.initPromise = null;
   }
+
+  // NUEVO: Limpiar completamente todas las tablas (para logout)
+  async clearAll(): Promise<void> {
+    try {
+      await this.ensureInitialized();
+      console.log('[LocalDatabase] Limpiando todas las tablas locales...');
+      await this.db!.execAsync('DELETE FROM medications');
+      await this.db!.execAsync('DELETE FROM appointments');
+      await this.db!.execAsync('DELETE FROM treatments');
+      await this.db!.execAsync('DELETE FROM notes');
+      await this.db!.execAsync('DELETE FROM intake_events');
+      await this.db!.execAsync('DELETE FROM profiles');
+      await this.db!.execAsync('DELETE FROM sync_queue');
+      console.log('[LocalDatabase] Tablas limpiadas.');
+    } catch (error) {
+      console.error('[LocalDatabase] Error limpiando tablas:', error);
+    }
+  }
 }
 
 // Instancia singleton

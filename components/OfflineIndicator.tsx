@@ -25,8 +25,8 @@ export default function OfflineIndicator({ onSyncPress, showDetails = false }: O
     }
   };
 
-  // No mostrar nada si estamos online y no hay datos pendientes
-  if (isOnline && pendingSync.length === 0) {
+  // Mostrar solo cuando NO hay servicios de red
+  if (isOnline) {
     return null;
   }
 
@@ -42,18 +42,13 @@ export default function OfflineIndicator({ onSyncPress, showDetails = false }: O
         disabled={isSyncing}
       >
         <Ionicons 
-          name={isSyncing ? "sync" : (isOnline ? "cloud-done" : "cloud-offline")} 
+          name={isSyncing ? "sync" : "cloud-offline"} 
           size={16} 
           color={COLORS.text.inverse} 
           style={isSyncing ? styles.rotating : undefined}
         />
         <Text style={styles.text}>
-          {isSyncing 
-            ? 'Sincronizando...' 
-            : isOnline 
-              ? `${pendingSync.length} cambios pendientes`
-              : 'Sin conexión - Solo lectura'
-          }
+          {isSyncing ? 'Sincronizando...' : 'Sin conexión - Solo lectura'}
         </Text>
         {!isSyncing && (
           <Ionicons 

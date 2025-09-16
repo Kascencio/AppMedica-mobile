@@ -219,13 +219,15 @@ export default function TreatmentsScreen() {
         ]}
         contentContainerStyle={{
           paddingBottom: isTablet ? 48 : 32,
-          paddingHorizontal: isTablet ? 24 : 16
+          paddingHorizontal: isTablet ? 24 : 16,
+          paddingTop: 60
         }}
       >
         <OfflineIndicator />
         
         <View style={[
           GLOBAL_STYLES.rowSpaced,
+          { marginTop: 20 },
           isTablet && styles.headerRowTablet,
           isLandscape && styles.headerRowLandscape
         ]}>

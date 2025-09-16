@@ -188,6 +188,7 @@ export interface Permission {
   patientId: string;
   caregiverId: string;
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  level?: 'READ' | 'WRITE';
   createdAt: string;
   updatedAt: string;
 }

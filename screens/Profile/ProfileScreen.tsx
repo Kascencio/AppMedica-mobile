@@ -41,7 +41,7 @@ export default function ProfileScreen() {
   const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError, initialized } = useCurrentUser();
   const { userToken, logout } = useAuth();
   const { inviteCode, loading: inviteLoading, error: inviteError, generateInviteCode, clearError: clearInviteError } = useInviteCodes();
-  const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus } = usePermissions();
+  const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus, updatePermissionLevel } = usePermissions();
   const [form, setForm] = useState({
     name: '',
     birthDate: '',
@@ -68,6 +68,7 @@ export default function ProfileScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [lastSavedProfile, setLastSavedProfile] = useState<UserProfile | null>(null);
+  const [photoVersion, setPhotoVersion] = useState(0);
 
   // Cargar perfil cuando se monta la pantalla
   useEffect(() => {
@@ -275,11 +276,26 @@ export default function ProfileScreen() {
       const success = await updatePermissionStatus(id, status);
       if (success) {
         Alert.alert('Solicitud actualizada', status === 'ACCEPTED' ? 'Cuidador aceptado.' : 'Solicitud rechazada.');
+        getPermissions();
       } else {
         Alert.alert('Error', 'No se pudo actualizar la solicitud');
       }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo actualizar la solicitud');
+    }
+  };
+
+  const handleChangePermissionLevel = async (id: string, level: 'READ' | 'WRITE') => {
+    try {
+      const success = await updatePermissionLevel(id, level);
+      if (success) {
+        Alert.alert('Permiso actualizado', `Nivel cambiado a ${level === 'READ' ? 'solo lectura' : 'lectura y escritura'}.`);
+        getPermissions();
+      } else {
+        Alert.alert('Error', 'No se pudo actualizar el nivel del permiso');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'No se pudo actualizar el nivel del permiso');
     }
   };
 
@@ -337,19 +353,24 @@ export default function ProfileScreen() {
       
       // Actualizar el formulario con la nueva URL
       setForm({ ...form, photoUrl: uploadedUrl });
+      setPhotoVersion((v) => v + 1);
+
+      // Persistir inmediatamente el cambio de foto en el perfil del servidor y local
+      try {
+        await useCurrentUser.getState().updateProfile({ photoUrl: uploadedUrl });
+      } catch (persistError) {
+        console.warn('[ProfileScreen] No se pudo persistir foto inmediatamente, se guardará luego:', persistError);
+      }
       
-      // Verificar si es una imagen de respaldo
-      const isFallbackImage = uploadedUrl.startsWith('file://') || 
-                             uploadedUrl.startsWith('data:image/') || 
-                             uploadedUrl.includes('_profile_photo_');
-      
-      if (isFallbackImage) {
+      // Mostrar mensaje según el tipo de URL resultante
+      const isRemote = /^https?:\/\//.test(uploadedUrl);
+      if (isRemote) {
+        Alert.alert('Éxito', 'Tu foto de perfil se ha actualizado correctamente');
+      } else {
         Alert.alert(
           'Imagen guardada localmente', 
           'Tu foto se ha guardado en tu dispositivo. Se sincronizará con el servidor cuando sea posible.'
         );
-      } else {
-        Alert.alert('Éxito', 'Tu foto de perfil se ha actualizado correctamente');
       }
       
     } catch (error: any) {
@@ -566,7 +587,7 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.avatarBoxModern} onPress={pickImage} accessibilityLabel="Cambiar foto de perfil" accessibilityRole="button">
           <View style={styles.avatarOuterModern}>
             {form.photoUrl ? (
-              <RNImage source={{ uri: form.photoUrl }} style={styles.avatarModern} resizeMode="cover" />
+              <RNImage key={photoVersion} source={{ uri: `${form.photoUrl}${form.photoUrl.includes('?') ? '&' : '?'}v=${photoVersion}` }} style={styles.avatarModern} resizeMode="cover" />
             ) : (
               <RNImage source={logo} style={styles.avatarModern} resizeMode="contain" />
             )}
@@ -663,65 +684,17 @@ export default function ProfileScreen() {
         {/* Estado de sincronización */}
         <SyncStatus />
         
-        {/* Alarm Tester avanzado */}
+        {/* Test único de notificación (10s) */}
         <View style={{ width: '100%', marginTop: 12, marginBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 }}>🧪 Tests de Alarmas Avanzados</Text>
-          
-          {/* Test básico */}
           <TouchableOpacity 
-            onPress={handleQuickAlarmTest}
-            style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 8 }}
-            accessibilityLabel="Programar alarma de prueba básica"
+            onPress={handleColdStartTest}
+            style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+            accessibilityLabel="Programar alarma de prueba (10 segundos)"
             accessibilityRole="button"
           >
             <Ionicons name="alarm" size={20} color="#fff" />
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Test Básico (5s)</Text>
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Probar alarma en 10s</Text>
           </TouchableOpacity>
-
-          {/* Test de arranque en frío */}
-          <TouchableOpacity 
-            onPress={handleColdStartTest}
-            style={{ backgroundColor: '#ef4444', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 8 }}
-            accessibilityLabel="Test de arranque en frío"
-            accessibilityRole="button"
-          >
-            <Ionicons name="rocket" size={20} color="#fff" />
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Test Arranque en Frío (10s)</Text>
-          </TouchableOpacity>
-
-          {/* Test de segundo plano */}
-          <TouchableOpacity 
-            onPress={handleBackgroundTest}
-            style={{ backgroundColor: '#f59e0b', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 8 }}
-            accessibilityLabel="Test de segundo plano"
-            accessibilityRole="button"
-          >
-            <Ionicons name="phone-portrait" size={20} color="#fff" />
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Test Segundo Plano (8s)</Text>
-          </TouchableOpacity>
-
-          {/* Verificar permisos */}
-          <TouchableOpacity 
-            onPress={handlePermissionsTest}
-            style={{ backgroundColor: '#22c55e', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-            accessibilityLabel="Verificar permisos de notificaciones"
-            accessibilityRole="button"
-          >
-            <Ionicons name="shield-checkmark" size={20} color="#fff" />
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Verificar Permisos</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Centro de Tests de Alarmas */}
-        <AlarmTestCenter />
-        
-        {/* Mensaje explicativo sobre notificaciones y alarmas */}
-        <View style={styles.tipBoxModern}>
-          <Ionicons name="notifications-outline" size={20} color="#f59e42" style={{ marginRight: 6 }} />
-          <Text style={styles.tipTextModern}>
-            🧪 Tests disponibles: Básico (foreground), Arranque en Frío (app cerrada), Segundo Plano (app minimizada). 
-            Para funcionamiento óptimo: activa permisos de notificación, sube el volumen y desactiva "No molestar".
-          </Text>
         </View>
         {/* Inputs */}
         <View style={styles.formGroupModern}><Text style={styles.labelModern}>Nombre *</Text><TextInput style={styles.inputModern} value={form.name} onChangeText={v => handleChange('name', v)} placeholder="Nombre completo" autoCapitalize="words" /></View>
@@ -941,6 +914,34 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => handleRequestAction(req.id, 'REJECTED')} style={{ backgroundColor: '#ef4444', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 16 }}>
                     <Text style={{ color: '#fff', fontWeight: 'bold' }}>Rechazar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </LinearGradient>
+      )}
+
+      {profile?.role === 'PATIENT' && (
+        <LinearGradient colors={["#dcfce7", "#f0fdfa"]} style={[styles.profileCardModern, { borderColor: '#86efac', borderWidth: 1, marginBottom: 18 }]} start={{x:0, y:0}} end={{x:1, y:1}}>
+          <Text style={{ fontSize: 17, fontWeight: 'bold', color: '#166534', marginBottom: 8 }}>Cuidadores aceptados</Text>
+          {permissionsLoading ? (
+            <Text style={{ color: '#166534' }}>Cargando...</Text>
+          ) : permissionsError ? (
+            <Text style={{ color: '#ef4444' }}>{permissionsError}</Text>
+          ) : permissions.filter(p => p.status === 'ACCEPTED').length === 0 ? (
+            <Text style={{ color: '#64748b' }}>No hay cuidadores aceptados.</Text>
+          ) : (
+            permissions.filter(p => p.status === 'ACCEPTED').map((perm) => (
+              <View key={perm.id} style={{ backgroundColor: '#f0fdf4', borderRadius: 10, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: '#86efac' }}>
+                <Text style={{ color: '#065f46', fontWeight: 'bold' }}>Cuidador ID: {perm.caregiverId}</Text>
+                <Text style={{ color: '#64748b', marginBottom: 8 }}>Nivel: {perm.level || 'READ'}</Text>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={() => handleChangePermissionLevel(perm.id, 'READ')} style={{ backgroundColor: '#93c5fd', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 16, marginRight: 8 }}>
+                    <Text style={{ color: '#0c4a6e', fontWeight: 'bold' }}>Solo Lectura</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleChangePermissionLevel(perm.id, 'WRITE')} style={{ backgroundColor: '#2563eb', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 16 }}>
+                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Lectura y Escritura</Text>
                   </TouchableOpacity>
                 </View>
               </View>

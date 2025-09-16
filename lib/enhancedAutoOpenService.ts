@@ -361,7 +361,12 @@ export class EnhancedAutoOpenService {
     try {
       console.log('[EnhancedAutoOpenService] Deteniendo alarma...');
       this.audioManager.stopAlarmSound();
-      this.audioManager.stopAlarmVibration();
+      // Compatibilidad: algunos entornos usan stopVibration
+      if (typeof (this.audioManager as any).stopAlarmVibration === 'function') {
+        (this.audioManager as any).stopAlarmVibration();
+      } else {
+        this.audioManager.stopVibration();
+      }
     } catch (error) {
       console.error('[EnhancedAutoOpenService] Error deteniendo alarma:', error);
     }

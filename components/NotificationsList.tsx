@@ -32,8 +32,7 @@ export default function NotificationsList({
     markMultipleAsRead
   } = useAlarms();
   
-  const [selectedNotifications, setSelectedNotifications] = useState<string[]>([]);
-  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  // Simplificación: sin selección múltiple ni acciones masivas
 
   useEffect(() => {
     loadNotifications();
@@ -58,96 +57,24 @@ export default function NotificationsList({
   };
 
   const handleNotificationPress = async (notification: ApiNotification) => {
-    if (isSelectionMode) {
-      toggleNotificationSelection(notification.id);
-    } else {
-      // Marcar como leída si no está leída
-      if (notification.status === 'UNREAD') {
-        try {
-          await markApiNotificationAsRead(notification.id);
-        } catch (error) {
-          console.log('[NotificationsList] Error marcando como leída:', error);
-          // Continuar sin mostrar error
-        }
-      }
-      onNotificationPress?.(notification);
+    // Marcar como leída si no está leída y abrir detalle
+    if (notification.status === 'UNREAD') {
+      try {
+        await markApiNotificationAsRead(notification.id);
+      } catch {}
     }
+    onNotificationPress?.(notification);
   };
 
-  const handleLongPress = (notification: ApiNotification) => {
-    if (!isSelectionMode) {
-      setIsSelectionMode(true);
-      setSelectedNotifications([notification.id]);
-    }
-  };
+  const handleLongPress = (_notification: ApiNotification) => {};
 
-  const toggleNotificationSelection = (notificationId: string) => {
-    setSelectedNotifications(prev => 
-      prev.includes(notificationId)
-        ? prev.filter(id => id !== notificationId)
-        : [...prev, notificationId]
-    );
-  };
+  const toggleNotificationSelection = (_notificationId: string) => {};
 
-  const handleMarkSelectedAsRead = async () => {
-    if (selectedNotifications.length === 0) return;
+  const handleMarkSelectedAsRead = async () => {};
 
-    Alert.alert(
-      'Marcar como leídas',
-      `¿Marcar ${selectedNotifications.length} notificación(es) como leída(s)?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Marcar',
-          onPress: async () => {
-            try {
-              await markMultipleAsRead(selectedNotifications);
-              setSelectedNotifications([]);
-              setIsSelectionMode(false);
-              await loadNotifications();
-            } catch (error) {
-              console.log('[NotificationsList] Error marcando múltiples como leídas:', error);
-              // Continuar sin mostrar error
-            }
-          }
-        }
-      ]
-    );
-  };
+  const handleArchiveSelected = async () => {};
 
-  const handleArchiveSelected = async () => {
-    if (selectedNotifications.length === 0) return;
-
-    Alert.alert(
-      'Archivar notificaciones',
-      `¿Archivar ${selectedNotifications.length} notificación(es)?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Archivar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              for (const id of selectedNotifications) {
-                await archiveApiNotification(id);
-              }
-              setSelectedNotifications([]);
-              setIsSelectionMode(false);
-              await loadNotifications();
-            } catch (error) {
-              console.log('[NotificationsList] Error archivando notificaciones:', error);
-              // Continuar sin mostrar error
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleCancelSelection = () => {
-    setSelectedNotifications([]);
-    setIsSelectionMode(false);
-  };
+  const handleCancelSelection = () => {};
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -204,7 +131,7 @@ export default function NotificationsList({
   const renderNotification = ({ item }: { item: ApiNotification }) => {
     const icon = getNotificationIcon(item.type);
     const priorityColor = getPriorityColor(item.priority);
-    const isSelected = selectedNotifications.includes(item.id);
+    const isSelected = false;
 
     return (
       <TouchableOpacity
@@ -217,16 +144,7 @@ export default function NotificationsList({
         onLongPress={() => handleLongPress(item)}
         activeOpacity={0.7}
       >
-        {isSelectionMode && (
-          <TouchableOpacity
-            style={[styles.checkbox, isSelected && styles.checkboxSelected]}
-            onPress={() => toggleNotificationSelection(item.id)}
-          >
-            {isSelected && (
-              <Ionicons name="checkmark" size={16} color={COLORS.text.inverse} />
-            )}
-          </TouchableOpacity>
-        )}
+        {/* Modo selección removido */}
 
         <View style={styles.notificationIcon}>
           <Ionicons name={icon.name as any} size={24} color={icon.color} />
@@ -267,29 +185,25 @@ export default function NotificationsList({
           )}
         </View>
 
-        {!isSelectionMode && (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={async () => {
-              try {
-                if (item.status === 'UNREAD') {
-                  await markApiNotificationAsRead(item.id);
-                } else {
-                  await archiveApiNotification(item.id);
-                }
-              } catch (error) {
-                console.log('[NotificationsList] Error en acción de notificación:', error);
-                // Continuar sin mostrar error
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={async () => {
+            try {
+              if (item.status === 'UNREAD') {
+                await markApiNotificationAsRead(item.id);
+              } else {
+                await archiveApiNotification(item.id);
               }
-            }}
-          >
-            <Ionicons 
-              name={item.status === 'UNREAD' ? 'checkmark-circle' : 'archive'} 
-              size={20} 
-              color={item.status === 'UNREAD' ? COLORS.success : COLORS.text.secondary} 
-            />
-          </TouchableOpacity>
-        )}
+              await loadNotifications();
+            } catch {}
+          }}
+        >
+          <Ionicons 
+            name={item.status === 'UNREAD' ? 'checkmark-circle' : 'archive'} 
+            size={20} 
+            color={item.status === 'UNREAD' ? COLORS.success : COLORS.text.secondary} 
+          />
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
@@ -318,41 +232,7 @@ export default function NotificationsList({
 
   return (
     <View style={[styles.container, embedded && styles.embeddedContainer]}>
-      {isSelectionMode && (
-        <View style={styles.selectionHeader}>
-          <View style={styles.selectionInfo}>
-            <Text style={styles.selectionText}>
-              {selectedNotifications.length} seleccionada(s)
-            </Text>
-          </View>
-          <View style={styles.selectionActions}>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.readButton]}
-              onPress={handleMarkSelectedAsRead}
-            >
-              <Ionicons name="checkmark" size={16} color={COLORS.success} />
-              <Text style={[styles.selectionButtonText, { color: COLORS.success }]}>
-                Leer
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.selectionButton, styles.archiveButton]}
-              onPress={handleArchiveSelected}
-            >
-              <Ionicons name="archive" size={16} color={COLORS.text.secondary} />
-              <Text style={[styles.selectionButtonText, { color: COLORS.text.secondary }]}>
-                Archivar
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={handleCancelSelection}
-            >
-              <Ionicons name="close" size={16} color={COLORS.text.secondary} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {/* Controles avanzados removidos para simplificar */}
 
       <FlatList
         data={apiNotifications}

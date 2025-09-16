@@ -7,12 +7,13 @@ import { useAuth } from '../../store/useAuth';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import OfflineIndicator from '../../components/OfflineIndicator';
-// import logo from '../../assets/logo.png';
+import logo from '../../assets/logo.png';
 import { useNavigation } from '@react-navigation/native';
 import AlarmStatus from '../../components/AlarmStatus';
 // Módulo de pruebas de alarmas removido
 import COLORS from '../../constants/colors';
 import { scheduleSnoozeMedication } from '../../lib/notifications';
+import { useOffline } from '../../store/useOffline';
 
 const HEALTH_TIPS = [
   'Bebe suficiente agua durante el día.',
@@ -45,6 +46,7 @@ export default function HomeScreen() {
   const { profile, fetchProfile, loading, error } = useCurrentUser();
   const { events: intakeEvents, registerEvent, getEvents } = useIntakeEvents();
   const navigation = useNavigation();
+  const { isOnline } = useOffline();
 
   React.useEffect(() => {
     fetchProfile();
@@ -308,13 +310,23 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Header simple */}
+        {/* Header mejorado con logo de la app e info del paciente */}
         <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="medical" size={32} color={COLORS.primary} />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={styles.logoContainer}>
+              <Image source={logo} style={styles.logo} />
+            </View>
+            <View style={{ marginLeft: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text.primary }}>
+                {profile?.name || 'Usuario'}
+              </Text>
+              <Text style={{ fontSize: 12, color: COLORS.text.secondary, marginTop: 2 }}>
+                {profile?.role === 'CAREGIVER' ? 'Cuidador' : 'Paciente'}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
-                            onPress={() => (navigation as any).navigate('Notifications')}
+            onPress={() => (navigation as any).navigate('Notifications')}
             style={styles.alarmBtn}
             accessibilityRole="button"
             accessibilityLabel="Ver notificaciones"
@@ -353,22 +365,25 @@ export default function HomeScreen() {
             </View>
             <View style={styles.nextMedActions}>
               <TouchableOpacity 
-                style={styles.actionBtnPrimary}
+                style={[styles.actionBtnPrimary, !isOnline && { opacity: 0.6 }]}
                 onPress={handleTakeMedication}
+                disabled={!isOnline}
               >
                 <Ionicons name="checkmark-circle" size={16} color={COLORS.text.inverse} />
                 <Text style={styles.actionBtnText}>Tomar ahora</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.actionBtnSecondary}
+                style={[styles.actionBtnSecondary, !isOnline && { opacity: 0.6 }]}
                 onPress={handleSnoozeMedication}
+                disabled={!isOnline}
               >
                 <Ionicons name="time" size={16} color={COLORS.primary} />
                 <Text style={styles.actionBtnTextSecondary}>Posponer 10 min</Text>
               </TouchableOpacity>
               <TouchableOpacity 
-                style={styles.actionBtnTertiary}
+                style={[styles.actionBtnTertiary, !isOnline && { opacity: 0.6 }]}
                 onPress={handleSkipMedication}
+                disabled={!isOnline}
               >
                 <Ionicons name="close-circle" size={16} color={COLORS.text.secondary} />
                 <Text style={styles.actionBtnTextTertiary}>Omitir</Text>
@@ -414,13 +429,7 @@ export default function HomeScreen() {
         <View style={styles.quickActionsSection}>
           <Text style={styles.sectionTitle}>Acciones rápidas</Text>
           <View style={styles.quickActionsGrid}>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              onPress={() => (navigation as any).navigate('Medications')}
-            >
-              <Ionicons name="add-circle" size={24} color={COLORS.primary} />
-              <Text style={styles.quickActionText}>Agregar med</Text>
-            </TouchableOpacity>
+            {/* Solo acciones de navegación principales */}
             <TouchableOpacity
               style={styles.quickActionBtn}
               onPress={() => (navigation as any).navigate('Appointments')}
@@ -430,10 +439,10 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.quickActionBtn}
-              onPress={() => (navigation as any).navigate('Notes')}
+              onPress={() => (navigation as any).navigate('Medications')}
             >
-              <Ionicons name="document-text-outline" size={24} color={COLORS.medical.treatment} />
-              <Text style={styles.quickActionText}>Registrar síntoma</Text>
+              <Ionicons name="medkit-outline" size={24} color={COLORS.primary} />
+              <Text style={styles.quickActionText}>Mis medicamentos</Text>
             </TouchableOpacity>
           </View>
         </View>

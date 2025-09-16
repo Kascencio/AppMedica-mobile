@@ -177,8 +177,13 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
         throw new Error('No hay perfil de paciente disponible');
       }
       
+      // Bloquear registro en modo offline: solo permitir cuando hay red real
+      if (!isOnline) {
+        throw new Error('Sin conexión a internet. El registro de tomas solo está disponible online.');
+      }
+
       // Si estamos online, intentar sincronizar con el servidor
-      if (isOnline && token) {
+      if (token) {
         try {
           console.log('[useIntakeEvents] Intentando sincronizar con servidor...');
           
@@ -299,28 +304,8 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
         }
       }
       
-      // Guardar localmente (modo offline o si falló el servidor)
-      console.log('[useIntakeEvents] Guardando evento localmente...');
-      
-      const localEvent: LocalIntakeEvent = {
-        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        ...data,
-        patientProfileId: profile.id,
-        at: new Date().toISOString(),
-        isOffline: true,
-        syncStatus: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      
-      await localDB.saveIntakeEvent(localEvent);
-      console.log('[useIntakeEvents] Evento guardado localmente:', localEvent.id);
-      
-      // Agregar a la cola de sincronización para cuando el endpoint esté disponible
-      await syncService.addToSyncQueue('CREATE', 'intakeEvents', localEvent);
-      
-      // Recargar la lista completa
-      await get().getEvents();
+      // Si llegó aquí es porque estamos online pero la sincronización falló
+      throw new Error('No se pudo registrar el evento en el servidor. Intente nuevamente.');
       
     } catch (err: any) {
       console.log('[useIntakeEvents] Error en registerEvent:', err.message);

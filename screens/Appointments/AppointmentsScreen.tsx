@@ -295,9 +295,9 @@ export default function AppointmentsScreen() {
 
   return (
     <LinearGradient colors={COLORS.gradients.primary as [string, string, string]} style={{ flex: 1 }}>
-      <View style={GLOBAL_STYLES.screenContainer}>
+      <View style={[GLOBAL_STYLES.screenContainer, { paddingTop: 60 }]}>
         <OfflineIndicator />
-        <View style={GLOBAL_STYLES.rowSpaced}>
+        <View style={[GLOBAL_STYLES.rowSpaced, { marginTop: 20 }]}>
           <Text style={GLOBAL_STYLES.sectionHeader}>Mis Citas</Text>
           <TouchableOpacity 
             style={[

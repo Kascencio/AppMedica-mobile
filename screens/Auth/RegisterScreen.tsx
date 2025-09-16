@@ -165,16 +165,66 @@ export default function RegisterScreen({ navigation }: any) {
           render={({ field: { onChange, value } }) => (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Tipo de Usuario</Text>
-              <View style={styles.inputRow}>
-                <Picker
-                  selectedValue={value}
-                  style={{ flex: 1 }}
-                  onValueChange={onChange}
-                  enabled={!loading && !loadingProfile}
+              <View style={styles.roleSelectorContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.roleButton,
+                    value === 'PATIENT' && styles.roleButtonSelected,
+                    (loading || loadingProfile) && styles.roleButtonDisabled
+                  ]}
+                  onPress={() => onChange('PATIENT')}
+                  disabled={loading || loadingProfile}
                 >
-                  <Picker.Item label="Paciente" value="PATIENT" />
-                  <Picker.Item label="Cuidador/Familiar" value="CAREGIVER" />
-                </Picker>
+                  <View style={styles.roleButtonContent}>
+                    <Ionicons 
+                      name="person-outline" 
+                      size={24} 
+                      color={value === 'PATIENT' ? '#fff' : '#2563eb'} 
+                    />
+                    <Text style={[
+                      styles.roleButtonText,
+                      value === 'PATIENT' && styles.roleButtonTextSelected
+                    ]}>
+                      Paciente
+                    </Text>
+                  </View>
+                  <Text style={[
+                    styles.roleButtonSubtext,
+                    value === 'PATIENT' && styles.roleButtonSubtextSelected
+                  ]}>
+                    Soy quien toma medicamentos
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.roleButton,
+                    value === 'CAREGIVER' && styles.roleButtonSelected,
+                    (loading || loadingProfile) && styles.roleButtonDisabled
+                  ]}
+                  onPress={() => onChange('CAREGIVER')}
+                  disabled={loading || loadingProfile}
+                >
+                  <View style={styles.roleButtonContent}>
+                    <Ionicons 
+                      name="people-outline" 
+                      size={24} 
+                      color={value === 'CAREGIVER' ? '#fff' : '#059669'} 
+                    />
+                    <Text style={[
+                      styles.roleButtonText,
+                      value === 'CAREGIVER' && styles.roleButtonTextSelected
+                    ]}>
+                      Cuidador/Familiar
+                    </Text>
+                  </View>
+                  <Text style={[
+                    styles.roleButtonSubtext,
+                    value === 'CAREGIVER' && styles.roleButtonSubtextSelected
+                  ]}>
+                    Ayudo a alguien con medicamentos
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -307,5 +357,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#2563eb',
     fontSize: 15,
+  },
+  roleSelectorContainer: {
+    gap: 12,
+  },
+  roleButton: {
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+  },
+  roleButtonSelected: {
+    borderColor: '#2563eb',
+    backgroundColor: '#2563eb',
+  },
+  roleButtonDisabled: {
+    opacity: 0.6,
+  },
+  roleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  roleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+    color: '#334155',
+  },
+  roleButtonTextSelected: {
+    color: '#fff',
+  },
+  roleButtonSubtext: {
+    fontSize: 12,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  roleButtonSubtextSelected: {
+    color: '#e2e8f0',
   },
 });

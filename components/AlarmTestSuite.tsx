@@ -237,7 +237,6 @@ export default function AlarmTestSuite() {
       await testImmediateNotification();
       await testScheduledNotification();
       await testNativeAlarm();
-      await testDisplayService();
       
       // Usar el tester existente
       const tester = AlarmSystemTester.getInstance();
@@ -476,10 +475,7 @@ export default function AlarmTestSuite() {
             <Text style={styles.testButtonText}>Nativa</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.testButton} onPress={testDisplayService}>
-            <Ionicons name="tv" size={24} color="#2563eb" />
-            <Text style={styles.testButtonText}>Display</Text>
-          </TouchableOpacity>
+          {/* Test de display eliminado */}
           
           <TouchableOpacity style={styles.testButton} onPress={clearResults}>
             <Ionicons name="refresh" size={24} color="#ef4444" />

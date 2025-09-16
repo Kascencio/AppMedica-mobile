@@ -1,18 +1,33 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Image, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useCurrentUser } from '../../store/useCurrentUser';
+import { useCaregiver } from '../../store/useCaregiver';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const defaultAvatar = require('../../assets/logo.png');
 
 export default function CaregiverProfileScreen() {
-  const { profile, updateProfile, loading } = useCurrentUser();
-  const [name, setName] = useState(profile?.name || '');
-  const [phone, setPhone] = useState(profile?.phone || '');
-  const [relationship, setRelationship] = useState(profile?.relationship || '');
-  const [photoUrl, setPhotoUrl] = useState(profile?.photoUrl || '');
+  const { profile } = useCurrentUser();
+  const { caregiverProfile, profileLoading, fetchCaregiverProfile, updateCaregiverProfile } = useCaregiver();
+  const [name, setName] = useState(caregiverProfile?.name || profile?.name || '');
+  const [phone, setPhone] = useState(caregiverProfile?.phone || '');
+  const [relationship, setRelationship] = useState(caregiverProfile?.relationship || '');
+  const [photoUrl, setPhotoUrl] = useState(caregiverProfile?.photoUrl || profile?.photoUrl || '');
   const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    fetchCaregiverProfile();
+  }, []);
+
+  React.useEffect(() => {
+    if (caregiverProfile) {
+      setName(caregiverProfile.name || '');
+      setPhone(caregiverProfile.phone || '');
+      setRelationship(caregiverProfile.relationship || '');
+      setPhotoUrl(caregiverProfile.photoUrl || photoUrl);
+    }
+  }, [caregiverProfile]);
 
   const handlePickImage = async () => {
     try {
@@ -42,12 +57,8 @@ export default function CaregiverProfileScreen() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateProfile({
-        name,
-        phone,
-        relationship,
-        photoUrl, // En producción, deberías subir la imagen y guardar la URL
-      });
+      const ok = await updateCaregiverProfile({ name, phone, relationship, photoUrl });
+      if (!ok) throw new Error('No se pudo actualizar');
       Alert.alert('Perfil actualizado', 'Los datos se guardaron correctamente');
     } catch (e) {
       Alert.alert('Error', 'No se pudo guardar el perfil');
@@ -56,7 +67,7 @@ export default function CaregiverProfileScreen() {
     }
   };
 
-  if (loading) {
+  if (profileLoading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#2563eb" />
@@ -99,6 +110,16 @@ export default function CaregiverProfileScreen() {
           onChangeText={setRelationship}
           placeholder="Ej: Hija, Enfermero, etc."
         />
+        {/* Información del usuario (solo lectura) */}
+        <View style={{ marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e5e7eb' }}>
+          <Text style={[styles.label, { marginTop: 0 }]}>Información del usuario</Text>
+          <View style={{ backgroundColor: '#f8fafc', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#e5e7eb' }}>
+            <Text style={{ color: '#334155', marginBottom: 4 }}>Nombre: <Text style={{ fontWeight: 'bold' }}>{profile?.name || '—'}</Text></Text>
+            <Text style={{ color: '#334155', marginBottom: 4 }}>Correo: <Text style={{ fontWeight: 'bold' }}>{(profile as any)?.email || '—'}</Text></Text>
+            <Text style={{ color: '#334155', marginBottom: 4 }}>Rol: <Text style={{ fontWeight: 'bold' }}>{profile?.role || '—'}</Text></Text>
+            <Text style={{ color: '#334155' }}>ID Usuario: <Text style={{ fontWeight: 'bold' }}>{profile?.userId || '—'}</Text></Text>
+          </View>
+        </View>
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
           <Text style={styles.saveBtnText}>{saving ? 'Guardando…' : 'Guardar cambios'}</Text>
         </TouchableOpacity>

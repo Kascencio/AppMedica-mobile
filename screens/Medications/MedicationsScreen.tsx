@@ -260,11 +260,12 @@ export default function MedicationsScreen() {
         style={GLOBAL_STYLES.container}
         contentContainerStyle={{ 
           paddingBottom: 32,
-          paddingHorizontal: 16
+          paddingHorizontal: 16,
+          paddingTop: 40
         }}
       >
       <OfflineIndicator />
-      <View style={GLOBAL_STYLES.rowSpaced}>
+      <View style={[GLOBAL_STYLES.rowSpaced, { marginTop: 20 }]}>
         <Text style={GLOBAL_STYLES.sectionHeader}>Medicamentos</Text>
         <TouchableOpacity 
           style={[

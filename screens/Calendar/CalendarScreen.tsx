@@ -127,59 +127,65 @@ export default function CalendarScreen() {
 
   // Render principal
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
-      <Text style={styles.headerTitle}>Calendario</Text>
-      {/* Navegación de mes */}
-      <View style={styles.monthNav}>
-        <TouchableOpacity style={styles.monthBtn} onPress={goToPrevMonth}>
-          <Ionicons name="chevron-back" size={22} color="#2563eb" />
-        </TouchableOpacity>
-        <Text style={styles.monthLabel}>
-          {new Date(year, month).toLocaleString('es-ES', { month: 'long', year: 'numeric' })}
-        </Text>
-        <TouchableOpacity style={styles.monthBtn} onPress={goToNextMonth}>
-          <Ionicons name="chevron-forward" size={22} color="#2563eb" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.todayBtn} onPress={goToToday}>
-          <Text style={styles.todayBtnText}>Hoy</Text>
-        </TouchableOpacity>
+    <View style={styles.container}>
+      <View style={styles.headerSticky}>
+        <Text style={styles.headerTitle}>Calendario</Text>
+        {/* Navegación de mes */}
+        <View style={styles.monthNav}>
+          <TouchableOpacity style={styles.monthBtn} onPress={goToPrevMonth}>
+            <Ionicons name="chevron-back" size={22} color="#2563eb" />
+          </TouchableOpacity>
+          <Text style={styles.monthLabel}>
+            {new Date(year, month).toLocaleString('es-ES', { month: 'long', year: 'numeric' })}
+          </Text>
+          <TouchableOpacity style={styles.monthBtn} onPress={goToNextMonth}>
+            <Ionicons name="chevron-forward" size={22} color="#2563eb" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.todayBtn} onPress={goToToday}>
+            <Text style={styles.todayBtnText}>Hoy</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      {/* Días de la semana */}
-      <View style={styles.weekRow}>
-        {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d) => (
-          <Text key={d} style={styles.weekDay}>{d}</Text>
-        ))}
-      </View>
-      {/* Grid de días */}
-      <View style={styles.daysGridModern}>
-        {days.map((d, idx) => {
-          const key = getKey(d);
-          const events = getEvents(d);
-          const isCurrentMonth = d.getMonth() === month;
-          const isToday = d.toDateString() === today.toDateString();
-          return (
-            <TouchableOpacity
-              key={key}
-              style={[
-                styles.dayCellModern,
-                !isCurrentMonth && styles.dayCellInactive,
-                isToday && styles.dayCellToday,
-                events.appointments.length + events.medications.length + events.treatments.length > 0 && styles.dayCellWithEvent
-              ]}
-              onPress={() => { setSelectedDay(d); setModalVisible(true); }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.dayNumber}>{d.getDate()}</Text>
-              {/* Indicadores de eventos */}
-              <View style={styles.eventDotsRow}>
-                {events.appointments.length > 0 && <View style={styles.eventDotBlue} />}
-                {events.medications.length > 0 && <View style={styles.eventDotGreen} />}
-                {events.treatments.length > 0 && <View style={styles.eventDotOrange} />}
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+
+      <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+        {/* Días de la semana */}
+        <View style={styles.weekRow}>
+          {["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((d) => (
+            <Text key={d} style={styles.weekDay}>{d}</Text>
+          ))}
+        </View>
+        {/* Grid de días */}
+        <View style={styles.daysGridModern}>
+          {days.map((d, idx) => {
+            const key = getKey(d);
+            const events = getEvents(d);
+            const isCurrentMonth = d.getMonth() === month;
+            const isToday = d.toDateString() === today.toDateString();
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  styles.dayCellModern,
+                  !isCurrentMonth && styles.dayCellInactive,
+                  isToday && styles.dayCellToday,
+                  events.appointments.length + events.medications.length + events.treatments.length > 0 && styles.dayCellWithEvent
+                ]}
+                onPress={() => { setSelectedDay(d); setModalVisible(true); }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.dayNumber}>{d.getDate()}</Text>
+                {/* Indicadores de eventos */}
+                <View style={styles.eventDotsRow}>
+                  {events.appointments.length > 0 && <View style={styles.eventDotBlue} />}
+                  {events.medications.length > 0 && <View style={styles.eventDotGreen} />}
+                  {events.treatments.length > 0 && <View style={styles.eventDotOrange} />}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </ScrollView>
+
       {/* Modal de eventos del día */}
       <Modal
         visible={modalVisible}
@@ -236,7 +242,7 @@ export default function CalendarScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -260,6 +266,11 @@ const styles = StyleSheet.create({
     color: '#2563eb',
     marginBottom: 18,
     textAlign: 'center',
+  },
+  headerSticky: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingTop: 24,
   },
   monthNav: {
     flexDirection: 'row',

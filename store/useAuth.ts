@@ -94,8 +94,35 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   logout: async () => {
-    await AsyncStorage.removeItem('userToken');
-    await AsyncStorage.removeItem('userProfile'); // Limpiar perfil local
+    try {
+      // Borrar token y perfil en AsyncStorage
+      await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.removeItem('userProfile');
+      // Borrar datos offline en AsyncStorage
+      await AsyncStorage.removeItem('offlineData');
+      await AsyncStorage.removeItem('pendingSync');
+    } catch (e) {
+      console.error('[useAuth] Error limpiando AsyncStorage en logout:', e);
+    }
+
+    try {
+      // Limpiar base de datos local (SQLite)
+      const { localDB } = await import('../data/db');
+      await localDB.clearAll();
+    } catch (e) {
+      console.error('[useAuth] Error limpiando base de datos local en logout:', e);
+    }
+
+    try {
+      // Limpiar estado de stores relacionados
+      const { useCurrentUser } = await import('./useCurrentUser');
+      useCurrentUser.getState().resetProfile();
+      const { useOffline } = await import('./useOffline');
+      await useOffline.getState().clearOfflineData();
+    } catch (e) {
+      console.error('[useAuth] Error reseteando stores en logout:', e);
+    }
+
     set({ userToken: null, isAuthenticated: false, userId: null, userRole: null });
   },
 

@@ -46,6 +46,11 @@ export class AlarmAudioManager {
    */
   public async playAlarmSound(): Promise<boolean> {
     try {
+      // Evitar arranques duplicados si ya está reproduciendo
+      if (this.isPlaying && this.currentSound) {
+        console.log('[AlarmAudioManager] Sonido ya reproduciéndose; evitando duplicado');
+        return true;
+      }
       // Detener sonido anterior si existe
       await this.stopAlarmSound();
 
@@ -99,6 +104,10 @@ export class AlarmAudioManager {
       }
       this.isPlaying = false;
       this.stopVibration();
+      // Restablecer modo de audio para liberar recursos
+      try {
+        await Audio.setAudioModeAsync({ staysActiveInBackground: false, allowsRecordingIOS: false });
+      } catch {}
       console.log('[AlarmAudioManager] Sonido de alarma detenido');
     } catch (error) {
       handleAlarmError(error, 'stopAlarmSound');
@@ -157,11 +166,20 @@ export class AlarmAudioManager {
         clearInterval(this.vibrationInterval);
         this.vibrationInterval = null;
       }
+      // Cancelar cualquier vibración en curso a nivel del sistema
+      Vibration.cancel();
       console.log('[AlarmAudioManager] Vibración detenida');
     } catch (error) {
       handleAlarmError(error, 'stopVibration');
       console.error('[AlarmAudioManager] Error deteniendo vibración:', error);
     }
+  }
+
+  /**
+   * Alias para compatibilidad retro: detener vibración de alarma
+   */
+  public stopAlarmVibration(): void {
+    this.stopVibration();
   }
 
   /**

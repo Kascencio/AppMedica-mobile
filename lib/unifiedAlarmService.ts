@@ -4,7 +4,7 @@ import { Platform, AppState, Alert } from 'react-native';
 import * as Linking from 'expo-linking';
 import { ensureAlarmChannel } from './notificationChannels';
 import { displayFullScreenAlarm } from './androidFullScreen';
-import { AlarmAudioManager } from './alarmAudioManager';
+import { AlarmAudioManager, alarmAudioManager } from './alarmAudioManager';
 import { alarmErrorHandler, AlarmErrorCodes, handleAlarmError } from './alarmErrorHandler';
 
 /**
@@ -21,7 +21,7 @@ export class UnifiedAlarmService {
   private autoStopTimer: any = null;
 
   private constructor() {
-    this.audioManager = new AlarmAudioManager();
+    this.audioManager = alarmAudioManager;
     this.setupAppStateListener();
   }
 
@@ -287,6 +287,37 @@ export class UnifiedAlarmService {
       this.navigateToAlarmScreen(data || {});
     } catch (error) {
       handleAlarmError(error, 'onNotificationReceivedInForeground');
+    }
+  }
+
+  /**
+   * Iniciar efectos de alarma (sonido + vibración) de forma idempotente.
+   * Útil para arranques headless donde la UI se monta sin pasar por el flujo normal.
+   */
+  public async startAlarmEffects(data?: any): Promise<void> {
+    try {
+      if (this.isAlarmActive) {
+        console.log('[UnifiedAlarmService] Efectos de alarma ya activos, evitando duplicado');
+        return;
+      }
+      console.log('[UnifiedAlarmService] 🚨 startAlarmEffects');
+      this.isAlarmActive = true;
+
+      // Inicia sonido + vibración
+      await this.audioManager.startAlarm();
+
+      // Failsafe para no dejar el audio encendido
+      if (this.autoStopTimer) {
+        clearTimeout(this.autoStopTimer);
+      }
+      this.autoStopTimer = setTimeout(() => {
+        if (this.isAlarmActive) {
+          console.log('[UnifiedAlarmService] Failsafe: deteniendo alarma automáticamente tras 2 minutos');
+          this.stopAlarm();
+        }
+      }, 120000);
+    } catch (error) {
+      handleAlarmError(error, 'startAlarmEffects');
     }
   }
 

@@ -69,6 +69,16 @@ export async function requestPermissions(): Promise<boolean> {
   }
 }
 
+// Chequeo simple de permisos de notificaciones (utilizado por overlayPermissionService)
+export async function checkNotificationPermissions(): Promise<{ granted: boolean; status: Notifications.PermissionStatus }> {
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    return { granted: status === 'granted', status } as any;
+  } catch (e) {
+    return { granted: false, status: 'denied' as any };
+  }
+}
+
 export async function scheduleMedicationReminder({
   title,
   body,

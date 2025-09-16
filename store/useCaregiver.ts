@@ -17,6 +17,17 @@ export interface PatientProfile {
   // ...otros campos según API
 }
 
+export interface CaregiverProfile {
+  id?: string;
+  name?: string;
+  phone?: string;
+  relationship?: string;
+  photoUrl?: string;
+  userId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 interface CaregiverState {
   patients: PatientProfile[];
   loading: boolean;
@@ -25,6 +36,12 @@ interface CaregiverState {
   joinPatient: (code: string) => Promise<boolean>;
   selectedPatientId: string | null;
   setSelectedPatientId: (id: string | null) => void;
+  // Perfil de cuidador
+  caregiverProfile: CaregiverProfile | null;
+  profileLoading: boolean;
+  profileError: string | null;
+  fetchCaregiverProfile: () => Promise<void>;
+  updateCaregiverProfile: (data: Partial<CaregiverProfile>) => Promise<boolean>;
 }
 
 export const useCaregiver = create<CaregiverState>((set, get) => ({
@@ -33,6 +50,9 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
   error: null,
   selectedPatientId: null,
   setSelectedPatientId: (id) => set({ selectedPatientId: id }),
+  caregiverProfile: null,
+  profileLoading: false,
+  profileError: null,
 
   fetchPatients: async () => {
     set({ loading: true, error: null });
@@ -80,6 +100,50 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
       return false;
     } finally {
       set({ loading: false });
+    }
+  },
+
+  // Obtener perfil del cuidador
+  fetchCaregiverProfile: async () => {
+    set({ profileLoading: true, profileError: null });
+    try {
+      const token = useAuth.getState().userToken;
+      if (!token) throw new Error('No autenticado');
+      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.ME);
+      const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.message || 'Error al obtener perfil de cuidador');
+      }
+      const data = await res.json();
+      set({ caregiverProfile: data, profileLoading: false });
+    } catch (err: any) {
+      set({ profileError: err.message, profileLoading: false });
+    }
+  },
+
+  // Crear/actualizar perfil del cuidador
+  updateCaregiverProfile: async (data) => {
+    set({ profileLoading: true, profileError: null });
+    try {
+      const token = useAuth.getState().userToken;
+      if (!token) throw new Error('No autenticado');
+      const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.ME);
+      const res = await fetch(endpoint, {
+        method: 'PUT',
+        headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.message || 'Error al actualizar perfil de cuidador');
+      }
+      const updated = await res.json();
+      set({ caregiverProfile: updated, profileLoading: false });
+      return true;
+    } catch (err: any) {
+      set({ profileError: err.message, profileLoading: false });
+      return false;
     }
   },
 }));
