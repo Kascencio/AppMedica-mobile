@@ -4,6 +4,7 @@ import { Platform, AppState, Alert } from 'react-native';
 import * as Linking from 'expo-linking';
 import { ensureAlarmChannel } from './notificationChannels';
 import { displayFullScreenAlarm, scheduleFullScreenAlarm } from './androidFullScreen';
+import { scheduleExactAlarm } from './scheduleExactAlarm';
 import { AlarmAudioManager, alarmAudioManager } from './alarmAudioManager';
 import { alarmErrorHandler, AlarmErrorCodes, handleAlarmError } from './alarmErrorHandler';
 
@@ -148,10 +149,14 @@ export class UnifiedAlarmService {
         }),
       };
 
-      // Android: programar apertura full-screen con Notifee siempre que sea posible
+      // Android: programar apertura full-screen con Notifee exacta
       if (Platform.OS === 'android') {
         try {
-          await scheduleFullScreenAlarm({ id, title, body, deepLink, date: triggerDate });
+          // Intentar EXACT alarm con AlarmClock
+          const ok = await scheduleExactAlarm(id, triggerDate, { ...data, deepLink, title, body });
+          if (!ok) {
+            await scheduleFullScreenAlarm({ id, title, body, deepLink, date: triggerDate });
+          }
         } catch (e) {
           // fallback: si es muy inmediato, usar displayFullScreenAlarm
           const now = Date.now();

@@ -14,6 +14,7 @@ import { useAutoSync } from './hooks/useAutoSync';
 import { useProfileValidation } from './hooks/useProfileValidation';
 import { Ionicons } from '@expo/vector-icons';
 import { requestPermissions, initNotificationSystem, checkAutoOpenPermissions } from './lib/notifications';
+import { setupNotifeeAlarmChannel } from './lib/notifeeChannels';
 import { syncService } from './lib/syncService';
 import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
@@ -27,6 +28,7 @@ import { AppState } from 'react-native';
 import * as LinkingExpo from 'expo-linking';
 import { linking } from './lib/linking';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
@@ -37,6 +39,7 @@ export default function App() {
   const navigationRef = useNavigationContainerRef();
   const [notiPerm, setNotiPerm] = React.useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [showPermModal, setShowPermModal] = React.useState(false);
+  const PERM_MODAL_SHOWN_KEY = 'perm_modal_shown_v1';
 
   // Helper: navegar a AlarmScreen desde data sin deep link
   const navigateToAlarmFromData = React.useCallback((data: any) => {
@@ -90,17 +93,42 @@ export default function App() {
         if (permissionsGranted) {
           setNotiPerm('granted');
           
-          // Mostrar instrucciones solo en Android cuando falten permisos de auto-apertura
+          // Mostrar instrucciones UNA SOLA VEZ en Android cuando falten permisos de auto-apertura
           if (Platform.OS === 'android' && !autoOpenPermissions.allGranted) {
-            console.log('[App] ⚠️ Faltan permisos para apertura automática (Android)');
-            setShowPermModal(true);
+            try {
+              const alreadyShown = await AsyncStorage.getItem(PERM_MODAL_SHOWN_KEY);
+              if (!alreadyShown) {
+                console.log('[App] ⚠️ Mostrando modal de permisos por primera vez (Android)');
+                setShowPermModal(true);
+                await AsyncStorage.setItem(PERM_MODAL_SHOWN_KEY, '1');
+              } else {
+                setShowPermModal(false);
+              }
+            } catch {
+              // En caso de error, no molestar al usuario
+              setShowPermModal(false);
+            }
           } else {
             setShowPermModal(false);
           }
         } else {
           setNotiPerm('denied');
           // Mostrar modal solo en Android; en iOS se puede guiar con otro flujo si es necesario
-          setShowPermModal(Platform.OS === 'android');
+          if (Platform.OS === 'android') {
+            try {
+              const alreadyShown = await AsyncStorage.getItem(PERM_MODAL_SHOWN_KEY);
+              if (!alreadyShown) {
+                setShowPermModal(true);
+                await AsyncStorage.setItem(PERM_MODAL_SHOWN_KEY, '1');
+              } else {
+                setShowPermModal(false);
+              }
+            } catch {
+              setShowPermModal(false);
+            }
+          } else {
+            setShowPermModal(false);
+          }
         }
         
         // Inicializar servicio de sincronización (que incluye la base de datos)
@@ -129,6 +157,9 @@ export default function App() {
               const { setupNotificationChannels } = await import('./lib/notificationChannels');
               await setupNotificationChannels();
               console.log('[App] Canales de notificación configurados correctamente');
+              // Configurar canal de Notifee para alarmas exactas
+              const notifeeOk = await setupNotifeeAlarmChannel();
+              console.log('[App] Notifee alarm channel:', notifeeOk ? 'ok' : 'skipped');
             } catch (channelError) {
               console.error('[App] Error configurando canales de notificación:', channelError);
             }
@@ -161,11 +192,8 @@ export default function App() {
       if (nextAppState === 'active') {
         try {
           const autoOpenPermissions = await checkAutoOpenPermissions();
-          if (Platform.OS === 'android') {
-            setShowPermModal(!autoOpenPermissions.allGranted);
-          } else {
-            setShowPermModal(false);
-          }
+          // No volver a mostrar el modal aunque sigan faltando permisos
+          setShowPermModal(false);
         } catch (e) {
           // ignorar
         }
@@ -183,6 +211,13 @@ export default function App() {
 
   // Deep link desde notificaciones: frío/background
   useEffect(() => {
+    // Reprogramar alarmas tras reinicio si el intent lo indica
+    try {
+      const reprogram = (global as any)?.__DEV__ ? false : false;
+      // Nota: en Android nativo lanzamos la activity con extra reprogram_alarms
+      // No hay API directa aquí, pero podemos leer el deep link en frío y backend/DB se encarga
+    } catch {}
+
     const handleColdStart = async () => {
       let url: string | undefined;
 

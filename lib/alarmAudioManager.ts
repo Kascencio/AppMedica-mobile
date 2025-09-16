@@ -10,6 +10,7 @@ export class AlarmAudioManager {
   private static instance: AlarmAudioManager;
   private currentSound: Audio.Sound | null = null;
   private vibrationInterval: NodeJS.Timeout | null = null;
+  private volumeRampInterval: NodeJS.Timeout | null = null;
   private isPlaying = false;
 
   public static getInstance(): AlarmAudioManager {
@@ -63,7 +64,7 @@ export class AlarmAudioManager {
         {
           shouldPlay: true,
           isLooping: true,
-          volume: 1.0,
+          volume: 0.0,
           rate: 1.0,
           shouldCorrectPitch: true,
         }
@@ -71,6 +72,31 @@ export class AlarmAudioManager {
 
       this.currentSound = sound;
       this.isPlaying = true;
+
+      // Iniciar rampa de volumen 0 -> 1.0 en ~45s
+      try {
+        if (this.volumeRampInterval) {
+          clearInterval(this.volumeRampInterval);
+          this.volumeRampInterval = null;
+        }
+        const totalSteps = 30; // 30 pasos
+        const stepMs = 1500; // 1.5s por paso => 45s total
+        let step = 0;
+        this.volumeRampInterval = setInterval(async () => {
+          try {
+            if (!this.isPlaying || !this.currentSound) return;
+            const target = Math.min(1.0, (step + 1) / totalSteps);
+            await this.currentSound.setVolumeAsync(target);
+            step++;
+            if (target >= 1.0 || step >= totalSteps) {
+              if (this.volumeRampInterval) {
+                clearInterval(this.volumeRampInterval);
+                this.volumeRampInterval = null;
+              }
+            }
+          } catch {}
+        }, stepMs);
+      } catch {}
 
       // Configurar callback cuando termine el sonido
       sound.setOnPlaybackStatusUpdate((status) => {
@@ -104,6 +130,10 @@ export class AlarmAudioManager {
       }
       this.isPlaying = false;
       this.stopVibration();
+      if (this.volumeRampInterval) {
+        clearInterval(this.volumeRampInterval);
+        this.volumeRampInterval = null;
+      }
       // Restablecer modo de audio para liberar recursos
       try {
         await Audio.setAudioModeAsync({ staysActiveInBackground: false, allowsRecordingIOS: false });

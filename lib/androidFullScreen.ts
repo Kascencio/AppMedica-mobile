@@ -23,7 +23,7 @@ export async function displayFullScreenAlarm({ title, body, deepLink }: { title:
 
   try {
     const channelId = await notifee.createChannel({
-      id: 'alarms',
+      id: 'alarm',
       name: 'Alarmas',
       sound: 'alarm',
       importance: AndroidImportance.MAX,
@@ -70,12 +70,14 @@ export async function scheduleFullScreenAlarm({
   let AndroidImportance: any;
   let AndroidCategory: any;
   let TimestampTrigger: any;
+  let AlarmType: any;
   try {
     const mod = await import('@notifee/react-native');
     notifee = (mod as any).default ?? mod;
     AndroidImportance = (mod as any).AndroidImportance;
     AndroidCategory = (mod as any).AndroidCategory;
     TimestampTrigger = (mod as any).TimestampTrigger;
+    AlarmType = (mod as any).AlarmType;
   } catch (e) {
     console.log('[FullScreen] Notifee no disponible, omitiendo schedule full-screen:', e?.message || e);
     return;
@@ -83,7 +85,7 @@ export async function scheduleFullScreenAlarm({
 
   try {
     const channelId = await notifee.createChannel({
-      id: 'alarms',
+      id: 'alarm',
       name: 'Alarmas',
       sound: 'alarm',
       importance: AndroidImportance.MAX,
@@ -95,6 +97,7 @@ export async function scheduleFullScreenAlarm({
       timestamp: date.getTime(),
       alarmManager: {
         allowWhileIdle: true,
+        type: AlarmType?.SET_ALARM_CLOCK ?? 4,
       },
     };
 
