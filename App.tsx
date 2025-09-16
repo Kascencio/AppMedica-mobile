@@ -19,6 +19,7 @@ import { notificationService } from './lib/notificationService';
 import { DatabaseInitializer } from './components/DatabaseInitializer';
 import { unifiedAlarmService } from './lib/unifiedAlarmService';
 import { enhancedAutoOpenService } from './lib/enhancedAutoOpenService';
+import { overlayPermissionService } from './lib/overlayPermissionService';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
@@ -76,11 +77,14 @@ export default function App() {
         await enhancedAutoOpenService.initialize();
         console.log('[App] Servicio de apertura automática mejorado inicializado correctamente');
         
-        // Solicitar permisos usando la función del módulo de notificaciones
+        // Solicitar permisos base de notificaciones
         const permissionsGranted = await requestPermissions();
         
-        // Verificar estado completo de permisos para apertura automática
-        const autoOpenPermissions = await checkAutoOpenPermissions();
+        // Solicitar/Verificar todos los permisos críticos para auto-apertura (overlay + notificaciones)
+        const autoOpenPermissions = await overlayPermissionService.checkAllAutoOpenPermissions();
+        if (!autoOpenPermissions.allGranted) {
+          await overlayPermissionService.requestAllAutoOpenPermissions();
+        }
         console.log('[App] Estado de permisos de apertura automática:', autoOpenPermissions);
         
         if (permissionsGranted) {
