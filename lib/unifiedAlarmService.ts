@@ -1,6 +1,9 @@
 // lib/unifiedAlarmService.ts
 import * as Notifications from 'expo-notifications';
 import { Platform, AppState, Alert } from 'react-native';
+import * as Linking from 'expo-linking';
+import { ensureAlarmChannel } from './notificationChannels';
+import { displayFullScreenAlarm } from './androidFullScreen';
 import { AlarmAudioManager } from './alarmAudioManager';
 import { alarmErrorHandler, AlarmErrorCodes, handleAlarmError } from './alarmErrorHandler';
 
@@ -15,6 +18,7 @@ export class UnifiedAlarmService {
   private isAlarmActive = false;
   private appState: string = 'active';
   private notificationListeners: any[] = [];
+  private autoStopTimer: any = null;
 
   private constructor() {
     this.audioManager = new AlarmAudioManager();
@@ -43,24 +47,13 @@ export class UnifiedAlarmService {
     try {
       console.log('[UnifiedAlarmService] Inicializando sistema unificado...');
       
-      // Configurar handler global de notificaciones
+      // Configurar handler global de notificaciones (solo presentación)
       Notifications.setNotificationHandler({
-        handleNotification: async (notification) => {
-          const data = notification.request.content.data;
-          console.log('[UnifiedAlarmService] Notificación recibida:', notification.request.content.title);
-          
-          // Si es una alarma, manejarla inmediatamente
-          if (this.isAlarmNotification(data)) {
-            await this.handleAlarmReceived(notification);
-          }
-          
-          return {
-            shouldShowBanner: true,
-            shouldShowList: true,
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-          };
-        },
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: true,
+        }) as any,
       });
 
       // Configurar categorías de notificación
@@ -106,6 +99,20 @@ export class UnifiedAlarmService {
       // Determinar configuración basada en tipo de alarma
       const isAlarm = this.isAlarmNotification(data);
       const categoryId = this.getCategoryForData(data);
+      // Deep link
+      const typeSlug = ((): 'medication' | 'appointment' | 'treatment' | 'alarm' => {
+        const t = (data?.type || data?.kind || '').toString().toUpperCase();
+        if (t === 'MEDICATION' || t === 'MED') return 'medication';
+        if (t === 'APPOINTMENT') return 'appointment';
+        if (t === 'TREATMENT') return 'treatment';
+        return 'alarm';
+      })();
+      const bizId = data?.medicationId || data?.appointmentId || data?.refId || id;
+      const deepLink = `recuerdamed://alarm/${typeSlug}/${bizId}`;
+      
+      if (Platform.OS === 'android') {
+        await ensureAlarmChannel();
+      }
       
       // Configuración optimizada para apertura automática
       const notificationContent: Notifications.NotificationContentInput = {
@@ -115,6 +122,7 @@ export class UnifiedAlarmService {
           ...data,
           isAlarm: true,
           autoOpen: true,
+          deepLink,
         },
         sound: 'alarm.mp3',
         priority: Notifications.AndroidNotificationPriority.MAX,
@@ -140,7 +148,17 @@ export class UnifiedAlarmService {
         }),
       };
 
-      // Programar la notificación
+      // Android Pro: usar Notifee para full-screen cuando la fecha sea inmediata (< 10s)
+      if (Platform.OS === 'android') {
+        const now = Date.now();
+        const ts = triggerDate.getTime();
+        if (ts - now <= 10000) {
+          // disparo inmediato con full-screen
+          await displayFullScreenAlarm({ title, body, deepLink });
+        }
+      }
+
+      // Programar la notificación en Expo Notifications (compatibilidad y scheduling)
       const notificationId = await Notifications.scheduleNotificationAsync({
         identifier: id,
         content: notificationContent,
@@ -182,6 +200,16 @@ export class UnifiedAlarmService {
       
       // Iniciar vibración
       this.audioManager.startAlarmVibration();
+      // Failsafe: detener automáticamente después de 2 minutos si no se detuvo
+      if (this.autoStopTimer) {
+        clearTimeout(this.autoStopTimer);
+      }
+      this.autoStopTimer = setTimeout(() => {
+        if (this.isAlarmActive) {
+          console.log('[UnifiedAlarmService] Failsafe: deteniendo alarma tras 2 minutos');
+          this.stopAlarm();
+        }
+      }, 120000);
       
       // Navegar a AlarmScreen
       this.navigateToAlarmScreen(data);
@@ -214,17 +242,26 @@ export class UnifiedAlarmService {
    */
   private navigateToAlarmScreen(data: any): void {
     try {
+      const typeSlug = ((): 'medication' | 'appointment' | 'treatment' | 'alarm' => {
+        const t = (data?.type || data?.kind || '').toString().toUpperCase();
+        if (t === 'MEDICATION' || t === 'MED') return 'medication';
+        if (t === 'APPOINTMENT') return 'appointment';
+        if (t === 'TREATMENT') return 'treatment';
+        return 'alarm';
+      })();
+      const bizId = data?.medicationId || data?.appointmentId || data?.refId || 'unknown';
+      const url = data?.deepLink || `recuerdamed://alarm/${typeSlug}/${bizId}`;
+
       if (!this.navigationRef || !this.navigationRef.isReady()) {
-        console.log('[UnifiedAlarmService] Navegación no disponible, reintentando...');
-        setTimeout(() => this.navigateToAlarmScreen(data), 1000);
+        console.log('[UnifiedAlarmService] Navegación no lista, abriendo deep link');
+        Linking.openURL(url);
         return;
       }
 
-      console.log('[UnifiedAlarmService] Navegando a AlarmScreen...');
-      
+      // Si la navegación está lista, navegar por nombre de pantalla
       this.navigationRef.navigate('AlarmScreen', {
-        kind: data.kind || (data.type === 'MEDICATION' ? 'MED' : 'APPOINTMENT'),
-        refId: data.medicationId || data.appointmentId || data.refId,
+        kind: data.kind || (data.type === 'MEDICATION' ? 'MED' : data.type === 'APPOINTMENT' ? 'APPOINTMENT' : data.type === 'TREATMENT' ? 'TREATMENT' : 'ALARM'),
+        refId: bizId,
         scheduledFor: data.scheduledFor,
         name: data.medicationName || data.appointmentTitle || data.name,
         dosage: data.dosage || '',
@@ -232,10 +269,21 @@ export class UnifiedAlarmService {
         time: data.time,
         location: data.location || ''
       });
-      
-      console.log('[UnifiedAlarmService] ✅ Navegación completada');
+      console.log('[UnifiedAlarmService] ✅ Navegación a AlarmScreen');
     } catch (error) {
       handleAlarmError(error, 'navigateToAlarmScreen');
+    }
+  }
+
+  /**
+   * Foreground: sonar y abrir UI
+   */
+  public async onNotificationReceivedInForeground(data?: any): Promise<void> {
+    try {
+      await this.audioManager.startAlarm();
+      this.navigateToAlarmScreen(data || {});
+    } catch (error) {
+      handleAlarmError(error, 'onNotificationReceivedInForeground');
     }
   }
 
@@ -247,6 +295,10 @@ export class UnifiedAlarmService {
       console.log('[UnifiedAlarmService] Deteniendo alarma...');
       
       this.isAlarmActive = false;
+      if (this.autoStopTimer) {
+        clearTimeout(this.autoStopTimer);
+        this.autoStopTimer = null;
+      }
       this.audioManager.stopAlarmSound();
       this.audioManager.stopVibration();
       

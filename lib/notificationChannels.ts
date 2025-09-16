@@ -99,6 +99,27 @@ export async function setupNotificationChannels() {
   }
 }
 
+// Asegura el canal genérico de alarmas
+export async function ensureAlarmChannel() {
+  try {
+    await Notifications.setNotificationChannelAsync('alarms', {
+      name: 'Alarmas',
+      description: 'Alarmas generales',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 500, 200, 500, 200, 500],
+      lightColor: '#FF0000',
+      sound: 'alarm.mp3',
+      enableVibrate: true,
+      enableLights: true,
+      bypassDnd: true,
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+  } catch (error) {
+    console.error('[Channels] Error asegurando canal alarms:', error);
+  }
+}
+
 /**
  * Verificar canales existentes
  */

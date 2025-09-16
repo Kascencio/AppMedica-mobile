@@ -50,14 +50,15 @@ export default function AlarmScreen(props: any) {
       const rd = resp?.notification?.request?.content?.data ?? {};
 
       const merged = {
-        kind: rp.kind ?? pp.kind ?? rd.kind ?? rd.type,
-        refId: rp.refId ?? pp.refId ?? rd.medicationId ?? rd.appointmentId ?? rd.refId,
+        kind: rp.kind ?? pp.kind ?? rd.kind ?? rp.type ?? rd.type,
+        refId: rp.refId ?? rp.id ?? pp.refId ?? rd.medicationId ?? rd.appointmentId ?? rd.refId,
         scheduledFor: rp.scheduledFor ?? pp.scheduledFor ?? rd.scheduledFor ?? new Date().toISOString(),
         name: rp.name ?? pp.name ?? rd.medicationName ?? rd.appointmentTitle ?? rd.name,
         dosage: rp.dosage ?? pp.dosage ?? rd.dosage,
         instructions: rp.instructions ?? pp.instructions ?? rd.instructions,
         time: rp.time ?? pp.time ?? rd.time,
         autoAction: rp.autoAction ?? pp.autoAction ?? rd.autoAction,
+        type: rp.type ?? rd.type,
       };
 
       if (!merged.kind || !merged.refId) {

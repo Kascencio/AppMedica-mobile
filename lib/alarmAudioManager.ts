@@ -92,7 +92,9 @@ export class AlarmAudioManager {
   public async stopAlarmSound(): Promise<void> {
     try {
       if (this.currentSound) {
-        await this.currentSound.unloadAsync();
+        // Intentar parar antes de descargar para evitar callbacks colgados
+        try { await this.currentSound.stopAsync(); } catch {}
+        try { await this.currentSound.unloadAsync(); } catch {}
         this.currentSound = null;
       }
       this.isPlaying = false;

@@ -23,6 +23,9 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
 import { AppState } from 'react-native';
+import * as LinkingExpo from 'expo-linking';
+import { linking } from './lib/linking';
+import Constants from 'expo-constants';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
@@ -138,6 +141,73 @@ export default function App() {
     };
   }, []);
 
+  // Deep link desde notificaciones: frío/background
+  useEffect(() => {
+    (async () => {
+      try {
+        const last = await Notifications.getLastNotificationResponseAsync();
+        if (last) {
+          const url = (last.notification.request.content.data as any)?.deepLink as string | undefined;
+          if (url) {
+            LinkingExpo.openURL(url);
+          }
+        }
+      } catch {}
+    })();
+
+    const sub = Notifications.addNotificationResponseReceivedListener((res) => {
+      const url = (res.notification.request.content.data as any)?.deepLink as string | undefined;
+      if (url) {
+        LinkingExpo.openURL(url);
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Foreground: sonar y abrir UI (single source of truth)
+  useEffect(() => {
+    const subFg = Notifications.addNotificationReceivedListener((n) => {
+      if (AppState.currentState === 'active') {
+        const data = n.request.content.data as any;
+        // Evitar doble disparo si viene de deep link inmediato
+        if (data?.isAlarm) {
+          unifiedAlarmService.onNotificationReceivedInForeground?.(data);
+        }
+      }
+    });
+    return () => subFg.remove();
+  }, []);
+
+  // Notifee: manejar full-screen presses y arranque en frío
+  useEffect(() => {
+    if (Constants.appOwnership === 'expo') return; // Evitar Notifee en Expo Go
+    let unsub: any;
+    (async () => {
+      try {
+        const notifeeMod = await import('@notifee/react-native');
+        const notifee: any = (notifeeMod as any).default ?? notifeeMod;
+
+        // Arranque en frío
+        const initial = await notifee.getInitialNotification();
+        const initialUrl: string | undefined = initial?.notification?.data?.deepLink;
+        if (initialUrl) {
+          LinkingExpo.openURL(initialUrl);
+        }
+
+        // Foreground presses
+        unsub = notifee.onForegroundEvent(({ type, detail }: any) => {
+          const url: string | undefined = detail?.notification?.data?.deepLink;
+          if (url) LinkingExpo.openURL(url);
+        });
+      } catch {
+        // Notifee no disponible (Expo Go); ignorar
+      }
+    })();
+    return () => {
+      try { unsub && unsub(); } catch {}
+    };
+  }, []);
+
   // Cargar perfil automáticamente si hay token y no hay perfil
   useEffect(() => {
     if (isAuthenticated && userToken && !profile && !loadingProfile) {
@@ -175,7 +245,7 @@ export default function App() {
 
   return (
     <DatabaseInitializer>
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer ref={navigationRef} linking={linking}>
         {isAuthenticated ? <AppTabs /> : <AuthStack />}
       </NavigationContainer>
       <Modal visible={showPermModal} transparent animationType="fade">
