@@ -149,7 +149,7 @@ export class UnifiedAlarmService {
         }),
       };
 
-      // Android: programar apertura full-screen con Notifee exacta
+      // Android: preferir AlarmClock nativo (ícono próxima alarma) y caer a Notifee exacta
       if (Platform.OS === 'android') {
         try {
           // Intentar EXACT alarm con AlarmClock

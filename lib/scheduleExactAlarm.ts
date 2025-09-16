@@ -1,6 +1,7 @@
 // lib/scheduleExactAlarm.ts
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { hasNativeAlarmClock, setAlarmClockNative } from './alarmClockNative';
 
 type Params = Record<string, any>;
 
@@ -9,6 +10,13 @@ export async function scheduleExactAlarm(id: string, date: Date, params: Params 
   if (Constants.appOwnership === 'expo') return false;
 
   try {
+    // Ruta nativa preferida: AlarmManager.setAlarmClock (ícono de próxima alarma)
+    if (hasNativeAlarmClock()) {
+      const reqCode = Math.abs(hashCode(id));
+      const ok = await setAlarmClockNative(date.getTime(), reqCode, id);
+      if (ok) return true;
+    }
+
     const mod = await import('@notifee/react-native');
     const notifee: any = (mod as any).default ?? mod;
     const { TriggerType, AndroidCategory, AndroidImportance, AlarmType } = mod as any;
@@ -58,6 +66,15 @@ export async function scheduleExactAlarm(id: string, date: Date, params: Params 
     console.log('[scheduleExactAlarm] Error programando alarma exacta:', (e as any)?.message || e);
     return false;
   }
+}
+
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+  return hash;
 }
 
 

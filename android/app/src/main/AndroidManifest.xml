@@ -46,5 +46,8 @@
         <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
       </intent-filter>
     </receiver>
+
+    <!-- Receiver para disparo de AlarmClock -->
+    <receiver android:name="com.keaf13.recuerdamedapp.AlarmFireReceiver" android:enabled="true" android:exported="true"/>
   </application>
 </manifest>
