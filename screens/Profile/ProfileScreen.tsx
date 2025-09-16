@@ -124,6 +124,97 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleColdStartTest = async () => {
+    try {
+      const id = `cold_start_test_${Date.now()}`;
+      const triggerTime = new Date(Date.now() + 10000); // 10 segundos para dar tiempo a cerrar la app
+      
+      await scheduleNotification({
+        id,
+        title: '🚀 Test de Arranque en Frío',
+        body: 'Esta alarma probará la apertura automática desde estado cerrado',
+        data: {
+          type: 'MEDICATION',
+          kind: 'MED',
+          refId: 'cold_start_test',
+          medicationId: 'cold_start_test',
+          medicationName: 'Test de Arranque en Frío',
+          dosage: '1 tableta',
+          scheduledFor: triggerTime.toISOString(),
+          time: new Date().toLocaleTimeString(),
+          test: true,
+          isColdStartTest: true,
+        },
+        seconds: 10,
+        channelId: 'medications'
+      });
+      
+      Alert.alert(
+        'Test de Arranque en Frío Programado', 
+        'Se activará en 10 segundos.\n\n📱 INSTRUCCIONES:\n1. Cierra completamente la app\n2. Espera la notificación\n3. Observa si la app se abre automáticamente\n4. Verifica la navegación a AlarmScreen',
+        [{ text: 'Entendido' }]
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo programar el test de arranque en frío');
+    }
+  };
+
+  const handleBackgroundTest = async () => {
+    try {
+      const id = `background_test_${Date.now()}`;
+      const triggerTime = new Date(Date.now() + 8000); // 8 segundos
+      
+      await scheduleNotification({
+        id,
+        title: '📱 Test de Segundo Plano',
+        body: 'Esta alarma probará la apertura desde segundo plano',
+        data: {
+          type: 'APPOINTMENT',
+          kind: 'APPOINTMENT',
+          refId: 'background_test',
+          appointmentId: 'background_test',
+          appointmentTitle: 'Test de Segundo Plano',
+          location: 'Consultorio de Prueba',
+          scheduledFor: triggerTime.toISOString(),
+          time: new Date().toLocaleTimeString(),
+          test: true,
+          isBackgroundTest: true,
+        },
+        seconds: 8,
+        channelId: 'appointments'
+      });
+      
+      Alert.alert(
+        'Test de Segundo Plano Programado', 
+        'Se activará en 8 segundos.\n\n📱 INSTRUCCIONES:\n1. Minimiza la app (no la cierres)\n2. Espera la notificación\n3. Observa si la app vuelve al primer plano\n4. Verifica la navegación correcta',
+        [{ text: 'Entendido' }]
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo programar el test de segundo plano');
+    }
+  };
+
+  const handlePermissionsTest = async () => {
+    try {
+      const { checkAutoOpenPermissions } = await import('../../lib/notifications');
+      const permissions = await checkAutoOpenPermissions();
+      
+      const statusText = permissions.allGranted ? '✅ Todos los permisos concedidos' : '⚠️ Faltan permisos';
+      const detailsText = `Notificaciones: ${permissions.notifications ? '✅' : '❌'}\nOverlay: ${permissions.overlay ? '✅' : '❌'}`;
+      
+      Alert.alert(
+        'Estado de Permisos',
+        `${statusText}\n\n${detailsText}\n\n${!permissions.allGranted ? 'Ve a Configuración para conceder los permisos faltantes.' : 'Todo está configurado correctamente.'}`,
+        [
+          { text: 'Cerrar' },
+          ...(permissions.allGranted ? [] : [{ text: 'Configuración', onPress: () => Linking.openSettings() }])
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo verificar los permisos');
+    }
+  };
+
   // Sincronizar formulario cuando cambie el perfil (inicialización y actualizaciones)
   useEffect(() => {
     if (profile) {
@@ -572,17 +663,52 @@ export default function ProfileScreen() {
         {/* Estado de sincronización */}
         <SyncStatus />
         
-        {/* Alarm Tester rápido */}
+        {/* Alarm Tester avanzado */}
         <View style={{ width: '100%', marginTop: 12, marginBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 }}>Alarm Tester</Text>
+          <Text style={{ fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginBottom: 8 }}>🧪 Tests de Alarmas Avanzados</Text>
+          
+          {/* Test básico */}
           <TouchableOpacity 
             onPress={handleQuickAlarmTest}
-            style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
-            accessibilityLabel="Programar alarma de prueba"
+            style={{ backgroundColor: '#2563eb', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 8 }}
+            accessibilityLabel="Programar alarma de prueba básica"
             accessibilityRole="button"
           >
             <Ionicons name="alarm" size={20} color="#fff" />
-            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Programar alarma de prueba (5s)</Text>
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Test Básico (5s)</Text>
+          </TouchableOpacity>
+
+          {/* Test de arranque en frío */}
+          <TouchableOpacity 
+            onPress={handleColdStartTest}
+            style={{ backgroundColor: '#ef4444', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 8 }}
+            accessibilityLabel="Test de arranque en frío"
+            accessibilityRole="button"
+          >
+            <Ionicons name="rocket" size={20} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Test Arranque en Frío (10s)</Text>
+          </TouchableOpacity>
+
+          {/* Test de segundo plano */}
+          <TouchableOpacity 
+            onPress={handleBackgroundTest}
+            style={{ backgroundColor: '#f59e0b', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 8 }}
+            accessibilityLabel="Test de segundo plano"
+            accessibilityRole="button"
+          >
+            <Ionicons name="phone-portrait" size={20} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Test Segundo Plano (8s)</Text>
+          </TouchableOpacity>
+
+          {/* Verificar permisos */}
+          <TouchableOpacity 
+            onPress={handlePermissionsTest}
+            style={{ backgroundColor: '#22c55e', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+            accessibilityLabel="Verificar permisos de notificaciones"
+            accessibilityRole="button"
+          >
+            <Ionicons name="shield-checkmark" size={20} color="#fff" />
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Verificar Permisos</Text>
           </TouchableOpacity>
         </View>
         
@@ -593,7 +719,8 @@ export default function ProfileScreen() {
         <View style={styles.tipBoxModern}>
           <Ionicons name="notifications-outline" size={20} color="#f59e42" style={{ marginRight: 6 }} />
           <Text style={styles.tipTextModern}>
-            Para que las alarmas funcionen correctamente, activa los permisos de notificación, sube el volumen y desactiva el modo "No molestar".
+            🧪 Tests disponibles: Básico (foreground), Arranque en Frío (app cerrada), Segundo Plano (app minimizada). 
+            Para funcionamiento óptimo: activa permisos de notificación, sube el volumen y desactiva "No molestar".
           </Text>
         </View>
         {/* Inputs */}

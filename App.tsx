@@ -66,14 +66,17 @@ export default function App() {
         if (permissionsGranted) {
           setNotiPerm('granted');
           
-          // Si no todos los permisos de apertura automática están concedidos, mostrar modal
-          if (!autoOpenPermissions.allGranted) {
-            console.log('[App] ⚠️ Faltan permisos para apertura automática');
+          // Mostrar instrucciones solo en Android cuando falten permisos de auto-apertura
+          if (Platform.OS === 'android' && !autoOpenPermissions.allGranted) {
+            console.log('[App] ⚠️ Faltan permisos para apertura automática (Android)');
             setShowPermModal(true);
+          } else {
+            setShowPermModal(false);
           }
         } else {
           setNotiPerm('denied');
-          setShowPermModal(true);
+          // Mostrar modal solo en Android; en iOS se puede guiar con otro flujo si es necesario
+          setShowPermModal(Platform.OS === 'android');
         }
         
         // Inicializar servicio de sincronización (que incluye la base de datos)
@@ -128,8 +131,21 @@ export default function App() {
     
     
     // Configurar el estado de la app
-    const handleAppStateChange = (nextAppState: string) => {
+    const handleAppStateChange = async (nextAppState: string) => {
       console.log('[App] Estado de la app cambió:', nextAppState);
+      // Al volver a primer plano, re-verificar permisos para ocultar el modal si ya se concedieron
+      if (nextAppState === 'active') {
+        try {
+          const autoOpenPermissions = await checkAutoOpenPermissions();
+          if (Platform.OS === 'android') {
+            setShowPermModal(!autoOpenPermissions.allGranted);
+          } else {
+            setShowPermModal(false);
+          }
+        } catch (e) {
+          // ignorar
+        }
+      }
     };
     
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
@@ -143,18 +159,32 @@ export default function App() {
 
   // Deep link desde notificaciones: frío/background
   useEffect(() => {
-    (async () => {
-      try {
-        const last = await Notifications.getLastNotificationResponseAsync();
-        if (last) {
-          const url = (last.notification.request.content.data as any)?.deepLink as string | undefined;
-          if (url) {
-            LinkingExpo.openURL(url);
-          }
-        }
-      } catch {}
-    })();
+    const handleColdStart = async () => {
+      let url: string | undefined;
 
+      // Prioridad 1: Notificación que abrió la app (FSI o toque en Expo Go)
+      const initialNotification = await Notifications.getInitialNotificationAsync();
+      if (initialNotification) {
+        url = (initialNotification.request.content.data as any)?.deepLink;
+        if (url) {
+          LinkingExpo.openURL(url);
+          return; // Procesado, salir
+        }
+      }
+
+      // Prioridad 2: Respuesta a notificación que abrió la app (toque del usuario)
+      const lastResponse = await Notifications.getLastNotificationResponseAsync();
+      if (lastResponse) {
+        url = (lastResponse.notification.request.content.data as any)?.deepLink;
+        if (url) {
+          LinkingExpo.openURL(url);
+        }
+      }
+    };
+
+    handleColdStart();
+
+    // Listener para toques en notificaciones con la app en segundo plano
     const sub = Notifications.addNotificationResponseReceivedListener((res) => {
       const url = (res.notification.request.content.data as any)?.deepLink as string | undefined;
       if (url) {

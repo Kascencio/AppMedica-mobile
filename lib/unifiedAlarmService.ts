@@ -148,11 +148,14 @@ export class UnifiedAlarmService {
         }),
       };
 
-      // Android Pro: usar Notifee para full-screen cuando la fecha sea inmediata (< 10s)
+      // Android Pro: usar Notifee para full-screen SOLO si es realmente inmediato (<= 1.5s)
+      // y no es un test (para evitar disparos inmediatos al programar pruebas)
       if (Platform.OS === 'android') {
         const now = Date.now();
         const ts = triggerDate.getTime();
-        if (ts - now <= 10000) {
+        const msUntil = ts - now;
+        const isTest = !!(data && (data as any).test);
+        if (!isTest && msUntil <= 1500) {
           // disparo inmediato con full-screen
           await displayFullScreenAlarm({ title, body, deepLink });
         }
