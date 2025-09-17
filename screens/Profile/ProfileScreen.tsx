@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Image as RNImage } from 'react-native';
+import OptimizedImage, { ProfileAvatar } from '../../components/OptimizedImage';
 import logo from '../../assets/logo.png';
 import { useAuth } from '../../store/useAuth';
 import { useInviteCodes } from '../../store/useInviteCodes';
@@ -586,11 +587,27 @@ export default function ProfileScreen() {
       <LinearGradient colors={["#e0f2fe", "#f0fdfa"]} style={styles.profileCardModern} start={{x:0, y:0}} end={{x:1, y:1}}>
         <TouchableOpacity style={styles.avatarBoxModern} onPress={pickImage} accessibilityLabel="Cambiar foto de perfil" accessibilityRole="button">
           <View style={styles.avatarOuterModern}>
-            {form.photoUrl ? (
-              <RNImage key={photoVersion} source={{ uri: `${form.photoUrl}${form.photoUrl.includes('?') ? '&' : '?'}v=${photoVersion}` }} style={styles.avatarModern} resizeMode="cover" />
-            ) : (
-              <RNImage source={logo} style={styles.avatarModern} resizeMode="contain" />
-            )}
+            {(() => {
+              const uri = (() => {
+                const u = form.photoUrl;
+                if (!u) return '';
+                const isHttp = /^https?:\/\//i.test(u);
+                // Solo agregar cache-buster para URLs http(s)
+                return isHttp ? `${u}${u.includes('?') ? '&' : '?'}v=${photoVersion}` : u;
+              })();
+              return (
+                <OptimizedImage
+                  uri={uri}
+                  size="avatar"
+                  width={140}
+                  height={140}
+                  fallbackSource={logo}
+                  showLoading
+                  style={styles.avatarModern}
+                  resizeMode="cover"
+                />
+              );
+            })()}
           </View>
           <Text style={styles.avatarTextModern}>Cambiar foto</Text>
         </TouchableOpacity>

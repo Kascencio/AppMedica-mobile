@@ -1,4 +1,4 @@
-import { Platform, Alert, Linking, PermissionsAndroid } from 'react-native';
+import { Platform, Alert, Linking, PermissionsAndroid, NativeModules } from 'react-native';
 import * as Device from 'expo-device';
 
 /**
@@ -30,11 +30,19 @@ export class OverlayPermissionService {
     }
 
     try {
+      // Preferir verificación nativa exacta (Settings.canDrawOverlays)
+      const native = (NativeModules as any).OverlayPermissionModule;
+      if (native && typeof native.canDrawOverlays === 'function') {
+        const granted = await native.canDrawOverlays();
+        console.log('[OverlayPermissionService] (Native) Overlay:', granted ? 'Concedido' : 'Denegado');
+        return !!granted;
+      }
+      console.log('[OverlayPermissionService] ⚠️ Módulo nativo OverlayPermissionModule no disponible; usando fallback (menos fiable)');
+      // Fallback (menos fiable en Android 10+)
       const hasPermission = await PermissionsAndroid.check(
         PermissionsAndroid.PERMISSIONS.SYSTEM_ALERT_WINDOW
       );
-      
-      console.log('[OverlayPermissionService] Permiso de overlay:', hasPermission ? 'Concedido' : 'Denegado');
+      console.log('[OverlayPermissionService] (Fallback) Overlay:', hasPermission ? 'Concedido' : 'Denegado');
       return hasPermission;
     } catch (error) {
       console.error('[OverlayPermissionService] Error verificando permiso de overlay:', error);
@@ -82,8 +90,13 @@ export class OverlayPermissionService {
               text: 'Configurar',
               onPress: async () => {
                 try {
-                  // Abrir configuración de permisos especiales
-                  await Linking.openSettings();
+                  // Abrir pantalla específica del permiso de overlay si el módulo nativo está disponible
+                  const native = (NativeModules as any).OverlayPermissionModule;
+                  if (native && typeof native.openOverlaySettings === 'function') {
+                    await native.openOverlaySettings();
+                  } else {
+                    await Linking.openSettings();
+                  }
                   
                   // Mostrar instrucciones adicionales
                   setTimeout(() => {

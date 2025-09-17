@@ -33,8 +33,13 @@ export default function OptimizedImage({
   const [hasError, setHasError] = React.useState(false);
 
   // Generar URL optimizada según el tamaño
-  const getOptimizedUri = () => {
-    if (!uri) return fallbackSource;
+  const getOptimizedUri = (): string | undefined => {
+    if (!uri) return undefined;
+
+    // Si es base64 o file://, devolver tal cual
+    if (uri.startsWith('data:image') || uri.startsWith('file://') || uri.startsWith('content://')) {
+      return uri;
+    }
 
     // Si es una URL de ImageKit, optimizarla
     if (uri.includes('imagekit.io')) {
@@ -90,7 +95,7 @@ export default function OptimizedImage({
   return (
     <View style={[styles.container, style]}>
       <Image
-        source={optimizedUri ? { uri: optimizedUri } : fallbackSource}
+        source={typeof optimizedUri === 'string' && optimizedUri.length > 0 ? { uri: optimizedUri } : fallbackSource}
         style={[styles.image, style]}
         onLoadStart={handleLoadStart}
         onLoadEnd={handleLoadEnd}

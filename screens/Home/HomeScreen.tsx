@@ -9,7 +9,6 @@ import { useIntakeEvents } from '../../store/useIntakeEvents';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import logo from '../../assets/logo.png';
 import { useNavigation } from '@react-navigation/native';
-import AlarmStatus from '../../components/AlarmStatus';
 // Módulo de pruebas de alarmas removido
 import COLORS from '../../constants/colors';
 import { scheduleSnoozeMedication } from '../../lib/notifications';
@@ -325,14 +324,7 @@ export default function HomeScreen() {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            onPress={() => (navigation as any).navigate('Notifications')}
-            style={styles.alarmBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Ver notificaciones"
-          >
-            <Ionicons name="notifications-outline" size={24} color={COLORS.text.primary} />
-          </TouchableOpacity>
+          {/* Botón de notificaciones removido */}
         </View>
 
         {/* Hero "Tu día" con progreso diario */}

@@ -168,6 +168,26 @@ const validateAndFixProfileIds = (profile: UserProfile): UserProfile => {
   return profile;
 };
 
+// Mezcla que prioriza valores definidos/no vacíos del primero sobre los siguientes
+function mergePreferNonNull<T extends Record<string, any>>(
+  primary: Partial<T> | undefined,
+  secondary: Partial<T> | undefined,
+  fallback: Partial<T> | undefined
+): T {
+  const p = primary || {};
+  const s = secondary || {};
+  const f = fallback || {};
+  const keys = new Set<string>([...Object.keys(f), ...Object.keys(s), ...Object.keys(p)]);
+  const out: any = {};
+  keys.forEach((k) => {
+    const pv = (p as any)[k];
+    const sv = (s as any)[k];
+    const fv = (f as any)[k];
+    out[k] = pv !== undefined && pv !== null && pv !== '' ? pv : (sv !== undefined && sv !== null && sv !== '' ? sv : fv);
+  });
+  return out as T;
+}
+
 export const useCurrentUser = create<CurrentUserState>((set, get) => ({
   profile: null,
   loading: false,
@@ -322,7 +342,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             }
             
             // Combinar datos: locales -> base del token -> del servidor
-            finalProfile = { ...localProfile, ...baseProfile, ...mappedData };
+            finalProfile = mergePreferNonNull<UserProfile>(mappedData as any, localProfile || undefined, baseProfile);
             
             // CORRECCIÓN AUTOMÁTICA: Si el ID es incorrecto, corregirlo automáticamente
             console.log('[useCurrentUser] 🔍 Verificando ID del perfil (servidor):', finalProfile.id);
@@ -357,7 +377,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
                 // Usar solo los datos del token para crear un perfil básico
                 finalProfile = { ...localProfile, ...baseProfile };
             } else {
-                finalProfile = { ...localProfile, ...baseProfile };
+                finalProfile = mergePreferNonNull<UserProfile>(localProfile || undefined, baseProfile, {});
             }
             
             // CORRECCIÓN AUTOMÁTICA: Si el ID es incorrecto, corregirlo automáticamente
@@ -936,7 +956,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         console.log('[useCurrentUser] ⚠️ Imagen guardada como respaldo (ImageKit no disponible)');
       }
       
-      // Retornar URL de servidor si existe; si no, retornar local/base64 sin marcar error
+      // Retornar URL; si es local/base64, igualmente la app la mostrará con OptimizedImage
       return result.url!;
 
     } catch (error) {
