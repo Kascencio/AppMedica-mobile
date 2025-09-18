@@ -17,6 +17,7 @@ import DateSelector from '../../components/DateSelector';
 import OptionSelector from '../../components/OptionSelector';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
+import { useOffline } from '../../store/useOffline';
 
 export default function MedicationsScreen() {
   const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication, scheduleMedicationAlarms, cancelMedicationAlarms, rescheduleMedicationAlarms } = useMedications();
@@ -36,8 +37,38 @@ export default function MedicationsScreen() {
   const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]); // 0=Domingo
   const [everyXHours, setEveryXHours] = useState('8');
+  const { isOnline } = useOffline();
 
   const perfilIncompleto = !profile?.patientProfileId && !profile?.id;
+
+  const getNextDoseEta = (med: any) => {
+    try {
+      const now = new Date();
+      let candidate: Date | null = null;
+      if (med.time) {
+        const [hh, mm] = String(med.time).split(':').map((n: string) => parseInt(n, 10));
+        const base = new Date();
+        base.setHours(isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0, 0);
+        candidate = base;
+      } else if (med.startDate) {
+        candidate = new Date(med.startDate);
+      }
+      if (!candidate) return '';
+      // Si la hora ya pasó hoy, asumir próxima ocurrencia mañana (diario)
+      if (candidate.getTime() <= now.getTime()) {
+        candidate.setDate(candidate.getDate() + 1);
+      }
+      const diffMs = candidate.getTime() - now.getTime();
+      const totalMin = Math.max(0, Math.round(diffMs / 60000));
+      const hours = Math.floor(totalMin / 60);
+      const minutes = totalMin % 60;
+      if (hours <= 0) return `Próxima dosis en ${minutes} min`;
+      if (minutes === 0) return `Próxima dosis en ${hours} h`;
+      return `Próxima dosis en ${hours} h ${minutes} min`;
+    } catch {
+      return '';
+    }
+  };
 
   const medicationSchema = z.object({
     name: z.string().min(1, 'Obligatorio'),
@@ -157,6 +188,10 @@ export default function MedicationsScreen() {
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
+          // Incluir la hora principal para que Home muestre "Próxima toma"
+          time: selectedTimes.length > 0
+            ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            : undefined,
         });
         medId = editingMed.id;
       } else {
@@ -168,6 +203,10 @@ export default function MedicationsScreen() {
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
+          // Incluir la hora principal para que Home muestre "Próxima toma"
+          time: selectedTimes.length > 0
+            ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            : undefined,
         });
         await new Promise(res => setTimeout(res, 500));
         const newMed = medications.find(m => m.name === data.name && m.startDate === data.startDate?.toISOString());
@@ -270,11 +309,11 @@ export default function MedicationsScreen() {
         <TouchableOpacity 
           style={[
             GLOBAL_STYLES.buttonPrimary,
-            perfilIncompleto && { opacity: 0.6 },
+            (perfilIncompleto || !isOnline) && { opacity: 0.6 },
             { marginTop: 20 }
           ]} 
           onPress={openCreateModal} 
-          disabled={perfilIncompleto} 
+          disabled={perfilIncompleto || !isOnline} 
           activeOpacity={0.85}
           accessibilityLabel="Agregar nuevo medicamento"
           accessibilityHint={perfilIncompleto ? "Completa tu perfil primero" : "Abre el formulario para agregar un medicamento"}
@@ -283,6 +322,11 @@ export default function MedicationsScreen() {
           <Text style={GLOBAL_STYLES.buttonText}>Nuevo</Text>
         </TouchableOpacity>
       </View>
+      {!isOnline && (
+        <View style={[GLOBAL_STYLES.card, { backgroundColor: '#fef9c3', borderColor: '#fde047', borderWidth: 1 }]}>
+          <Text style={{ color: '#92400e', textAlign: 'center' }}>Modo sin conexión: visualización habilitada, edición deshabilitada.</Text>
+        </View>
+      )}
       {perfilIncompleto && (
         <View style={[GLOBAL_STYLES.card, { backgroundColor: COLORS.error + '20', borderColor: COLORS.error }]}>
           <Text style={[GLOBAL_STYLES.bodyText, { color: COLORS.error, textAlign: 'center' }]}>
@@ -307,15 +351,17 @@ export default function MedicationsScreen() {
               </View>
               <View style={GLOBAL_STYLES.row}>
                 <TouchableOpacity 
-                  style={MEDICAL_STYLES.actionButton} 
-                  onPress={() => openEditModal(med)}
+                  style={[MEDICAL_STYLES.actionButton, !isOnline && { opacity: 0.5 }]} 
+                  onPress={() => isOnline && openEditModal(med)}
+                  disabled={!isOnline}
                   accessibilityLabel={`Editar medicamento ${med.name}`}
                 >
                   <Ionicons name="create-outline" size={20} color={COLORS.text.inverse} />
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[MEDICAL_STYLES.actionButton, { backgroundColor: COLORS.error }]} 
-                  onPress={() => onDelete(med.id)}
+                  style={[MEDICAL_STYLES.actionButton, { backgroundColor: COLORS.error }, !isOnline && { opacity: 0.5 }]} 
+                  onPress={() => isOnline && onDelete(med.id)}
+                  disabled={!isOnline}
                   accessibilityLabel={`Eliminar medicamento ${med.name}`}
                 >
                   <Ionicons name="trash-outline" size={20} color={COLORS.text.inverse} />
@@ -330,6 +376,22 @@ export default function MedicationsScreen() {
               <Text style={GLOBAL_STYLES.bodyText}>Tipo:</Text>
               <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', color: COLORS.text.primary }]}>{med.type}</Text>
             </View>
+            <View style={GLOBAL_STYLES.rowSpaced}>
+              <Text style={GLOBAL_STYLES.bodyText}>Hora:</Text>
+              <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', color: COLORS.text.primary }]}>
+                {med.time
+                  ? med.time
+                  : (med.startDate
+                      ? new Date(med.startDate).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })
+                      : '—')}
+              </Text>
+            </View>
+            {med.frequency ? (
+              <View style={GLOBAL_STYLES.rowSpaced}>
+                <Text style={GLOBAL_STYLES.bodyText}>Frecuencia:</Text>
+                <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', color: COLORS.text.primary }]}>{med.frequency}</Text>
+              </View>
+            ) : null}
             <View style={[GLOBAL_STYLES.row, { marginTop: 8 }]}>
               <Ionicons name="time" size={16} color={COLORS.text.secondary} style={GLOBAL_STYLES.icon} />
               <Text style={GLOBAL_STYLES.bodyText}>Inicio: </Text>
@@ -337,6 +399,14 @@ export default function MedicationsScreen() {
                 {med.startDate ? new Date(med.startDate).toLocaleDateString() : '—'}
               </Text>
             </View>
+            {getNextDoseEta(med) ? (
+              <View style={[GLOBAL_STYLES.row, { marginTop: 6 }]}>
+                <Ionicons name="alarm" size={16} color={COLORS.primary} style={GLOBAL_STYLES.icon} />
+                <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', color: COLORS.primary }]}>
+                  {getNextDoseEta(med)}
+                </Text>
+              </View>
+            ) : null}
             {med.notes ? (
               <View style={[GLOBAL_STYLES.card, { marginTop: 12, marginBottom: 0, padding: 12 }]}>
                 <Text style={GLOBAL_STYLES.caption}>{med.notes}</Text>

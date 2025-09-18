@@ -9,6 +9,7 @@ import AlarmScheduler from '../../components/AlarmScheduler';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 import { validateTreatment } from '../../lib/treatmentValidator';
+import { useOffline } from '../../store/useOffline';
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
@@ -33,6 +34,7 @@ export default function TreatmentsScreen() {
   const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
   const [everyXHours, setEveryXHours] = useState('8');
+  const { isOnline } = useOffline();
 
   const perfilIncompleto = !profile?.patientProfileId && !profile?.id;
 
@@ -239,12 +241,12 @@ export default function TreatmentsScreen() {
           <TouchableOpacity 
             style={[
               GLOBAL_STYLES.buttonPrimary,
-              perfilIncompleto && { opacity: 0.6 },
+              (perfilIncompleto || !isOnline) && { opacity: 0.6 },
               isTablet && styles.addButtonTablet,
               isLandscape && styles.addButtonLandscape
             ]} 
             onPress={openCreateModal} 
-            disabled={perfilIncompleto} 
+            disabled={perfilIncompleto || !isOnline} 
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="Agregar nuevo tratamiento"
@@ -327,7 +329,8 @@ export default function TreatmentsScreen() {
                       MEDICAL_STYLES.actionButton,
                       isTablet && styles.actionButtonTablet
                     ]} 
-                    onPress={() => openEditModal(treatment)}
+                    onPress={() => isOnline && openEditModal(treatment)}
+                    disabled={!isOnline}
                     accessibilityRole="button"
                     accessibilityLabel={`Editar tratamiento ${treatment.description || 'Sin nombre'}`}
                   >
@@ -343,7 +346,8 @@ export default function TreatmentsScreen() {
                       { backgroundColor: COLORS.error },
                       isTablet && styles.actionButtonTablet
                     ]} 
-                    onPress={() => handleDelete(treatment.id)}
+                    onPress={() => isOnline && handleDelete(treatment.id)}
+                    disabled={!isOnline}
                     accessibilityRole="button"
                     accessibilityLabel={`Eliminar tratamiento ${treatment.description || 'Sin nombre'}`}
                   >

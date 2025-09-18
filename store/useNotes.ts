@@ -33,7 +33,7 @@ interface NotesState {
   notes: Note[];
   loading: boolean;
   error: string | null;
-  getNotes: () => Promise<void>;
+  getNotes: (patientIdOverride?: string) => Promise<void>;
   createNote: (data: Partial<Note>) => Promise<void>;
   updateNote: (id: string, data: Partial<Note>) => Promise<void>;
   deleteNote: (id: string) => Promise<void>;
@@ -44,20 +44,21 @@ export const useNotes = create<NotesState>((set, get) => ({
   loading: false,
   error: null,
 
-  getNotes: async () => {
+  getNotes: async (patientIdOverride?: string) => {
     console.log('[useNotes] ========== INICIO getNotes ==========');
     
     set({ loading: true, error: null });
     
     try {
       const profile = useCurrentUser.getState().profile;
+      const patientId = (patientIdOverride || profile?.patientProfileId || profile?.id);
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
       console.log('[useNotes] Perfil obtenido:', JSON.stringify(profile, null, 2));
       console.log('[useNotes] Estado de conexión:', isOnline);
       
-      if (!profile?.id) {
+      if (!patientId) {
         console.log('[useNotes] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente disponible');
       }
@@ -69,7 +70,7 @@ export const useNotes = create<NotesState>((set, get) => ({
         try {
           console.log('[useNotes] Obteniendo notas desde servidor...');
           
-          const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.NOTES.BASE}?patientProfileId=${profile.id}`);
+          const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.NOTES.BASE}?patientProfileId=${patientId}`);
           console.log('[useNotes] Endpoint:', endpoint);
           
           const res = await fetch(endpoint, {
@@ -112,7 +113,7 @@ export const useNotes = create<NotesState>((set, get) => ({
             }
             
             // Obtener notas offline de la base de datos local
-            const offlineNotes = await localDB.getNotes(profile.id);
+            const offlineNotes = await localDB.getNotes(patientId);
             const offlineOnly = offlineNotes.filter(note => note.isOffline);
             
             // Combinar notas del servidor con notas offline
@@ -146,7 +147,7 @@ export const useNotes = create<NotesState>((set, get) => ({
       // Si estamos offline o falló el servidor, cargar desde base de datos local
       console.log('[useNotes] Cargando notas desde base de datos local...');
       try {
-        const offlineNotes = await localDB.getNotes(profile.id);
+        const offlineNotes = await localDB.getNotes(patientId);
         console.log('[useNotes] Notas locales encontradas:', offlineNotes.length);
         set({ notes: offlineNotes });
       } catch (offlineError) {

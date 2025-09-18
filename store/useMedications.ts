@@ -28,7 +28,7 @@ interface MedicationsState {
   medications: Medication[];
   loading: boolean;
   error: string | null;
-  getMedications: () => Promise<void>;
+  getMedications: (patientIdOverride?: string) => Promise<void>;
   createMedication: (data: Partial<Medication>) => Promise<void>;
   updateMedication: (id: string, data: Partial<Medication>) => Promise<void>;
   deleteMedication: (id: string) => Promise<void>;
@@ -43,18 +43,19 @@ export const useMedications = create<MedicationsState>((set, get) => ({
   loading: false,
   error: null,
 
-  getMedications: async () => {
+  getMedications: async (patientIdOverride?: string) => {
     console.log('[useMedications] ========== INICIO getMedications ==========');
     set({ loading: true, error: null });
     
     try {
       const profile = useCurrentUser.getState().profile;
-      if (!profile?.id) {
+      const patientId = (patientIdOverride || profile?.patientProfileId || profile?.id);
+      if (!patientId) {
         console.log('[useMedications] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente');
       }
       
-      console.log('[useMedications] ✅ Perfil válido encontrado:', profile.id);
+      console.log('[useMedications] ✅ Perfil válido encontrado:', patientId);
       
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
@@ -65,9 +66,9 @@ export const useMedications = create<MedicationsState>((set, get) => ({
           console.log('[useMedications] Obteniendo medicamentos desde servidor...');
           
           // Usar el ID numérico si está disponible (el servidor espera número)
-          const patientId = (profile as any).patientProfileIdNumber || profile.id;
+          const patientIdForServer = (profile as any).patientProfileIdNumber || patientId;
           
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}?patientProfileId=${patientId}`), {
+          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}?patientProfileId=${patientIdForServer}`), {
             headers: { Authorization: `Bearer ${token}` },
           });
           
@@ -99,7 +100,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
             }
             
             // Combinar con medicamentos offline
-            const offlineMedications = await localDB.getMedications(profile.id);
+            const offlineMedications = await localDB.getMedications(patientId);
             const offlineOnly = offlineMedications.filter(med => med.isOffline);
             const allMedications = [...medications, ...offlineOnly];
             
@@ -108,7 +109,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
           } else if (res.status === 404) {
             console.log('[useMedications] No hay medicamentos disponibles (404)');
             // Cargar solo datos offline
-            const offlineMedications = await localDB.getMedications(profile.id);
+            const offlineMedications = await localDB.getMedications(patientId);
             set({ medications: offlineMedications });
             return;
           } else {
@@ -177,7 +178,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
       // Si estamos offline o falló el servidor, cargar desde base de datos local
       console.log('[useMedications] Cargando medicamentos desde base de datos local...');
       try {
-        const localMedications = await localDB.getMedications(profile.id);
+        const localMedications = await localDB.getMedications(patientId);
         set({ medications: localMedications });
       } catch (offlineError) {
         console.log('[useMedications] Error cargando datos locales:', offlineError);
@@ -308,9 +309,10 @@ export const useMedications = create<MedicationsState>((set, get) => ({
           const responseData = await res.json();
           console.log('[useMedications] Medicamento sincronizado exitosamente:', responseData);
           
-          // Guardar en base de datos local
+          // Guardar en base de datos local (preservar 'time' si el backend no lo devuelve)
           const localMedication: LocalMedication = {
             ...responseData,
+            time: (data as any).time || (responseData as any).time, // asegurar hora para Home "Próxima toma"
             isOffline: false,
             syncStatus: 'synced',
             updatedAt: responseData.updatedAt || responseData.createdAt || new Date().toISOString()

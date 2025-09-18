@@ -12,11 +12,13 @@ import * as Notifications from 'expo-notifications';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
+import { useOffline } from '../../store/useOffline';
 
 export default function CaregiverMedicationsScreen({ navigation }: any) {
   const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication } = useMedications();
   const { profile } = useCurrentUser();
   const { selectedPatientId, patients } = useCaregiver();
+  const { isOnline } = useOffline();
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
   const [modalVisible, setModalVisible] = React.useState(false);
   const [editingMed, setEditingMed] = React.useState<any>(null);
@@ -33,6 +35,32 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   const [everyXHours, setEveryXHours] = useState('8');
 
   const perfilIncompleto = !selectedPatient || !selectedPatient.name || !selectedPatient.age;
+
+  const getNextDoseEta = (med: any) => {
+    try {
+      const now = new Date();
+      let candidate: Date | null = null;
+      if (med.time) {
+        const [hh, mm] = String(med.time).split(':').map((n: string) => parseInt(n, 10));
+        const base = new Date();
+        base.setHours(isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0, 0);
+        candidate = base;
+      } else if (med.startDate) {
+        candidate = new Date(med.startDate);
+      }
+      if (!candidate) return '';
+      if (candidate.getTime() <= now.getTime()) {
+        candidate.setDate(candidate.getDate() + 1);
+      }
+      const diffMs = candidate.getTime() - now.getTime();
+      const totalMin = Math.max(0, Math.round(diffMs / 60000));
+      const hours = Math.floor(totalMin / 60);
+      const minutes = totalMin % 60;
+      if (hours <= 0) return `Próxima dosis en ${minutes} min`;
+      if (minutes === 0) return `Próxima dosis en ${hours} h`;
+      return `Próxima dosis en ${hours} h ${minutes} min`;
+    } catch { return ''; }
+  };
 
   const medicationSchema = z.object({
     name: z.string().min(1, 'Obligatorio'),
@@ -68,7 +96,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
 
   useEffect(() => {
     if (selectedPatientId) {
-      getMedications().catch((e) => {
+      getMedications(selectedPatientId).catch((e) => {
         console.log('[MEDICAMENTOS] Error:', e.message || e);
       });
     }
@@ -189,6 +217,10 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
+          // Guardar una hora principal para que Home pueda mostrar "Próxima toma"
+          time: selectedTimes.length > 0
+            ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            : undefined,
           // Opcional: puedes guardar la config de recordatorio en el backend si lo soporta
         });
         medId = editingMed.id;
@@ -203,6 +235,10 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
+          // Guardar una hora principal para que Home pueda mostrar "Próxima toma"
+          time: selectedTimes.length > 0
+            ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+            : undefined,
           // Opcional: puedes guardar la config de recordatorio en el backend si lo soporta
         });
         // Espera a que getMedications actualice la lista
@@ -380,11 +416,16 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Medicamentos</Text>
-        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={perfilIncompleto} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={perfilIncompleto || !isOnline} activeOpacity={0.85}>
           <Ionicons name="add-circle" size={28} color="#38bdf8" />
           <Text style={styles.addBtnTextModern}>Nuevo</Text>
         </TouchableOpacity>
       </View>
+      {!isOnline && (
+        <View style={{ backgroundColor: '#fef9c3', borderColor: '#fde047', borderWidth: 1, borderRadius: 10, padding: 8, marginBottom: 10 }}>
+          <Text style={{ color: '#92400e' }}>Modo sin conexión: visualización habilitada, edición deshabilitada.</Text>
+        </View>
+      )}
       {perfilIncompleto && (
         <Text style={{ color: '#ef4444', marginBottom: 8, textAlign: 'center' }}>
           Completa tu perfil para poder agregar medicamentos.
@@ -403,21 +444,28 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 <Text style={styles.cardTitleModern}>{med.name}</Text>
               </View>
               <View style={{ flexDirection: 'row' }}>
-                <TouchableOpacity style={styles.iconBtnModern} onPress={() => openEditModal(med)}>
+                <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEditModal(med)} disabled={!isOnline}>
                   <Ionicons name="create-outline" size={20} color="#2563eb" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.iconBtnModern} onPress={() => onDelete(med.id)}>
+                <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && onDelete(med.id)} disabled={!isOnline}>
                   <Ionicons name="trash-outline" size={20} color="#ef4444" />
                 </TouchableOpacity>
               </View>
             </View>
             <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Dosis:</Text><Text style={styles.cardValueModern}>{med.dosage}</Text></View>
             <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Tipo:</Text><Text style={styles.cardValueModern}>{med.type}</Text></View>
+          <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Hora:</Text><Text style={styles.cardValueModern}>{med.time ? med.time : (med.startDate ? new Date(med.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—')}</Text></View>
             <View style={[styles.cardRowModern, { alignItems: 'center', marginTop: 6 }] }>
               <Ionicons name="time" size={16} color="#64748b" style={{ marginRight: 4 }} />
               <Text style={styles.cardLabelModern}>Inicio:</Text>
               <Text style={styles.cardValueModern}>{med.startDate ? new Date(med.startDate).toLocaleString() : '—'}</Text>
             </View>
+          {getNextDoseEta(med) ? (
+            <View style={[styles.cardRowModern, { alignItems: 'center', marginTop: 4 }]}>
+              <Ionicons name="alarm" size={16} color="#2563eb" style={{ marginRight: 6 }} />
+              <Text style={[styles.cardValueModern, { color: '#2563eb' }]}>{getNextDoseEta(med)}</Text>
+            </View>
+          ) : null}
             {med.notes ? (
               <View style={styles.notesBoxModern}>
                 <Text style={styles.notesTextModern}>{med.notes}</Text>

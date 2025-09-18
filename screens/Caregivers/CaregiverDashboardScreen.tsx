@@ -12,6 +12,7 @@ import { useTreatments } from '../../store/useTreatments';
 import { useAppointments } from '../../store/useAppointments';
 import { useNotes } from '../../store/useNotes';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
+import { useOffline } from '../../store/useOffline';
 
 export default function CaregiverDashboardScreen() {
   const { patients, loading, error, fetchPatients, joinPatient, selectedPatientId, setSelectedPatientId } = useCaregiver();
@@ -27,6 +28,7 @@ export default function CaregiverDashboardScreen() {
   const treatmentsStore = useTreatments();
   const appointmentsStore = useAppointments();
   const notesStore = useNotes();
+  const { isOnline } = useOffline();
 
   // Cargar pacientes al montar
   useEffect(() => {
@@ -139,6 +141,11 @@ export default function CaregiverDashboardScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
+      {!isOnline && (
+        <View style={{ backgroundColor: '#fef9c3', borderColor: '#fde047', borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 10 }}>
+          <Text style={{ color: '#92400e', textAlign: 'center' }}>Modo sin conexión: visualización habilitada, edición deshabilitada.</Text>
+        </View>
+      )}
       {/* Branding y logo */}
       <View style={{ alignItems: 'center', marginBottom: 10 }}>
         <Image source={logo} style={{ width: 70, height: 70, borderRadius: 20 }} resizeMode="contain" />

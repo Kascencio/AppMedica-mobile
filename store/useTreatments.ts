@@ -25,7 +25,7 @@ interface TreatmentsState {
   treatments: Treatment[];
   loading: boolean;
   error: string | null;
-  getTreatments: () => Promise<void>;
+  getTreatments: (patientIdOverride?: string) => Promise<void>;
   createTreatment: (data: Partial<Treatment>) => Promise<void>;
   updateTreatment: (id: string, data: Partial<Treatment>) => Promise<void>;
   deleteTreatment: (id: string) => Promise<void>;
@@ -40,18 +40,19 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
   loading: false,
   error: null,
 
-  getTreatments: async () => {
+  getTreatments: async (patientIdOverride?: string) => {
     console.log('[useTreatments] ========== INICIO getTreatments ==========');
     set({ loading: true, error: null });
     
     try {
       const profile = useCurrentUser.getState().profile;
-      if (!profile?.id) {
+      const patientId = (patientIdOverride || profile?.patientProfileId || profile?.id);
+      if (!patientId) {
         console.log('[useTreatments] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente');
       }
       
-      console.log('[useTreatments] ✅ Perfil válido encontrado:', profile.id);
+      console.log('[useTreatments] ✅ Perfil válido encontrado:', patientId);
       
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
@@ -62,9 +63,9 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
           console.log('[useTreatments] Obteniendo tratamientos desde servidor...');
           
           // Usar el ID numérico si está disponible (el servidor espera número)
-          const patientId = (profile as any).patientProfileIdNumber || profile.id;
+          const patientIdForServer = (profile as any).patientProfileIdNumber || patientId;
           
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}?patientProfileId=${patientId}`), {
+          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}?patientProfileId=${patientIdForServer}`), {
             headers: { Authorization: `Bearer ${token}` },
           });
           
@@ -96,7 +97,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
             }
             
             // Combinar con tratamientos offline
-            const offlineTreatments = await localDB.getTreatments(profile.id);
+            const offlineTreatments = await localDB.getTreatments(patientId);
             const offlineOnly = offlineTreatments.filter(treat => treat.isOffline);
             const allTreatments = [...treatments, ...offlineOnly];
             
@@ -105,7 +106,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
           } else if (res.status === 404) {
             console.log('[useTreatments] No hay tratamientos disponibles (404)');
             // Cargar solo datos offline
-            const offlineTreatments = await localDB.getTreatments(profile.id);
+            const offlineTreatments = await localDB.getTreatments(patientId);
             set({ treatments: offlineTreatments });
             return;
           } else {
@@ -174,7 +175,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       // Si estamos offline o falló el servidor, cargar desde base de datos local
       console.log('[useTreatments] Cargando tratamientos desde base de datos local...');
       try {
-        const localTreatments = await localDB.getTreatments(profile.id);
+        const localTreatments = await localDB.getTreatments(patientId);
         set({ treatments: localTreatments });
       } catch (offlineError) {
         console.log('[useTreatments] Error cargando datos locales:', offlineError);

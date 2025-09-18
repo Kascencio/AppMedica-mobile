@@ -23,7 +23,7 @@ interface AppointmentsState {
   appointments: Appointment[];
   loading: boolean;
   error: string | null;
-  getAppointments: () => Promise<void>;
+  getAppointments: (patientIdOverride?: string) => Promise<void>;
   createAppointment: (data: Partial<Appointment>) => Promise<void>;
   updateAppointment: (id: string, data: Partial<Appointment>) => Promise<void>;
   deleteAppointment: (id: string) => Promise<void>;
@@ -38,13 +38,13 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
   loading: false,
   error: null,
 
-  getAppointments: async () => {
+  getAppointments: async (patientIdOverride?: string) => {
     console.log('[useAppointments] ========== INICIO getAppointments ==========');
     set({ loading: true, error: null });
     
     try {
       const profile = useCurrentUser.getState().profile;
-      const patientId = profile?.patientProfileId || profile?.id;
+      const patientId = (patientIdOverride || profile?.patientProfileId || profile?.id);
       if (!patientId) {
         console.log('[useAppointments] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente');

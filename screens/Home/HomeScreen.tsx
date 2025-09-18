@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import COLORS from '../../constants/colors';
 import { scheduleSnoozeMedication } from '../../lib/notifications';
 import { useOffline } from '../../store/useOffline';
+import { ProfileAvatar } from '../../components/OptimizedImage';
 
 const HEALTH_TIPS = [
   'Bebe suficiente agua durante el día.',
@@ -40,7 +41,7 @@ function getAdherence(events: any[]) {
 
 export default function HomeScreen() {
   const { medications, getMedications } = useMedications();
-  const { appointments } = useAppointments();
+  const { appointments, getAppointments } = useAppointments();
   const { logout } = useAuth();
   const { profile, fetchProfile, loading, error } = useCurrentUser();
   const { events: intakeEvents, registerEvent, getEvents } = useIntakeEvents();
@@ -51,6 +52,22 @@ export default function HomeScreen() {
     fetchProfile();
   }, []);
 
+  // Carga inicial: cuando el perfil esté disponible, cargar datos necesarios para Home
+  React.useEffect(() => {
+    const hasValidProfile = !!profile?.id || !!profile?.patientProfileId;
+    if (!hasValidProfile) return;
+
+    (async () => {
+      try {
+        await Promise.all([
+          getMedications().catch(() => {}),
+          getAppointments().catch(() => {}),
+          getEvents().catch(() => {}),
+        ]);
+      } catch {}
+    })();
+  }, [profile?.id, profile?.patientProfileId]);
+
   // Funciones para acciones de medicamentos
   const handleTakeMedication = async () => {
     const nextMed = getNextMedication();
@@ -60,7 +77,7 @@ export default function HomeScreen() {
       // Crear evento de adherencia
       const adherenceEvent = {
         refId: nextMed.id,
-        patientProfileId: profile?.id,
+        patientProfileId: profile?.patientProfileId || profile?.id,
         scheduledFor: new Date().toISOString(),
         action: 'TAKEN' as const,
         kind: 'MED' as const,
@@ -100,7 +117,7 @@ export default function HomeScreen() {
       // Crear evento de posponer
       const adherenceEvent = {
         refId: nextMed.id,
-        patientProfileId: profile?.id,
+        patientProfileId: profile?.patientProfileId || profile?.id,
         scheduledFor: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // +10 minutos
         action: 'SNOOZE' as const,
         kind: 'MED' as const,
@@ -116,7 +133,7 @@ export default function HomeScreen() {
         name: nextMed.name,
         dosage: nextMed.dosage,
         snoozeMinutes: 10,
-        patientProfileId: profile?.id,
+        patientProfileId: profile?.patientProfileId || profile?.id,
       });
 
       // Mostrar confirmación
@@ -149,7 +166,7 @@ export default function HomeScreen() {
       // Crear evento de omitir
       const adherenceEvent = {
         refId: nextMed.id,
-        patientProfileId: profile?.id,
+        patientProfileId: profile?.patientProfileId || profile?.id,
         scheduledFor: new Date().toISOString(),
         action: 'SKIPPED' as const,
         kind: 'MED' as const,
@@ -194,17 +211,25 @@ export default function HomeScreen() {
     if (todayMedications.length === 0) return null;
     
     // Ordenar por hora y encontrar la próxima
-    return todayMedications.sort((a, b) => {
-      const timeA = a.time ? new Date(`2000-01-01 ${a.time}`) : new Date(0);
-      const timeB = b.time ? new Date(`2000-01-01 ${b.time}`) : new Date(0);
+    const withTime = todayMedications.filter(m => !!m.time);
+    const source = withTime.length > 0 ? withTime : todayMedications;
+    return source.sort((a, b) => {
+      const timeA = a.time ? new Date(`2000-01-01 ${a.time}`) : new Date(8640000000000000);
+      const timeB = b.time ? new Date(`2000-01-01 ${b.time}`) : new Date(8640000000000000);
       return timeA.getTime() - timeB.getTime();
     })[0];
   };
 
   const getNextMedicationTime = () => {
     const nextMed = getNextMedication();
-    if (!nextMed?.time) return '--:--';
-    return nextMed.time;
+    if (!nextMed) return '--:--';
+    if (nextMed.time) return nextMed.time;
+    // Fallback: si no hay time, intentar formatear desde startDate
+    if (nextMed.startDate) {
+      const d = new Date(nextMed.startDate);
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    return '--:--';
   };
 
   const getNextAppointment = (): any => {
@@ -243,9 +268,10 @@ export default function HomeScreen() {
     // Agregar medicamentos del día
     if (medications && medications.length > 0) {
       medications.forEach(med => {
-        if (med.startDate && med.time) {
+        if (med.startDate || med.time) {
+          const time = med.time || new Date(med.startDate as any).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
           timeline.push({
-            time: med.time,
+            time,
             title: med.name,
             subtitle: `${med.dosage} - ${med.type}`,
             completed: false, // Esto se debería verificar contra eventos de adherencia
@@ -313,7 +339,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={styles.logoContainer}>
-              <Image source={logo} style={styles.logo} />
+              <ProfileAvatar uri={profile?.photoUrl || ''} size={60} fallbackSource={logo} showLoading />
             </View>
             <View style={{ marginLeft: 12 }}>
               <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text.primary }}>

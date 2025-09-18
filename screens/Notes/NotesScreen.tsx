@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useNotes } from '../../store/useNotes';
 import OfflineIndicator from '../../components/OfflineIndicator';
+import { useOffline } from '../../store/useOffline';
 
 // Mock de notas
 const mockNotes = [
@@ -26,6 +27,7 @@ export default function NotesScreen() {
   const { notes, loading, error, getNotes, createNote, updateNote, deleteNote } = useNotes();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingNote, setEditingNote] = useState<any>(null);
+  const { isOnline } = useOffline();
 
   const {
     control,
@@ -107,11 +109,16 @@ export default function NotesScreen() {
       <OfflineIndicator />
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Notas Médicas</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={openCreateModal}>
+        <TouchableOpacity style={[styles.addBtn, !isOnline && { opacity: 0.5 }]} onPress={openCreateModal} disabled={!isOnline}>
           <Ionicons name="add-circle" size={28} color="#fff" />
           <Text style={styles.addBtnText}>Nueva nota</Text>
         </TouchableOpacity>
       </View>
+      {!isOnline && (
+        <View style={{ backgroundColor: '#fef9c3', borderColor: '#fde047', borderWidth: 1, borderRadius: 10, padding: 8, marginBottom: 10 }}>
+          <Text style={{ color: '#92400e', textAlign: 'center' }}>Modo sin conexión: visualización habilitada, edición deshabilitada.</Text>
+        </View>
+      )}
       {loading ? (
         <ActivityIndicator size="large" color="#2563eb" style={{ marginTop: 40 }} />
       ) : error ? (
@@ -150,6 +157,7 @@ export default function NotesScreen() {
                     placeholder="Título de la nota"
                     value={value}
                     onChangeText={onChange}
+                    editable={isOnline}
                   />
                   {errors.title && <Text style={styles.errorText}>{errors.title.message}</Text>}
                 </View>
@@ -167,6 +175,7 @@ export default function NotesScreen() {
                     value={value}
                     onChangeText={onChange}
                     multiline
+                    editable={isOnline}
                   />
                   {errors.content && <Text style={styles.errorText}>{errors.content.message}</Text>}
                 </View>
@@ -176,7 +185,7 @@ export default function NotesScreen() {
               <TouchableOpacity
                 style={[styles.button, { backgroundColor: '#2563eb' }]}
                 onPress={handleSubmit(onSubmit)}
-                disabled={isSubmitting || loading}
+                disabled={isSubmitting || loading || !isOnline}
               >
                 <Text style={styles.buttonText}>{editingNote ? 'Guardar cambios' : 'Guardar'}</Text>
               </TouchableOpacity>
