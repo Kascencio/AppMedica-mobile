@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './useAuth';
 import { useOffline } from './useOffline'; // Importar useOffline
+import { checkNetworkConnectivity } from '../lib/network';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { UserProfile } from '../types';
 import { localDB, LocalProfile } from '../data/db';
@@ -269,6 +270,26 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
           set({ profile: minimalProfile, initialized: true });
         }
         set({ loading: false });
+        return;
+    }
+
+    // Si no hay conectividad real, no intentar red y no marcar error
+    const hasInternet = await checkNetworkConnectivity();
+    if (!hasInternet) {
+        console.log('[useCurrentUser] Sin conectividad real. Usando datos locales y modo lectura.');
+        if (localProfile) {
+          set({ profile: localProfile, initialized: true, loading: false, error: null });
+        } else {
+          const minimalProfile = createDefaultProfile({
+            id: 'temp_' + Date.now(),
+            userId: 'temp_user',
+            patientProfileId: 'temp_patient',
+            name: 'Usuario',
+            role: 'PATIENT',
+          });
+          await saveProfileLocally(minimalProfile);
+          set({ profile: minimalProfile, initialized: true, loading: false, error: null });
+        }
         return;
     }
 

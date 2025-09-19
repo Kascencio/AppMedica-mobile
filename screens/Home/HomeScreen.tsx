@@ -49,7 +49,18 @@ export default function HomeScreen() {
   const { isOnline } = useOffline();
 
   React.useEffect(() => {
-    fetchProfile();
+    // Si no hay internet, evita llamadas de red y usa solo datos locales ya cargados
+    (async () => {
+      try {
+        const { checkConnectivity } = await import('../../lib/network');
+        const online = await checkConnectivity();
+        if (online) {
+          fetchProfile();
+        }
+      } catch {
+        // Si falla la verificación, no forzar fetch para evitar errores de network
+      }
+    })();
   }, []);
 
   // Carga inicial: cuando el perfil esté disponible, cargar datos necesarios para Home
@@ -59,11 +70,16 @@ export default function HomeScreen() {
 
     (async () => {
       try {
-        await Promise.all([
-          getMedications().catch(() => {}),
-          getAppointments().catch(() => {}),
-          getEvents().catch(() => {}),
-        ]);
+        const { checkConnectivity } = await import('../../lib/network');
+        const online = await checkConnectivity();
+        if (online) {
+          await Promise.all([
+            getMedications().catch(() => {}),
+            getAppointments().catch(() => {}),
+            getEvents().catch(() => {}),
+          ]);
+        }
+        // Si no hay internet, no lanzar errores, la UI usará datos locales existentes
       } catch {}
     })();
   }, [profile?.id, profile?.patientProfileId]);

@@ -36,20 +36,21 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
   loading: false,
   error: null,
 
-  getEvents: async () => {
+  getEvents: async (patientIdOverride?: string) => {
     console.log('[useIntakeEvents] ========== INICIO getEvents ==========');
     
     set({ loading: true, error: null });
     
     try {
       const profile = useCurrentUser.getState().profile;
+      const patientId = patientIdOverride || profile?.patientProfileId || profile?.id;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
       console.log('[useIntakeEvents] Perfil obtenido:', JSON.stringify(profile, null, 2));
       console.log('[useIntakeEvents] Estado de conexión:', isOnline);
       
-      if (!profile?.id) {
+      if (!patientId) {
         console.log('[useIntakeEvents] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente disponible');
       }
@@ -61,7 +62,7 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
         try {
           console.log('[useIntakeEvents] Obteniendo eventos desde servidor...');
           
-          const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.INTAKE_EVENTS.BASE}?patientProfileId=${profile.id}`);
+          const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.INTAKE_EVENTS.BASE}?patientProfileId=${patientId}`);
           console.log('[useIntakeEvents] Endpoint:', endpoint);
           
           const res = await fetch(endpoint, {
@@ -103,7 +104,7 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
             }
             
             // Obtener eventos offline de la base de datos local
-            const offlineEvents = await localDB.getIntakeEvents(profile.id);
+            const offlineEvents = await localDB.getIntakeEvents(patientId);
             const offlineOnly = offlineEvents.filter(event => event.isOffline);
             
             // Combinar eventos del servidor con eventos offline
@@ -137,7 +138,7 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
       // Si estamos offline o falló el servidor, cargar desde base de datos local
       console.log('[useIntakeEvents] Cargando eventos desde base de datos local...');
       try {
-        const offlineEvents = await localDB.getIntakeEvents(profile.id);
+        const offlineEvents = await localDB.getIntakeEvents(patientId);
         console.log('[useIntakeEvents] Eventos locales encontrados:', offlineEvents.length);
         set({ events: offlineEvents });
       } catch (offlineError) {

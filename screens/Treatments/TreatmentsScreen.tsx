@@ -6,6 +6,7 @@ import { useTreatments } from '../../store/useTreatments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import AlarmScheduler from '../../components/AlarmScheduler';
+import DateSelector from '../../components/DateSelector';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 import { validateTreatment } from '../../lib/treatmentValidator';
@@ -23,8 +24,8 @@ export default function TreatmentsScreen() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    startDate: '',
-    endDate: '',
+    startDate: undefined as Date | undefined,
+    endDate: undefined as Date | undefined,
     frequency: 'daily',
     notes: ''
   });
@@ -54,8 +55,8 @@ export default function TreatmentsScreen() {
     setFormData({
       name: '',
       description: '',
-      startDate: '',
-      endDate: '',
+      startDate: undefined,
+      endDate: undefined,
       frequency: 'daily',
       notes: ''
     });
@@ -67,8 +68,8 @@ export default function TreatmentsScreen() {
     setFormData({
       name: treatment.name || '',
       description: treatment.description || '',
-      startDate: treatment.startDate || '',
-      endDate: treatment.endDate || '',
+      startDate: treatment.startDate ? new Date(treatment.startDate) : undefined,
+      endDate: treatment.endDate ? new Date(treatment.endDate) : undefined,
       frequency: treatment.frequency || 'daily',
       notes: treatment.notes || ''
     });
@@ -80,8 +81,8 @@ export default function TreatmentsScreen() {
       const treatmentData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
-        startDate: formData.startDate || new Date().toISOString(),
-        endDate: formData.endDate || undefined,
+        startDate: (formData.startDate || new Date()).toISOString(),
+        endDate: formData.endDate ? formData.endDate.toISOString() : undefined,
         frequency: formData.frequency,
         notes: formData.notes.trim(),
         patientProfileId: profile?.patientProfileId || profile?.id
@@ -531,18 +532,13 @@ export default function TreatmentsScreen() {
                   { marginBottom: 10 },
                   isTablet && styles.inputGroupTablet
                 ]}>
-                  <Text style={[
-                    GLOBAL_STYLES.inputLabel,
-                    isTablet && styles.inputLabelTablet
-                  ]}>Fecha de inicio</Text>
-                  <TextInput
-                    style={[
-                      GLOBAL_STYLES.input,
-                      isTablet && styles.inputTablet
-                    ]}
-                    placeholder="YYYY-MM-DD (opcional)"
+                  <DateSelector
                     value={formData.startDate}
-                    onChangeText={(text) => setFormData({ ...formData, startDate: text })}
+                    onDateChange={(date) => setFormData({ ...formData, startDate: date })}
+                    label="Fecha de inicio"
+                    placeholder="Seleccionar fecha de inicio"
+                    required={false}
+                    minDate={undefined}
                   />
                 </View>
                 
@@ -550,18 +546,13 @@ export default function TreatmentsScreen() {
                   { marginBottom: 10 },
                   isTablet && styles.inputGroupTablet
                 ]}>
-                  <Text style={[
-                    GLOBAL_STYLES.inputLabel,
-                    isTablet && styles.inputLabelTablet
-                  ]}>Fecha de fin</Text>
-                  <TextInput
-                    style={[
-                      GLOBAL_STYLES.input,
-                      isTablet && styles.inputTablet
-                    ]}
-                    placeholder="YYYY-MM-DD (opcional)"
+                  <DateSelector
                     value={formData.endDate}
-                    onChangeText={(text) => setFormData({ ...formData, endDate: text })}
+                    onDateChange={(date) => setFormData({ ...formData, endDate: date })}
+                    label="Fecha de fin"
+                    placeholder="Seleccionar fecha de fin (opcional)"
+                    required={false}
+                    minDate={formData.startDate}
                   />
                 </View>
                 

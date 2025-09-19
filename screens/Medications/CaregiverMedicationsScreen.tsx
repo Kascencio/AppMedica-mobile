@@ -200,8 +200,13 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   // Modifica onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
     try {
+      // Mapear frequency del formulario a valores soportados por el backend/validador
+      const mappedFrequency = (data.frequency === 'custom'
+        ? (frequencyType === 'everyXHours' ? 'INTERVAL' : frequencyType === 'daysOfWeek' ? 'WEEKLY' : 'DAILY')
+        : data.frequency || 'daily');
+
       // Validar datos usando el validador
-      const validation = validateMedication(data);
+      const validation = validateMedication({ ...data, frequency: mappedFrequency });
       if (!validation.isValid) {
         Alert.alert('Error de validación', validation.errors.join('\n'));
         return;
@@ -213,7 +218,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           name: data.name,
           dosage: data.dosage,
           type: data.type,
-          frequency: data.frequency,
+          frequency: mappedFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
@@ -231,7 +236,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           name: data.name,
           dosage: data.dosage,
           type: data.type,
-          frequency: data.frequency,
+          frequency: mappedFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,

@@ -38,11 +38,12 @@ export default function CaregiverDashboardScreen() {
   // Cargar datos del paciente seleccionado
   useEffect(() => {
     if (selectedPatientId) {
-      medsStore.getMedications();
-      treatmentsStore.getTreatments();
-      appointmentsStore.getAppointments();
-      notesStore.getNotes();
-      intakeEventsStore.getEvents();
+      medsStore.getMedications(selectedPatientId);
+      treatmentsStore.getTreatments(selectedPatientId);
+      appointmentsStore.getAppointments(selectedPatientId);
+      notesStore.getNotes(selectedPatientId);
+      // getEvents aún no acepta override; se ajustará abajo
+      (intakeEventsStore as any).getEvents(selectedPatientId);
     }
   }, [selectedPatientId]);
 

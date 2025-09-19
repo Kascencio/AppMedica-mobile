@@ -78,15 +78,22 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
     }
   },
 
-  joinPatient: async (patientId) => {
+  joinPatient: async (patientIdOrCode) => {
     set({ loading: true, error: null });
     try {
       const token = useAuth.getState().userToken;
       if (!token) throw new Error('No autenticado');
+      // Aceptar código de invitación (XXXX-XXXX) o patientId directo
+      const raw = (patientIdOrCode || '').toString().trim();
+      const isCode = /^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/.test(raw) || /^[A-Za-z0-9]{8}$/.test(raw);
+      const normalizedCode = isCode ? (raw.includes('-') ? raw.toUpperCase() : `${raw.slice(0,4).toUpperCase()}-${raw.slice(4,8).toUpperCase()}`) : undefined;
+
+      const body = isCode ? { code: normalizedCode } : { patientId: raw };
+
       const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.JOIN), {
         method: 'POST',
         headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ patientId }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));

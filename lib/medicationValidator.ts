@@ -62,7 +62,7 @@ export function validateMedication(data: MedicationData): MedicationValidationRe
   }
 
   // Validar frecuencia
-  if (data.frequency && !['DAILY', 'WEEKLY', 'MONTHLY', 'AS_NEEDED'].includes(data.frequency.toUpperCase())) {
+  if (data.frequency && !['DAILY', 'WEEKLY', 'MONTHLY', 'AS_NEEDED', 'INTERVAL', 'CUSTOM'].includes(data.frequency.toUpperCase())) {
     errors.push('La frecuencia no es válida');
   }
 
