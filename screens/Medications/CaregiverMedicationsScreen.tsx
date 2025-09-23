@@ -1,40 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Platform, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import DateTimePicker from '@react-native-community/datetimepicker';
+// Sin DateTimePicker: usaremos DateSelector como en paciente
 import { useMedications } from '../../store/useMedications';
-import { scheduleNotification, cancelNotification, scheduleMedicationReminder } from '../../lib/notifications';
+// Eliminado: programación de notificaciones/alarms en cuidador
 import { validateMedication } from '../../lib/medicationValidator';
-import * as Notifications from 'expo-notifications';
-import { useCurrentUser } from '../../store/useCurrentUser';
+// Eliminado: useCurrentUser no necesario en cuidador
+import DateSelector from '../../components/DateSelector';
+import OptionSelector from '../../components/OptionSelector';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
+import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher';
+import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import { useOffline } from '../../store/useOffline';
 
 export default function CaregiverMedicationsScreen({ navigation }: any) {
   const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication } = useMedications();
-  const { profile } = useCurrentUser();
   const { selectedPatientId, patients } = useCaregiver();
   const { isOnline } = useOffline();
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
   const [modalVisible, setModalVisible] = React.useState(false);
   const [editingMed, setEditingMed] = React.useState<any>(null);
-  const [showStartPicker, setShowStartPicker] = React.useState(false);
-  const [showEndPicker, setShowEndPicker] = React.useState(false);
-  // Guardar los IDs de notificación en memoria temporal (idealmente en backend o AsyncStorage)
-  const notificationIdsRef = React.useRef<{ [medId: string]: string }>({});
+  // Sin pickers nativos, usamos DateSelector
 
-  // NUEVO: Estado para horas y frecuencia
-  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
-  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]); // 0=Domingo
-  const [everyXHours, setEveryXHours] = useState('8');
-
-  const perfilIncompleto = !selectedPatient || !selectedPatient.name || !selectedPatient.age;
+  // En cuidador no se requiere completar perfil; solo seleccionar paciente
 
   const getNextDoseEta = (med: any) => {
     try {
@@ -102,14 +94,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
     }
   }, [selectedPatientId]);
 
-  const onStartChange = (event: any, date?: Date) => {
-    setShowStartPicker(false);
-    if (date) setValue('startDate', date);
-  };
-  const onEndChange = (event: any, date?: Date) => {
-    setShowEndPicker(false);
-    if (date) setValue('endDate', date);
-  };
+  // Handlers gestionados por DateSelector
 
   // NUEVO: Función para agregar hora
   const addTime = (date: Date) => {
@@ -119,9 +104,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   const removeTime = (idx: number) => {
     setSelectedTimes((prev) => prev.filter((_, i) => i !== idx));
   };
-  const toggleDay = (day: number) => {
-    setDaysOfWeek((prev) => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
-  };
+  // Eliminado: toggleDay para configuraciones de recordatorio
 
   const openEditModal = (med: any) => {
     setEditingMed(med);
@@ -137,21 +120,11 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
       setValue('endDate', new Date(med.endDate));
     }
     setValue('notes', med.notes || '');
-    // Restaurar la configuración de recordatorio al editar
-    setSelectedTimes(med.times || []);
-    setFrequencyType(med.frequencyType || 'daily');
-    setDaysOfWeek(med.daysOfWeek || []);
-    setEveryXHours(med.everyXHours || '8');
   };
   const openCreateModal = () => {
     setEditingMed(null);
     setModalVisible(true);
     reset();
-    // Resetear la configuración de recordatorio al crear
-    setSelectedTimes([]);
-    setFrequencyType('daily');
-    setDaysOfWeek([]);
-    setEveryXHours('8');
   };
   const scheduleMedNotification = async (med: any) => {
     if (!med.startDate) return;
@@ -200,13 +173,8 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   // Modifica onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
     try {
-      // Mapear frequency del formulario a valores soportados por el backend/validador
-      const mappedFrequency = (data.frequency === 'custom'
-        ? (frequencyType === 'everyXHours' ? 'INTERVAL' : frequencyType === 'daysOfWeek' ? 'WEEKLY' : 'DAILY')
-        : data.frequency || 'daily');
-
-      // Validar datos usando el validador
-      const validation = validateMedication({ ...data, frequency: mappedFrequency });
+      // Validar datos usando el validador (sin alarmas)
+      const validation = validateMedication({ ...data });
       if (!validation.isValid) {
         Alert.alert('Error de validación', validation.errors.join('\n'));
         return;
@@ -218,15 +186,10 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           name: data.name,
           dosage: data.dosage,
           type: data.type,
-          frequency: mappedFrequency,
+          frequency: data.frequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
-          // Guardar una hora principal para que Home pueda mostrar "Próxima toma"
-          time: selectedTimes.length > 0
-            ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-            : undefined,
-          // Opcional: puedes guardar la config de recordatorio en el backend si lo soporta
         });
         medId = editingMed.id;
         // Cancelar notificaciones anteriores
@@ -236,15 +199,10 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           name: data.name,
           dosage: data.dosage,
           type: data.type,
-          frequency: mappedFrequency,
+          frequency: data.frequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
-          // Guardar una hora principal para que Home pueda mostrar "Próxima toma"
-          time: selectedTimes.length > 0
-            ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-            : undefined,
-          // Opcional: puedes guardar la config de recordatorio en el backend si lo soporta
         });
         // Espera a que getMedications actualice la lista
         await new Promise(res => setTimeout(res, 500));
@@ -252,120 +210,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         const newMed = medications.find(m => m.name === data.name && m.startDate === data.startDate?.toISOString());
         medId = newMed?.id;
       }
-      // Programar notificaciones según la configuración
-      if (medId) {
-        if (frequencyType === 'daily') {
-          for (const t of selectedTimes) {
-            // Convertir Date a string HH:MM para scheduleMedicationReminder (formato 24 horas)
-            const timeString = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-            
-            // Usar la función centralizada de programación de medicamentos
-            await scheduleMedicationReminder({
-              id: medId,
-              name: data.name,
-              dosage: data.dosage,
-              time: timeString,
-              frequency: 'daily',
-              startDate: data.startDate,
-              endDate: data.endDate,
-              patientProfileId: selectedPatient?.id || profile?.patientProfileId || profile?.id,
-            });
-            
-            console.log(`[MEDICAMENTO] Alarma programada: ${data.name} a las ${timeString}`);
-          }
-        } else if (frequencyType === 'daysOfWeek') {
-          for (const t of selectedTimes) {
-            for (const day of daysOfWeek) {
-              const now = new Date();
-              let firstDate = new Date(now);
-              firstDate.setDate(now.getDate() + ((day + 7 - now.getDay()) % 7));
-              firstDate.setHours(t.getHours(), t.getMinutes(), 0, 0);
-              if (firstDate <= now) firstDate.setDate(firstDate.getDate() + 7);
-              // Margen de seguridad de 1 minuto
-              if ((firstDate.getTime() - now.getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-              console.log('Programando notificación MEDICAMENTO para:', firstDate.toISOString());
-              await scheduleNotification({
-                title: `Toma tu medicamento: ${data.name}`,
-                body: `Dosis: ${data.dosage}`,
-                data: {
-                  kind: 'MED',
-                  refId: medId,
-                  scheduledFor: firstDate.toISOString(),
-                  name: data.name,
-                  dosage: data.dosage,
-                  instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-                },
-                trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-              });
-              const id = await scheduleNotification({
-                title: `Toma tu medicamento: ${data.name}`,
-                body: `Dosis: ${data.dosage}`,
-                data: {
-                  kind: 'MED',
-                  refId: medId,
-                  scheduledFor: t.toISOString(),
-                  name: data.name,
-                  dosage: data.dosage,
-                  instructions: data.notes,
-                  time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-                },
-                trigger: { 
-                  type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-                  weekday: day + 1, 
-                  hour: t.getHours(), 
-                  minute: t.getMinutes() 
-                },
-              });
-              notificationIdsRef.current[`${medId}_${day}_${t.getHours()}_${t.getMinutes()}`] = id;
-            }
-          }
-        } else if (frequencyType === 'everyXHours') {
-          if (selectedTimes.length > 0) {
-            const base = selectedTimes[0];
-            const interval = parseInt(everyXHours) || 8;
-            let firstDate = new Date();
-            firstDate.setHours(base.getHours(), base.getMinutes(), 0, 0);
-            if (firstDate <= new Date()) firstDate.setTime(firstDate.getTime() + interval * 60 * 60 * 1000);
-            // Margen de seguridad de 1 minuto
-            if ((firstDate.getTime() - new Date().getTime()) / 1000 < 60) firstDate.setMinutes(firstDate.getMinutes() + 1);
-            console.log('Programando notificación MEDICAMENTO para:', firstDate.toISOString());
-            await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: firstDate.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-              },
-                              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: firstDate },
-              });
-              const id = await scheduleNotification({
-              title: `Toma tu medicamento: ${data.name}`,
-              body: `Dosis: ${data.dosage}`,
-              data: {
-                kind: 'MED',
-                refId: medId,
-                scheduledFor: base.toISOString(),
-                name: data.name,
-                dosage: data.dosage,
-                instructions: data.notes,
-                time: base.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-              },
-              trigger: { 
-                type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-                seconds: interval * 60 * 60,
-                repeats: true
-              },
-            });
-            notificationIdsRef.current[`${medId}_every${interval}h`] = id;
-          }
-        }
-      }
+      // Sin programación de alarmas en cuidador
       reset();
       setModalVisible(false);
       setEditingMed(null);
@@ -419,10 +264,12 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
+      <CaregiverPatientSwitcher />
+      <SelectedPatientBanner onChange={() => { /* abriría switcher si fuera modal */ }} />
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Medicamentos</Text>
-        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={perfilIncompleto || !isOnline} activeOpacity={0.85}>
-          <Ionicons name="add-circle" size={28} color="#38bdf8" />
+        <TouchableOpacity style={styles.addBtnModern} onPress={openCreateModal} disabled={!selectedPatient || !isOnline} activeOpacity={0.85}>
+          <Ionicons name="add-circle" size={28} color="#ffffff" />
           <Text style={styles.addBtnTextModern}>Nuevo</Text>
         </TouchableOpacity>
       </View>
@@ -431,9 +278,9 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
           <Text style={{ color: '#92400e' }}>Modo sin conexión: visualización habilitada, edición deshabilitada.</Text>
         </View>
       )}
-      {perfilIncompleto && (
+      {!selectedPatient && (
         <Text style={{ color: '#ef4444', marginBottom: 8, textAlign: 'center' }}>
-          Completa tu perfil para poder agregar medicamentos.
+          Selecciona un paciente para poder agregar medicamentos.
         </Text>
       )}
       {(!medications || medications.length === 0) ? (
@@ -526,12 +373,16 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               name="type"
               render={({ field: { onChange, value } }) => (
                 <View style={{ marginBottom: 10 }}>
-                  <Text>Tipo</Text>
-                  <TextInput
-                    style={styles.inputModern}
-                    placeholder="Tipo (tableta, jarabe, etc.)"
+                  <OptionSelector
                     value={value}
-                    onChangeText={onChange}
+                    onValueChange={onChange}
+                    options={[
+                      { value: 'Oral', label: 'Oral', icon: 'oral', description: 'Pastillas, jarabes, etc.' },
+                      { value: 'Inyectable', label: 'Inyectable', icon: 'injectable', description: 'Inyecciones, vacunas' },
+                      { value: 'Tópico', label: 'Tópico', icon: 'topical', description: 'Cremas, pomadas, etc.' }
+                    ]}
+                    label="Tipo de medicamento"
+                    placeholder="Seleccionar tipo"
                   />
                 </View>
               )}
@@ -554,105 +405,40 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
             <Controller
               control={control}
               name="startDate"
-              render={({ field: { value } }) => (
-                <View style={{ marginBottom: 10 }}>
-                  <Text>Fecha de inicio *</Text>
-                  <TouchableOpacity style={styles.inputModern} onPress={() => setShowStartPicker(true)}>
-                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-                  </TouchableOpacity>
-                  {showStartPicker && (
-                    <DateTimePicker
-                      value={value || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={onStartChange}
-                    />
-                  )}
-                  {errors.startDate && <Text style={{ color: 'red' }}>{errors.startDate.message as string}</Text>}
-                </View>
+              render={({ field: { value, onChange } }) => (
+                <DateSelector
+                  value={value}
+                  onDateChange={onChange}
+                  label="Fecha de inicio"
+                  placeholder="Seleccionar fecha de inicio"
+                  required={true}
+                  minDate={new Date()}
+                />
               )}
             />
             <Controller
               control={control}
               name="endDate"
-              render={({ field: { value } }) => (
-                <View style={{ marginBottom: 10 }}>
-                  <Text>Fecha de fin</Text>
-                  <TouchableOpacity style={styles.inputModern} onPress={() => setShowEndPicker(true)}>
-                    <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-                  </TouchableOpacity>
-                  {showEndPicker && (
-                    <DateTimePicker
-                      value={value || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={onEndChange}
-                    />
-                  )}
-                </View>
+              render={({ field: { value, onChange } }) => (
+                <DateSelector
+                  value={value}
+                  onDateChange={onChange}
+                  label="Fecha de fin"
+                  placeholder="Seleccionar fecha de fin (opcional)"
+                  minDate={new Date()}
+                />
               )}
             />
             {/* Frecuencia */}
             <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Frecuencia de recordatorio</Text>
+              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Frecuencia</Text>
               <View style={{ flexDirection: 'row', marginBottom: 6 }}>
-                <TouchableOpacity onPress={() => setFrequencyType('daily')} style={{ marginRight: 12 }}>
-                  <Text style={{ color: frequencyType === 'daily' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daily' ? 'bold' : 'normal' }}>Todos los días</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFrequencyType('daysOfWeek')} style={{ marginRight: 12 }}>
-                  <Text style={{ color: frequencyType === 'daysOfWeek' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'daysOfWeek' ? 'bold' : 'normal' }}>Días específicos</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setFrequencyType('everyXHours')}>
-                  <Text style={{ color: frequencyType === 'everyXHours' ? '#2563eb' : '#64748b', fontWeight: frequencyType === 'everyXHours' ? 'bold' : 'normal' }}>Cada X horas</Text>
-                </TouchableOpacity>
+                <Text style={{ color: '#64748b' }}>Describe la frecuencia en notas si es necesario.</Text>
               </View>
-              {frequencyType === 'daysOfWeek' && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                  {["D","L","M","M","J","V","S"].map((d, i) => (
-                    <TouchableOpacity key={i} onPress={() => toggleDay(i)} style={{ backgroundColor: daysOfWeek.includes(i) ? '#2563eb' : '#e5e7eb', borderRadius: 6, padding: 6, marginRight: 4, marginBottom: 4 }}>
-                      <Text style={{ color: daysOfWeek.includes(i) ? '#fff' : '#334155', fontWeight: 'bold' }}>{d}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {frequencyType === 'everyXHours' && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                  <Text>Cada </Text>
-                  <TextInput
-                    style={{ borderWidth: 1, borderColor: '#d1d5db', borderRadius: 6, width: 40, marginHorizontal: 4, textAlign: 'center', backgroundColor: '#fff' }}
-                    value={everyXHours}
-                    onChangeText={setEveryXHours}
-                    keyboardType="numeric"
-                  />
-                  <Text> horas</Text>
-                </View>
-              )}
+              {/* En cuidador no se configuran variantes de recordatorio */}
             </View>
             {/* Horas */}
-            <View style={{ marginBottom: 10 }}>
-              <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Horas de toma</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 }}>
-                {selectedTimes.map((t, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e0e7ff', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, marginRight: 6, marginBottom: 4 }}>
-                    <Text style={{ color: '#3730a3', fontWeight: 'bold', marginRight: 4 }}>{t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</Text>
-                    <TouchableOpacity onPress={() => removeTime(idx)}>
-                      <Ionicons name="close-circle" size={18} color="#ef4444" />
-                    </TouchableOpacity>
-          </View>
-                ))}
-                <TouchableOpacity onPress={() => setShowTimePicker(true)} style={{ backgroundColor: '#2563eb', borderRadius: 6, padding: 8 }}>
-                  <Ionicons name="add" size={18} color="#fff" />
-                </TouchableOpacity>
-          </View>
-              {showTimePicker && (
-                <DateTimePicker
-                  value={new Date()}
-                  mode="time"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(event, date) => { if (date) addTime(date); else setShowTimePicker(false); }}
-                />
-              )}
-          </View>
+            {/* En cuidador no se configuran horas de toma */}
             <Controller
               control={control}
               name="notes"
@@ -696,7 +482,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 40,
   },
   centered: {
     flex: 1,
@@ -826,18 +612,18 @@ const styles = StyleSheet.create({
   addBtnModern: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#e0f2fe',
+    backgroundColor: '#2563eb',
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 18,
-    shadowColor: '#38bdf8',
+    shadowColor: '#1d4ed8',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.10,
+    shadowOpacity: 0.20,
     shadowRadius: 6,
-    elevation: 2,
+    elevation: 3,
   },
   addBtnTextModern: {
-    color: '#2563eb',
+    color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,

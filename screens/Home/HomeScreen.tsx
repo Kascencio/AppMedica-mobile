@@ -43,7 +43,7 @@ export default function HomeScreen() {
   const { medications, getMedications } = useMedications();
   const { appointments, getAppointments } = useAppointments();
   const { logout } = useAuth();
-  const { profile, fetchProfile, loading, error } = useCurrentUser();
+  const { profile, fetchProfileCorrectFlow, loading, error } = useCurrentUser();
   const { events: intakeEvents, registerEvent, getEvents } = useIntakeEvents();
   const navigation = useNavigation();
   const { isOnline } = useOffline();
@@ -55,7 +55,7 @@ export default function HomeScreen() {
         const { checkConnectivity } = await import('../../lib/network');
         const online = await checkConnectivity();
         if (online) {
-          fetchProfile();
+          fetchProfileCorrectFlow();
         }
       } catch {
         // Si falla la verificación, no forzar fetch para evitar errores de network

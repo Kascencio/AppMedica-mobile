@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useAuth } from './useAuth';
 import { useCurrentUser } from './useCurrentUser';
+import { useCaregiver } from './useCaregiver';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { localDB, LocalTreatment } from '../data/db';
 import { syncService } from '../lib/syncService';
@@ -46,7 +47,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     
     try {
       const profile = useCurrentUser.getState().profile;
-      const patientId = (patientIdOverride || profile?.patientProfileId || profile?.id);
+      const patientId = patientIdOverride || profile?.patientProfileId || profile?.id;
       if (!patientId) {
         console.log('[useTreatments] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente');
@@ -62,10 +63,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         try {
           console.log('[useTreatments] Obteniendo tratamientos desde servidor...');
           
-          // Usar el ID numérico si está disponible (el servidor espera número)
-          const patientIdForServer = (profile as any).patientProfileIdNumber || patientId;
-          
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}?patientProfileId=${patientIdForServer}`), {
+          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}?patientProfileId=${patientId}`), {
             headers: { Authorization: `Bearer ${token}` },
           });
           
@@ -111,60 +109,6 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
             return;
           } else {
             console.log('[useTreatments] Error de API:', res.status, res.statusText);
-            
-            // Manejar error específico de patientProfileId faltante
-            if (res.status === 400) {
-              const errorData = await res.json().catch(() => ({}));
-              if (errorData.error === 'Falta patientProfileId') {
-                console.log('[useTreatments] Servidor requiere patientProfileId en formato diferente');
-                // Intentar con POST y patientProfileId en el body
-                const retryRes = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.TREATMENTS.BASE), {
-                  method: 'POST',
-                  headers: { 
-                    ...API_CONFIG.DEFAULT_HEADERS, 
-                    Authorization: `Bearer ${token}` 
-                  },
-                  body: JSON.stringify({ 
-                    patientProfileId: profile.id, // Usar el ID del perfil
-                    action: 'list' // Operación de listado
-                  }),
-                });
-                
-                if (retryRes.ok) {
-                  const retryData = await retryRes.json();
-                  console.log('[useTreatments] Respuesta del servidor (retry):', JSON.stringify(retryData, null, 2));
-                  
-                  let treatments = [];
-                  if (retryData.items && Array.isArray(retryData.items)) {
-                    treatments = retryData.items;
-                  } else if (retryData && Array.isArray(retryData.treatments)) {
-                    treatments = retryData.treatments;
-                  }
-                  
-                  console.log('[useTreatments] Tratamientos procesados (retry):', treatments.length);
-                  
-                  // Guardar en base de datos local
-                  for (const treatment of treatments) {
-                    const localTreatment: LocalTreatment = {
-                      ...treatment,
-                      isOffline: false,
-                      syncStatus: 'synced',
-                      updatedAt: treatment.updatedAt || treatment.createdAt || new Date().toISOString()
-                    };
-                    await localDB.saveTreatment(localTreatment);
-                  }
-                  
-                  // Combinar con tratamientos offline
-                  const offlineTreatments = await localDB.getTreatments(profile.id);
-                  const offlineOnly = offlineTreatments.filter(treatment => treatment.isOffline);
-                  const allTreatments = [...treatments, ...offlineOnly];
-                  
-                  set({ treatments: allTreatments });
-                  return;
-                }
-              }
-            }
-            
             throw new Error('Error al obtener tratamientos');
           }
         } catch (serverError) {
@@ -197,6 +141,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     
     try {
       const profile = useCurrentUser.getState().profile;
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const selectedPatientId = useCaregiver.getState().selectedPatientId;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -207,60 +153,25 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       }
       const formattedData = validation.formattedData;
       
-      if (!profile?.id) {
+      // Determinar patientId según rol
+      let patientId: string | undefined = undefined;
+      if (role === 'CAREGIVER') {
+        patientId = selectedPatientId || undefined;
+        if (!patientId) {
+          throw new Error('Selecciona un paciente para agregar tratamientos');
+        }
+      } else {
+        patientId = profile?.patientProfileId || profile?.id;
+      }
+      if (!patientId) {
         throw new Error('No hay perfil de paciente disponible');
       }
-      
-      // Usar el patientProfileId correcto del perfil
-      let patientId = profile.patientProfileId || profile.id;
       
       console.log('[useTreatments] IDs disponibles:', {
         patientProfileId: profile.patientProfileId,
         id: profile.id,
         selectedPatientId: patientId
       });
-      
-      // CORRECCIÓN CRÍTICA: Manejar problema de permisos
-      const correctPatientId = 'cmff28z53000bjxvg0z4smal1';
-      
-      // Si hay un problema de permisos, intentar forzar actualización del perfil
-      if (patientId !== correctPatientId) {
-        console.warn('[useTreatments] ⚠️ ID de paciente incorrecto detectado, intentando corregir perfil');
-        console.log('[useTreatments] Antes:', {
-          currentPatientId: patientId,
-          correctPatientId,
-          profile: {
-            id: profile.id,
-            patientProfileId: profile.patientProfileId,
-            userId: profile.userId
-          }
-        });
-        
-        // Intentar forzar actualización del perfil
-        try {
-          console.log('[useTreatments] 🔄 Forzando actualización del perfil...');
-          await useCurrentUser.getState().forceProfileRefresh();
-          
-          // Obtener el perfil actualizado
-          const updatedProfile = useCurrentUser.getState().profile;
-          if (updatedProfile) {
-            patientId = updatedProfile.patientProfileId || updatedProfile.id;
-            console.log('[useTreatments] ✅ Perfil actualizado:', {
-              newPatientId: patientId,
-              profile: updatedProfile
-            });
-          } else {
-            // Si no se pudo actualizar, usar el ID correcto directamente
-            patientId = correctPatientId;
-            console.log('[useTreatments] ⚠️ Usando ID correcto como fallback');
-          }
-        } catch (profileError) {
-          console.error('[useTreatments] Error actualizando perfil:', profileError);
-          // Usar el ID correcto como fallback
-          patientId = correctPatientId;
-          console.log('[useTreatments] ⚠️ Usando ID correcto como fallback después del error');
-        }
-      }
       
       // VERIFICAR CONECTIVIDAD - NO PERMITIR AGREGAR SI ESTÁ OFFLINE
       if (!isOnline) {
@@ -270,24 +181,6 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       if (!token) {
         throw new Error('No hay token de autenticación. Inicia sesión nuevamente.');
       }
-
-      // Verificar si el token tiene los permisos correctos
-      try {
-        const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-        const tokenUserId = tokenPayload.sub || tokenPayload.userId;
-        console.log('[useTreatments] Verificación de token:', {
-          tokenUserId,
-          profileUserId: profile.userId,
-          hasCorrectPermissions: tokenUserId === profile.userId
-        });
-        
-        // Si el token no coincide con el perfil, puede ser un problema de permisos
-        if (tokenUserId !== profile.userId) {
-          console.warn('[useTreatments] ⚠️ Token no coincide con el perfil, puede causar NO_ACCESS');
-        }
-      } catch (tokenError) {
-        console.error('[useTreatments] Error verificando token:', tokenError);
-      }
       
       // Si estamos online, intentar sincronizar directamente con el servidor
       try {
@@ -295,12 +188,11 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         
         const bodyData = { 
           ...formattedData, 
-          patientProfileId: patientId // Usar el ID correcto como cadena
+          patientProfileId: patientId
         };
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.TREATMENTS.BASE);
         
         console.log('[useTreatments] Enviando petición a:', endpoint);
-        console.log('[useTreatments] Headers:', { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token.substring(0, 20)}...` });
         console.log('[useTreatments] Body:', JSON.stringify(bodyData, null, 2));
         
         const res = await fetch(endpoint, {
@@ -367,11 +259,6 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         
       } catch (serverError: any) {
         console.log('[useTreatments] Error sincronizando con servidor:', serverError);
-        console.log('[useTreatments] Detalles del error:', {
-          message: serverError.message,
-          stack: serverError.stack,
-          name: serverError.name
-        });
         throw new Error(`Error de conexión: ${serverError.message}`);
       }
       

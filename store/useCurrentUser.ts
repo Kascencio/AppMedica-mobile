@@ -59,15 +59,21 @@ const createDefaultProfile = (base: Partial<UserProfile>): UserProfile => {
     ...base,
   };
   
-  // Asegurar que si tenemos un ID, también lo asignemos a patientProfileId
-  if (defaultProfile.id && !defaultProfile.patientProfileId) {
-    defaultProfile.patientProfileId = defaultProfile.id;
+  // Asegurar que patientProfileId solo se establezca automáticamente para pacientes
+  const effectiveRole = (defaultProfile.role || base.role || 'PATIENT').toUpperCase();
+  if (effectiveRole === 'PATIENT') {
+    if (defaultProfile.id && !defaultProfile.patientProfileId) {
+      defaultProfile.patientProfileId = defaultProfile.id;
+    }
+  } else {
+    // Cuidadores: no deben tener patientProfileId
+    (defaultProfile as any).patientProfileId = undefined as any;
   }
   
   return defaultProfile;
 };
 
-// Función para validar y corregir IDs de perfil
+  // Función para validar y corregir IDs de perfil
 const validateAndFixProfileIds = (profile: UserProfile): UserProfile => {
   console.log('[useCurrentUser] Validando IDs del perfil:', { 
     id: profile.id, 
@@ -89,7 +95,7 @@ const validateAndFixProfileIds = (profile: UserProfile): UserProfile => {
         const patientId = tokenPayload.patientId || 
                          tokenPayload.patientProfileId || 
                          tokenPayload.profileId || 
-                         tokenPayload.id ||  // CORREGIDO: El token tiene el ID en el campo "id"
+                         tokenPayload.id ||
                          tokenPayload.sub ||
                          tokenPayload.userId;
         
@@ -97,8 +103,14 @@ const validateAndFixProfileIds = (profile: UserProfile): UserProfile => {
         
         if (patientId) {
           profile.id = patientId;
-          profile.patientProfileId = patientId;
           profile.userId = tokenPayload.sub || tokenPayload.userId || patientId;
+          // Solo asignar patientProfileId si el rol del token es PATIENT
+          const tokenRole = (tokenPayload.role || '').toUpperCase();
+          if (tokenRole === 'PATIENT') {
+            (profile as any).patientProfileId = patientId;
+          } else {
+            (profile as any).patientProfileId = undefined as any;
+          }
           console.log('[useCurrentUser] IDs corregidos desde token:', { 
             id: profile.id, 
             patientProfileId: profile.patientProfileId,
@@ -115,50 +127,21 @@ const validateAndFixProfileIds = (profile: UserProfile): UserProfile => {
     }
   }
   
-  // Asegurar consistencia entre id y patientProfileId
-  if (profile.id && !profile.patientProfileId) {
-    profile.patientProfileId = profile.id;
-    console.log('[useCurrentUser] patientProfileId asignado desde id:', profile.patientProfileId);
-  } else if (profile.patientProfileId && !profile.id) {
-    profile.id = profile.patientProfileId;
-    console.log('[useCurrentUser] id asignado desde patientProfileId:', profile.id);
+  // Asegurar consistencia entre id y patientProfileId SOLO para pacientes
+  const effectiveRole = (profile.role || 'PATIENT').toUpperCase();
+  if (effectiveRole === 'PATIENT') {
+    if (profile.id && !profile.patientProfileId) {
+      profile.patientProfileId = profile.id;
+      console.log('[useCurrentUser] patientProfileId asignado desde id (paciente):', profile.patientProfileId);
+    } else if (profile.patientProfileId && !profile.id) {
+      profile.id = profile.patientProfileId;
+      console.log('[useCurrentUser] id asignado desde patientProfileId (paciente):', profile.id);
+    }
+  } else {
+    (profile as any).patientProfileId = undefined as any;
   }
   
-  // CORRECCIÓN CRÍTICA: Si el perfil tiene ID incorrecto pero el token es válido, corregir
-  const token = useAuth.getState().userToken;
-  if (token) {
-    try {
-      const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-      const tokenUserId = tokenPayload.sub || tokenPayload.userId;
-      const correctPatientId = 'cmff28z53000bjxvg0z4smal1';
-      
-      // Si el token es válido pero el perfil tiene ID incorrecto, corregir
-      if (tokenUserId === 'cmff28z4y0009jxvgzhi1dxq5' && 
-          profile.id !== correctPatientId) {
-        console.warn('[useCurrentUser] 🔧 CORRIGIENDO: Perfil con ID incorrecto detectado');
-        console.log('[useCurrentUser] Antes:', {
-          id: profile.id,
-          patientProfileId: profile.patientProfileId,
-          userId: profile.userId
-        });
-        
-        // Corregir IDs del perfil
-        profile.id = correctPatientId;
-        profile.patientProfileId = correctPatientId;
-        profile.userId = tokenUserId;
-        
-        console.log('[useCurrentUser] Después:', {
-          id: profile.id,
-          patientProfileId: profile.patientProfileId,
-          userId: profile.userId
-        });
-        
-        console.log('[useCurrentUser] ✅ Perfil corregido para evitar errores de permisos');
-      }
-    } catch (tokenError) {
-      console.error('[useCurrentUser] Error procesando token para corrección:', tokenError);
-    }
-  }
+  // Importante: NO aplicar correcciones hardcodeadas de IDs. Confiar en /auth/me y /patients/me
   
   console.log('[useCurrentUser] Perfil final después de validación:', { 
     id: profile.id, 
@@ -301,33 +284,35 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
         console.log('[useCurrentUser] 🔍 ID esperado: cmff28z53000bjxvg0z4smal1');
         console.log('[useCurrentUser] 🔍 ¿Token tiene ID correcto?', tokenPayload.id === 'cmff28z53000bjxvg0z4smal1');
         
-        // Intentar obtener el ID del paciente de diferentes campos del token
-        const patientId = tokenPayload.patientId || 
-                         tokenPayload.patientProfileId || 
-                         tokenPayload.profileId || 
-                         tokenPayload.id ||  // CORREGIDO: El token tiene el ID en el campo "id"
-                         tokenPayload.sub;
-        
-        console.log('[useCurrentUser] ID del paciente extraído del token:', patientId);
-        
+        // IDs y rol desde token
+        const tokenRole = (tokenPayload.role || 'PATIENT').toUpperCase();
+        const tokenUserId = tokenPayload.sub || tokenPayload.userId || tokenPayload.id;
+        const tokenPatientId = tokenPayload.patientId || tokenPayload.patientProfileId || tokenPayload.profileId || tokenUserId;
+
+        console.log('[useCurrentUser] Rol desde token:', tokenRole);
+
         const baseProfile = {
-            id: patientId,
-            userId: tokenPayload.sub || tokenPayload.userId,
-            patientProfileId: patientId,
+            id: tokenRole === 'PATIENT' ? tokenPatientId : tokenUserId,
+            userId: tokenUserId,
+            patientProfileId: tokenRole === 'PATIENT' ? tokenPatientId : undefined,
             name: tokenPayload.patientName || tokenPayload.name || 'Usuario',
-            role: tokenPayload.role || 'PATIENT',
-        };
+            role: tokenRole,
+        } as Partial<UserProfile>;
         
         console.log('[useCurrentUser] Perfil base creado desde token:', baseProfile);
 
-        // Obtener perfil detallado del backend
-        const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
-        console.log('[useCurrentUser] Obteniendo perfil del servidor desde:', endpoint);
-        console.log('[useCurrentUser] 🔍 Token usado:', token.substring(0, 20) + '...');
-        const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
-
         let finalProfile;
-        if (res.ok) {
+        let res: Response | null = null;
+        if (tokenRole === 'PATIENT') {
+          const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.PATIENTS.ME);
+          console.log('[useCurrentUser] Obteniendo perfil del servidor desde:', endpoint);
+          console.log('[useCurrentUser] 🔍 Token usado:', token.substring(0, 20) + '...');
+          res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+        } else {
+          console.log('[useCurrentUser] Usuario es CUIDADOR; no llamar /patients/me');
+        }
+
+        if (res && res.ok) {
             const serverData = await res.json();
             console.log('[useCurrentUser] ✅ PERFIL CARGADO DESDE SERVIDOR:', serverData);
             console.log('[useCurrentUser] 🔍 Status del servidor:', res.status);
@@ -365,35 +350,14 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             // Combinar datos: locales -> base del token -> del servidor
             finalProfile = mergePreferNonNull<UserProfile>(mappedData as any, localProfile || undefined, baseProfile);
             
-            // CORRECCIÓN AUTOMÁTICA: Si el ID es incorrecto, corregirlo automáticamente
-            console.log('[useCurrentUser] 🔍 Verificando ID del perfil (servidor):', finalProfile.id);
-            if (finalProfile.id === 'cmff20kii0008jxvg9umasx4j') {
-                console.log('[useCurrentUser] 🔧 CORRECCIÓN AUTOMÁTICA: Detectado ID incorrecto, corrigiendo...');
-                
-                // Convertir el ID correcto a número para las APIs
-                const idString = 'cmff28z53000bjxvg0z4smal1';
-                const idNumber = Math.abs(idString.split('').reduce((a, b) => {
-                    a = ((a << 5) - a) + b.charCodeAt(0);
-                    return a & a;
-                }, 0));
-                
-                finalProfile = {
-                    ...finalProfile,
-                    id: idString,
-                    patientProfileId: idString,
-                    patientProfileIdNumber: idNumber,
-                };
-                
-                console.log('[useCurrentUser] ✅ ID corregido automáticamente:', finalProfile.id);
-                console.log('[useCurrentUser] ✅ ID numérico generado:', finalProfile.patientProfileIdNumber);
-            }
+            // No forzar correcciones de ID; usar el ID que devuelve el servidor
         } else {
-            const errorText = await res.text().catch(() => 'No response body');
-            console.warn('[useCurrentUser] ❌ NO SE PUDO CARGAR DESDE SERVIDOR - Status:', res.status, 'Response:', errorText);
+            const errorText = await (res ? res.text().catch(() => 'No response body') : Promise.resolve('No fetch'));
+            if (res) console.warn('[useCurrentUser] ❌ NO SE PUDO CARGAR DESDE SERVIDOR - Status:', res.status, 'Response:', errorText);
             console.warn('[useCurrentUser] Usando datos locales/base como fallback...');
             
             // Si el error es "ID inválido", intentar crear un perfil con datos del token
-            if (res.status === 400 && errorText.includes('ID inválido')) {
+            if (res && res.status === 400 && errorText.includes('ID inválido')) {
                 console.log('[useCurrentUser] Error de ID inválido, creando perfil desde token...');
                 // Usar solo los datos del token para crear un perfil básico
                 finalProfile = { ...localProfile, ...baseProfile };
@@ -401,28 +365,7 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
                 finalProfile = mergePreferNonNull<UserProfile>(localProfile || undefined, baseProfile, {});
             }
             
-            // CORRECCIÓN AUTOMÁTICA: Si el ID es incorrecto, corregirlo automáticamente
-            console.log('[useCurrentUser] 🔍 Verificando ID del perfil (fallback):', finalProfile.id);
-            if (finalProfile.id === 'cmff20kii0008jxvg9umasx4j') {
-                console.log('[useCurrentUser] 🔧 CORRECCIÓN AUTOMÁTICA: Detectado ID incorrecto, corrigiendo...');
-                
-                // Convertir el ID correcto a número para las APIs
-                const idString = 'cmff28z53000bjxvg0z4smal1';
-                const idNumber = Math.abs(idString.split('').reduce((a, b) => {
-                    a = ((a << 5) - a) + b.charCodeAt(0);
-                    return a & a;
-                }, 0));
-                
-                finalProfile = {
-                    ...finalProfile,
-                    id: idString,
-                    patientProfileId: idString,
-                    patientProfileIdNumber: idNumber,
-                };
-                
-                console.log('[useCurrentUser] ✅ ID corregido automáticamente:', finalProfile.id);
-                console.log('[useCurrentUser] ✅ ID numérico generado:', finalProfile.patientProfileIdNumber);
-            }
+            // No forzar correcciones de ID en fallback
         }
 
         const completeProfile = createDefaultProfile(finalProfile);
@@ -762,7 +705,12 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
   refreshProfile: async () => {
     console.log('[useCurrentUser] Forzando recarga del perfil...');
     set({ initialized: false, profile: null });
-    await get().fetchProfile();
+    // Usar el flujo correcto basado en /auth/me
+    if (get().fetchProfileCorrectFlow) {
+      await get().fetchProfileCorrectFlow();
+    } else {
+      await get().fetchProfile();
+    }
   },
 
   // Función para forzar recarga desde el servidor (ignorando caché local)
@@ -996,12 +944,8 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
 
     console.log('[useCurrentUser] Iniciando flujo correcto de autenticación...');
     
-    // Verificar si ya se inicializó y tiene userId válido
-    const currentProfile = get().profile;
-    if (currentProfile && currentProfile.userId) {
-      console.log('[useCurrentUser] Ya inicializado con perfil válido (con userId), saltando.');
-      return;
-    }
+    // No saltar: siempre confirmar datos desde /auth/me para evitar perfiles mezclados
+    const currentProfile = null;
     
     if (currentProfile && !currentProfile.userId) {
       console.log('[useCurrentUser] Perfil existente sin userId, reiniciando con flujo correcto...');

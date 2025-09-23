@@ -44,6 +44,12 @@ export const useAuth = create<AuthState>((set, get) => ({
       
       await AsyncStorage.setItem('userToken', data.token);
       set({ userToken: data.token, isAuthenticated: true });
+      // Limpiar perfil previo para evitar mezclar cuentas anteriores
+      try {
+        await AsyncStorage.removeItem('userProfile');
+        const { useCurrentUser } = await import('./useCurrentUser');
+        useCurrentUser.getState().resetProfile();
+      } catch {}
       
       // NO llamar fetchProfile aquí para evitar ciclo de dependencias
       console.log('[useAuth] Login completado, perfil se cargará por separado');
@@ -82,6 +88,12 @@ export const useAuth = create<AuthState>((set, get) => ({
       
       await AsyncStorage.setItem('userToken', data.token);
       set({ userToken: data.token, isAuthenticated: true });
+      // Limpiar perfil previo para evitar mezclar cuentas anteriores
+      try {
+        await AsyncStorage.removeItem('userProfile');
+        const { useCurrentUser } = await import('./useCurrentUser');
+        useCurrentUser.getState().resetProfile();
+      } catch {}
       
       // NO llamar fetchProfile aquí para evitar ciclo de dependencias
       console.log('[useAuth] Registro completado, perfil se cargará por separado');

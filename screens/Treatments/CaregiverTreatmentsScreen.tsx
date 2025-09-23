@@ -5,6 +5,10 @@ import { useTreatments } from '../../store/useTreatments';
 import { useCaregiver } from '../../store/useCaregiver';
 import { useOffline } from '../../store/useOffline';
 import { LinearGradient } from 'expo-linear-gradient';
+import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher';
+import SelectedPatientBanner from '../../components/SelectedPatientBanner';
+import DateSelector from '../../components/DateSelector';
+import OptionSelector from '../../components/OptionSelector';
 
 export default function CaregiverTreatmentsScreen() {
   const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment } = useTreatments();
@@ -13,8 +17,12 @@ export default function CaregiverTreatmentsScreen() {
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [title, setTitle] = useState('');
+  const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const [frequency, setFrequency] = useState('daily');
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (selectedPatientId) getTreatments(selectedPatientId).catch(() => {});
@@ -22,27 +30,59 @@ export default function CaregiverTreatmentsScreen() {
 
   const openCreate = () => {
     setEditing(null);
-    setTitle('');
+    setName('');
     setDescription('');
+    setStartDate(undefined);
+    setEndDate(undefined);
+    setFrequency('');
+    setNotes('');
     setModalVisible(true);
   };
   const openEdit = (t: any) => {
     setEditing(t);
-    setTitle(t.title || '');
+    setName(t.name || t.title || '');
     setDescription(t.description || '');
+    setStartDate(t.startDate ? new Date(t.startDate) : undefined);
+    setEndDate(t.endDate ? new Date(t.endDate) : undefined);
+    setFrequency(t.frequency || '');
+    setNotes(t.notes || '');
     setModalVisible(true);
   };
 
   const onSave = async () => {
     try {
-      if (!title) {
+      if (!name.trim()) {
         Alert.alert('Faltan datos', 'Título es obligatorio');
         return;
       }
+      // Validaciones de negocio previas al request
+      if (endDate && startDate && endDate <= startDate) {
+        Alert.alert('Error', 'La fecha de fin debe ser posterior a la fecha de inicio');
+        return;
+      }
+      const allowed = ['daily', 'weekly', 'monthly', 'as_needed'];
+      if (!allowed.includes((frequency || '').toLowerCase())) {
+        Alert.alert('Error', 'La frecuencia debe ser: daily, weekly, monthly o as_needed');
+        return;
+      }
       if (editing) {
-        await updateTreatment(editing.id, { title, description });
+        await updateTreatment(editing.id, {
+          name: name.trim(),
+          description: description.trim(),
+          startDate: startDate ? startDate.toISOString() : undefined,
+          endDate: endDate ? endDate.toISOString() : undefined,
+          frequency: frequency || undefined,
+          notes: notes || undefined,
+        });
       } else {
-        await createTreatment({ title, description });
+        await createTreatment({
+          name: name.trim(),
+          description: description.trim(),
+          startDate: startDate ? startDate.toISOString() : undefined,
+          endDate: endDate ? endDate.toISOString() : undefined,
+          frequency: frequency || undefined,
+          notes: notes || undefined,
+        });
       }
       setModalVisible(false);
       setEditing(null);
@@ -89,10 +129,12 @@ export default function CaregiverTreatmentsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 32 }}>
+      <CaregiverPatientSwitcher />
+      <SelectedPatientBanner onChange={() => {}} />
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Tratamientos</Text>
         <TouchableOpacity style={[styles.addBtnModern, !isOnline && { opacity: 0.5 }]} onPress={openCreate} activeOpacity={0.85} disabled={!isOnline}>
-          <Ionicons name="add-circle" size={28} color="#4ade80" />
+          <Ionicons name="add-circle" size={28} color="#ffffff" />
           <Text style={styles.addBtnTextModern}>Nuevo</Text>
         </TouchableOpacity>
       </View>
@@ -112,7 +154,7 @@ export default function CaregiverTreatmentsScreen() {
             <View style={styles.cardHeaderModern}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <MaterialCommunityIcons name="clipboard-list" size={22} color="#4ade80" style={{ marginRight: 10 }} />
-                <Text style={styles.cardTitleModern}>{t.title || 'Sin título'}</Text>
+                <Text style={styles.cardTitleModern}>{t.title || t.name || 'Sin título'}</Text>
               </View>
               <View style={{ flexDirection: 'row' }}>
                 <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEdit(t)} disabled={!isOnline}>
@@ -136,10 +178,29 @@ export default function CaregiverTreatmentsScreen() {
         <View style={styles.modalOverlayModern}>
           <View style={styles.modalContentModern}>
             <Text style={styles.headerTitle}>{editing ? 'Editar tratamiento' : 'Agregar tratamiento'}</Text>
-            <Text style={styles.inputLabel}>Título *</Text>
-            <TextInput style={styles.inputModern} value={title} onChangeText={setTitle} placeholder="Título" />
+            <Text style={styles.inputLabel}>Nombre *</Text>
+            <TextInput style={styles.inputModern} value={name} onChangeText={setName} placeholder="Nombre del tratamiento" />
             <Text style={styles.inputLabel}>Descripción</Text>
             <TextInput style={[styles.inputModern, { height: 64 }]} value={description} onChangeText={setDescription} placeholder="Descripción" multiline />
+            <Text style={styles.inputLabel}>Fecha de inicio</Text>
+            <DateSelector value={startDate} onDateChange={setStartDate} label="" placeholder="Seleccionar fecha de inicio" />
+            <Text style={styles.inputLabel}>Fecha de fin</Text>
+            <DateSelector value={endDate} onDateChange={setEndDate} label="" placeholder="Seleccionar fecha de fin (opcional)" minDate={startDate} />
+            <OptionSelector
+              value={frequency}
+              onValueChange={setFrequency}
+              label="Frecuencia"
+              options={[
+                { value: 'daily', label: 'Diario', icon: 'daily' },
+                { value: 'weekly', label: 'Semanal', icon: 'weekly' },
+                { value: 'monthly', label: 'Mensual', icon: 'monthly' },
+                { value: 'as_needed', label: 'Según necesidad', icon: 'custom' }
+              ]}
+              placeholder="Selecciona la frecuencia"
+              required={true}
+            />
+            <Text style={styles.inputLabel}>Notas</Text>
+            <TextInput style={[styles.inputModern, { height: 64 }]} value={notes} onChangeText={setNotes} placeholder="Notas adicionales" multiline />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
               <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={onSave}>
                 <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
@@ -160,7 +221,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 40,
   },
   centered: {
     flex: 1,
@@ -204,13 +265,18 @@ const styles = StyleSheet.create({
   addBtnModern: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#dcfce7',
+    backgroundColor: '#22c55e',
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 18,
+    shadowColor: '#15803d',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.20,
+    shadowRadius: 6,
+    elevation: 3,
   },
   addBtnTextModern: {
-    color: '#2563eb',
+    color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,

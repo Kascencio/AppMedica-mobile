@@ -6,6 +6,7 @@ export interface PatientProfile {
   id: string;
   name: string;
   age?: number;
+  birthDate?: string;
   weight?: number;
   height?: number;
   allergies?: string;
@@ -71,6 +72,17 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
       // NUEVA ESTRUCTURA DEL BACKEND: items en lugar de data
       const patients = data.items || data.data || data || [];
       set({ patients });
+
+      // UX: Autoseleccionar si solo hay un paciente o limpiar selección inválida
+      try {
+        const prevSelected = get().selectedPatientId;
+        const exists = prevSelected ? patients.some((p: any) => p.id === prevSelected) : false;
+        if (patients.length === 1 && (!prevSelected || !exists)) {
+          set({ selectedPatientId: patients[0].id });
+        } else if (prevSelected && !exists) {
+          set({ selectedPatientId: null });
+        }
+      } catch {}
     } catch (err: any) {
       set({ error: err.message });
     } finally {
@@ -83,12 +95,12 @@ export const useCaregiver = create<CaregiverState>((set, get) => ({
     try {
       const token = useAuth.getState().userToken;
       if (!token) throw new Error('No autenticado');
-      // Aceptar código de invitación (XXXX-XXXX) o patientId directo
-      const raw = (patientIdOrCode || '').toString().trim();
-      const isCode = /^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/.test(raw) || /^[A-Za-z0-9]{8}$/.test(raw);
-      const normalizedCode = isCode ? (raw.includes('-') ? raw.toUpperCase() : `${raw.slice(0,4).toUpperCase()}-${raw.slice(4,8).toUpperCase()}`) : undefined;
-
-      const body = isCode ? { code: normalizedCode } : { patientId: raw };
+      // Aceptar código de invitación de 8 caracteres (sin guion) o patientId directo
+      const raw = (patientIdOrCode || '').toString().trim().toUpperCase();
+      const alnum = raw.replace(/[^A-Z0-9]/g, '');
+      const allowed = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/; // sin 0,1,I,O
+      const isCode = allowed.test(alnum);
+      const body = isCode ? { code: alnum } : { patientId: raw };
 
       const res = await fetch(buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.JOIN), {
         method: 'POST',

@@ -13,7 +13,7 @@ const registerSchema = z.object({
   password: z.string().min(6, 'Mínimo 6 caracteres'),
   confirmPassword: z.string().min(6, 'Confirma tu contraseña'),
   role: z.enum(['PATIENT', 'CAREGIVER']),
-  inviteCode: z.string().optional(),
+  // inviteCode se elimina del flujo de registro
 }).refine((data) => data.password === data.confirmPassword, {
   message: 'Las contraseñas no coinciden',
   path: ['confirmPassword'],
@@ -39,7 +39,6 @@ export default function RegisterScreen({ navigation }: any) {
       password: '',
       confirmPassword: '',
       role: 'PATIENT',
-      inviteCode: '',
     },
   });
 
@@ -48,8 +47,8 @@ export default function RegisterScreen({ navigation }: any) {
   const onSubmit = async (data: RegisterForm) => {
     setError(null);
     try {
-      await register(data.email, data.password, data.role, data.inviteCode);
-      await fetchProfile();
+      await register(data.email, data.password, data.role);
+      await useCurrentUser.getState().fetchProfileCorrectFlow();
       // No navigation.replace ni navigation.reset: el flujo lo maneja App.tsx
     } catch (err: any) {
       setError(err.message || 'No se pudo completar el registro');
@@ -229,29 +228,7 @@ export default function RegisterScreen({ navigation }: any) {
             </View>
           )}
         />
-        {/* Invite Code (solo si es cuidador) */}
-        {selectedRole === 'CAREGIVER' && (
-          <Controller
-            control={control}
-            name="inviteCode"
-            render={({ field: { onChange, value } }) => (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Código de Invitación</Text>
-                <View style={styles.inputRow}>
-                  <Ionicons name="key-outline" size={20} color="#94a3b8" />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="XXXX-XXXX"
-                    autoCapitalize="characters"
-                    value={value}
-                    onChangeText={onChange}
-                    editable={!loading && !loadingProfile}
-                  />
-                </View>
-              </View>
-            )}
-          />
-        )}
+        {/* El código de invitación ya no se solicita en registro para cuidadores */}
         {/* Submit button */}
         <TouchableOpacity
           style={[styles.button, (loading || loadingProfile) && { opacity: 0.6 }]}

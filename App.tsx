@@ -32,7 +32,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function App() {
   const { isAuthenticated, loading, loadToken, userToken } = useAuth();
-  const { fetchProfile, profile, loading: loadingProfile } = useCurrentUser();
+  const { fetchProfile, fetchProfileCorrectFlow, profile, loading: loadingProfile } = useCurrentUser();
+  const { getCaregiverPermissions } = require('./store/usePermissions');
+  const { useCaregiver } = require('./store/useCaregiver');
   const { initializeOffline } = useOffline();
   const autoSync = useAutoSync(); // Inicializar sincronización automática
   const validatedProfile = useProfileValidation(); // Validar perfil automáticamente
@@ -319,7 +321,13 @@ export default function App() {
       // Agregar un flag para evitar llamadas repetidas
       const loadProfileOnce = async () => {
         try {
-          await fetchProfile();
+          await fetchProfileCorrectFlow();
+          // Si es cuidador, refrescar permisos y pacientes para que el gate cambie al entrar
+          const p = useCurrentUser.getState().profile;
+          if (p?.role === 'CAREGIVER') {
+            try { await getCaregiverPermissions().getState().getCaregiverPermissions(); } catch {}
+            try { await useCaregiver.getState().fetchPatients(); } catch {}
+          }
         } catch (error) {
           console.log('[App] Error cargando perfil:', error);
           // Si hay error, marcar como inicializado para evitar bucle infinito

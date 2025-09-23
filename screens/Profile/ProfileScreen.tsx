@@ -14,6 +14,8 @@ import { usePermissions } from '../../store/usePermissions';
 import { Clipboard } from 'react-native';
 import { UserProfile } from '../../types';
 import { scheduleNotification } from '../../lib/notifications';
+import { Picker } from '@react-native-picker/picker';
+import { useFocusEffect } from '@react-navigation/native';
 
 import SyncStatus from '../../components/SyncStatus';
 import AlarmTestCenter from '../../components/AlarmTestCenter';
@@ -36,10 +38,13 @@ const f = (v?: string | null) => {
   return Number.isFinite(n) ? n : null;
 };
 
+// Opciones estándar para tipo de sangre
+const BLOOD_TYPES = ['A+','A-','B+','B-','AB+','AB-','O+','O-'] as const;
+
 export default function ProfileScreen() {
   console.log('[ProfileScreen] Componente montándose/re-renderizando...');
   
-  const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError, initialized } = useCurrentUser();
+  const { profile, updateProfile, loading, fetchProfile, refreshProfile, error: profileError, initialized, fetchProfileCorrectFlow } = useCurrentUser();
   const { userToken, logout } = useAuth();
   const { inviteCode, loading: inviteLoading, error: inviteError, generateInviteCode, clearError: clearInviteError } = useInviteCodes();
   const { permissions, loading: permissionsLoading, error: permissionsError, getPermissions, updatePermissionStatus, updatePermissionLevel } = usePermissions();
@@ -78,7 +83,7 @@ export default function ProfileScreen() {
     // Solo cargar si no está inicializado y no está cargando
     if (!initialized && !loading) {
       console.log('[ProfileScreen] No inicializado, iniciando carga...');
-      fetchProfile();
+      fetchProfileCorrectFlow();
     } else if (loading) {
       console.log('[ProfileScreen] Perfil cargando...');
     } else if (initialized) {
@@ -270,6 +275,16 @@ export default function ProfileScreen() {
     console.log('[ProfileScreen] Cargando permisos para paciente...');
     getPermissions();
   }, [profile?.id, profile?.role]);
+
+  // Refrescar permisos al enfocar la pantalla de perfil del paciente
+  useFocusEffect(
+    React.useCallback(() => {
+      if (profile?.role === 'PATIENT' && profile?.id) {
+        getPermissions();
+      }
+      return () => {};
+    }, [profile?.role, profile?.id])
+  );
 
   // Aceptar o rechazar solicitud
   const handleRequestAction = async (id: string, status: 'ACCEPTED' | 'REJECTED') => {
@@ -787,12 +802,17 @@ export default function ProfileScreen() {
         {/* Tipo de sangre */}
         <View style={styles.formGroupModern}>
           <Text style={styles.labelModern}>Tipo de sangre</Text>
-          <TextInput 
-            style={styles.inputModern} 
-            value={form.bloodType} 
-            onChangeText={v => handleChange('bloodType', v)} 
-            placeholder="Ej: O+, A-, B+, AB-, etc." 
-          />
+          <View style={styles.pickerModern}>
+            <Picker
+              selectedValue={form.bloodType || ''}
+              onValueChange={(value) => handleChange('bloodType', value)}
+            >
+              <Picker.Item label="Seleccionar tipo" value="" color="#9ca3af" />
+              {BLOOD_TYPES.map(bt => (
+                <Picker.Item key={bt} label={bt} value={bt} />
+              ))}
+            </Picker>
+          </View>
         </View>
         
         {/* Contacto de emergencia */}
@@ -1190,6 +1210,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
     fontSize: 16,
     color: '#1e293b',
+  },
+  pickerModern: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    backgroundColor: '#f9fafb',
+    overflow: 'hidden',
   },
   errorTextModern: {
     color: '#ef4444',

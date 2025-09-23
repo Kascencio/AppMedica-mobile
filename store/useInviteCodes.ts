@@ -22,6 +22,21 @@ export const useInviteCodes = create<InviteCodesState>((set, get) => ({
     set({ loading: true, error: null });
     
     try {
+      // Verificar conectividad real antes de intentar generar
+      try {
+        const { checkNetworkConnectivity } = await import('../lib/network');
+        const online = await checkNetworkConnectivity();
+        if (!online) {
+          throw new Error('SIN_CONEXION');
+        }
+      } catch (netErr: any) {
+        if (netErr?.message === 'SIN_CONEXION') {
+          set({ loading: false, error: 'Sin conexión a internet' });
+          return null;
+        }
+        // Si falla el chequeo, continuar a intentar el endpoint (fallback)
+      }
+
       const token = useAuth.getState().userToken;
       if (!token) {
         throw new Error('No hay token de autenticación');
@@ -45,36 +60,9 @@ export const useInviteCodes = create<InviteCodesState>((set, get) => ({
         const errorData = await response.json().catch(() => ({}));
         console.log('[useInviteCodes] Error en respuesta:', errorData);
         
-        // Si el endpoint no está disponible, generar código localmente
-        if (response.status === 404) {
-          console.log('[useInviteCodes] Endpoint no disponible, generando código localmente...');
-          
-          // Generar código de invitación localmente siguiendo el formato especificado
-          const generateLocalCode = () => {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            let code = '';
-            for (let i = 0; i < 8; i++) {
-              if (i === 4) code += '-';
-              code += chars.charAt(Math.floor(Math.random() * chars.length));
-            }
-            return code;
-          };
-
-          const localInviteCode: InviteCode = {
-            id: `local_${Date.now()}`,
-            patientId: 'local_patient',
-            code: generateLocalCode(),
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Expira en 24 horas
-            isUsed: false,
-            createdAt: new Date().toISOString(),
-          };
-
-          console.log('[useInviteCodes] Código generado localmente:', localInviteCode);
-          set({ inviteCode: localInviteCode, loading: false });
-          return localInviteCode;
-        }
-        
-        throw new Error(errorData.error || errorData.message || 'Error al generar código de invitación');
+        // No generar códigos offline: mostrar estado de error y salir
+        set({ loading: false, error: errorData.error || errorData.message || 'No se pudo generar el código' });
+        return null;
       }
 
       const data = await response.json();
@@ -113,13 +101,15 @@ export const useInviteCodes = create<InviteCodesState>((set, get) => ({
         throw new Error('El código de invitación es requerido');
       }
 
-      // Aceptar códigos con o sin guion y normalizar a XXXX-XXXX
+      // Sanitizar: quitar espacios internos y caracteres no alfanuméricos
       const raw = code.trim().toUpperCase();
-      const normalized = raw.includes('-') ? raw : `${raw.slice(0,4)}-${raw.slice(4,8)}`;
-      const codeRegex = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
-      if (!codeRegex.test(normalized)) {
+      const alnum = raw.replace(/[^A-Z0-9]/g, '');
+      const allowed = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/; // set permitido sin 0,1,I,O
+      if (!allowed.test(alnum)) {
         throw new Error('Formato de código inválido. Debe ser XXXX-XXXX');
       }
+      // La API espera 8 caracteres sin guion
+      const normalized = alnum;
 
       const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.CAREGIVERS.JOIN);
       console.log('[useInviteCodes] Llamando endpoint:', endpoint);
@@ -130,9 +120,7 @@ export const useInviteCodes = create<InviteCodesState>((set, get) => ({
           ...API_CONFIG.DEFAULT_HEADERS,
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          code: normalized,
-        }),
+        body: JSON.stringify({ code: normalized }),
       });
 
       console.log('[useInviteCodes] Respuesta join:', response.status, response.ok);
