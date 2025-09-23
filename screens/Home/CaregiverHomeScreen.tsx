@@ -261,22 +261,33 @@ export default function CaregiverHomeScreen({ navigation }: any) {
                 <View style={styles.patientInfoRow}>
                   <View style={styles.patientAvatarBox}>
                     {getPatientPhotoUrl(p) ? (
-                      <ProfileAvatar uri={getPatientPhotoUrl(p)!} size={54} fallbackSource={logo} showLoading />
+                      <ProfileAvatar uri={getPatientPhotoUrl(p)!} size={60} fallbackSource={logo} showLoading />
                     ) : (
-                      <MaterialCommunityIcons name="account-circle" size={54} color="#cbd5e1" />
+                      <MaterialCommunityIcons name="account-circle" size={60} color="#2563eb" />
                     )}
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.patientInfoContainer}>
                     <Text style={styles.patientName}>{getPatientName(p)}</Text>
-                    <Text style={styles.patientDetail}>Edad: {getPatientAge(p)}</Text>
-                    {p.birthDate && (
-                      <Text style={styles.patientBirthDate}>
-                        Nacimiento: {new Date(p.birthDate).toLocaleDateString('es-ES', { 
-                          day: '2-digit', 
-                          month: '2-digit', 
-                          year: 'numeric' 
-                        })}
-                      </Text>
+                    <View style={styles.patientDetailsContainer}>
+                      <Text style={styles.patientDetail}>Edad: {getPatientAge(p)}</Text>
+                      {p.birthDate && (
+                        <Text style={styles.patientBirthDate}>
+                          • Nacimiento: {new Date(p.birthDate).toLocaleDateString('es-ES', { 
+                            day: '2-digit', 
+                            month: '2-digit', 
+                            year: 'numeric' 
+                          })}
+                        </Text>
+                      )}
+                    </View>
+                    {p.weight && (
+                      <Text style={styles.patientAdditionalInfo}>Peso: {p.weight} kg</Text>
+                    )}
+                    {p.height && (
+                      <Text style={styles.patientAdditionalInfo}>Altura: {p.height} cm</Text>
+                    )}
+                    {p.allergies && (
+                      <Text style={styles.patientAllergies}>⚠️ Alergias: {p.allergies}</Text>
                     )}
                   </View>
                   <TouchableOpacity
@@ -288,7 +299,7 @@ export default function CaregiverHomeScreen({ navigation }: any) {
                     accessibilityLabel={`Seleccionar paciente ${getPatientName(p)}`}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="checkmark-circle" size={32} color="#2563eb" />
+                    <Ionicons name="checkmark-circle" size={36} color="#2563eb" />
                   </TouchableOpacity>
                 </View>
               </LinearGradient>
@@ -310,7 +321,7 @@ const styles = StyleSheet.create({
   },
   container: {
     alignItems: 'center',
-    paddingTop: 32,
+    paddingTop: 52, // Aumentado de 32 a 52 para margen superior de 20px
     paddingBottom: 32,
     minHeight: '100%',
   },
@@ -387,43 +398,71 @@ const styles = StyleSheet.create({
   },
   patientCard: {
     flexDirection: 'column',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
     backgroundColor: 'rgba(255,255,255,0.97)',
     shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   patientInfoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    alignItems: 'flex-start',
+    gap: 12,
   },
   patientAvatarBox: {
-    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#f0f9ff',
+    borderWidth: 2,
+    borderColor: '#e0f2fe',
   },
-  patientAvatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#e0e7ff',
+  patientInfoContainer: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  patientDetailsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
   },
   patientName: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#2563eb',
+    color: '#1e293b',
+    marginBottom: 2,
   },
   patientDetail: {
     fontSize: 14,
     color: '#64748b',
+    marginRight: 8,
   },
   patientBirthDate: {
     fontSize: 13,
     color: '#94a3b8',
+  },
+  patientAdditionalInfo: {
+    fontSize: 13,
+    color: '#64748b',
     marginTop: 2,
+  },
+  patientAllergies: {
+    fontSize: 13,
+    color: '#dc2626',
+    fontWeight: '600',
+    marginTop: 4,
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fecaca',
   },
   eventRow: {
     flexDirection: 'row',
@@ -456,8 +495,10 @@ const styles = StyleSheet.create({
   dashboardBtn: {
     marginLeft: 8,
     backgroundColor: '#e0f2fe',
-    borderRadius: 8,
-    padding: 4,
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 2,
+    borderColor: '#bae6fd',
   },
   logoutBtn: {
     flexDirection: 'row',

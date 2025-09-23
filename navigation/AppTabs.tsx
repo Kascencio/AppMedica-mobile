@@ -94,7 +94,7 @@ function CaregiverTabs() {
           if (route.name === 'Tratamientos') return <Ionicons name="leaf" size={size} color={color} />;
           if (route.name === 'Citas') return <Ionicons name="calendar" size={size} color={color} />;
           if (route.name === 'Perfil') return <Ionicons name="person-circle" size={size} color={color} />;
-          if (route.name === 'Pacientes') return <MaterialCommunityIcons name="account-heart" size={size} color={color} />;
+          // if (route.name === 'Pacientes') return <MaterialCommunityIcons name="account-heart" size={size} color={color} />;
           if (route.name === 'Notas') return <MaterialCommunityIcons name="note-text" size={size} color={color} />;
           if (route.name === 'Notificaciones') return <Ionicons name="notifications" size={size} color={color} />;
           return <Ionicons name="ellipse" size={size} color={color} />;
@@ -103,7 +103,7 @@ function CaregiverTabs() {
     >
       <Tab.Screen name="Inicio" component={CaregiverHomeScreen} options={{ tabBarIcon: ({ color, size }) => (<Ionicons name="home-outline" size={size} color={color} />), tabBarLabel: 'Inicio' }} />
       <Tab.Screen name="Calendario" component={CalendarScreen} options={{ tabBarIcon: ({ color, size }) => (<Ionicons name="calendar-outline" size={size} color={color} />), tabBarLabel: 'Calendario' }} />
-      <Tab.Screen name="Pacientes" component={CaregiverPatientsScreen} options={{ tabBarIcon: ({ color, size }) => (<MaterialCommunityIcons name="account-heart" size={size} color={color} />), tabBarLabel: 'Pacientes' }} />
+      {/* <Tab.Screen name="Pacientes" component={CaregiverPatientsScreen} options={{ tabBarIcon: ({ color, size }) => (<MaterialCommunityIcons name="account-heart" size={size} color={color} />), tabBarLabel: 'Pacientes' }} /> */}
       <Tab.Screen name="Tratamientos" component={CaregiverTreatmentsScreen} options={{ tabBarIcon: ({ color, size }) => (<Ionicons name="leaf-outline" size={size} color={color} />), tabBarLabel: 'Tratamientos' }} />
       <Tab.Screen name="Citas" component={CaregiverAppointmentsScreen} options={{ tabBarIcon: ({ color, size }) => (<Ionicons name="calendar-outline" size={size} color={color} />), tabBarLabel: 'Citas' }} />
       <Tab.Screen name="Medicamentos" component={CaregiverMedicationsScreen} options={{ tabBarIcon: ({ color, size }) => (<Ionicons name="medkit-outline" size={size} color={color} />), tabBarLabel: 'Medicamentos' }} />

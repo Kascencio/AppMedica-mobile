@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 44, // Aumentado de 24 a 44 para margen superior de 20px
   },
   centered: {
     flex: 1,

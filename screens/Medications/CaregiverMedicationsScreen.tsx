@@ -312,12 +312,6 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               <Text style={styles.cardLabelModern}>Inicio:</Text>
               <Text style={styles.cardValueModern}>{med.startDate ? new Date(med.startDate).toLocaleString() : '—'}</Text>
             </View>
-          {getNextDoseEta(med) ? (
-            <View style={[styles.cardRowModern, { alignItems: 'center', marginTop: 4 }]}>
-              <Ionicons name="alarm" size={16} color="#2563eb" style={{ marginRight: 6 }} />
-              <Text style={[styles.cardValueModern, { color: '#2563eb' }]}>{getNextDoseEta(med)}</Text>
-            </View>
-          ) : null}
             {med.notes ? (
               <View style={styles.notesBoxModern}>
                 <Text style={styles.notesTextModern}>{med.notes}</Text>

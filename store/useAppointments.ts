@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useAuth } from './useAuth';
 import { useCurrentUser } from './useCurrentUser';
+import { useCaregiver } from './useCaregiver';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { localDB, LocalAppointment } from '../data/db';
 import { syncService } from '../lib/syncService';
@@ -44,7 +45,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     
     try {
       const profile = useCurrentUser.getState().profile;
-      const patientId = (patientIdOverride || profile?.patientProfileId || profile?.id);
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+      const patientId = (patientIdOverride || (role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id)));
       if (!patientId) {
         console.log('[useAppointments] ❌ No hay perfil de paciente disponible');
         throw new Error('No hay perfil de paciente');
@@ -64,7 +67,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           console.log('[useAppointments] Obteniendo citas desde servidor...');
           
           // Usar el ID numérico si está disponible (el servidor espera número)
-          const numericPatientId = (profile as any).patientProfileIdNumber || patientId;
+          const numericPatientId = (profile as any)?.patientProfileIdNumber || patientId;
           
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}?patientProfileId=${numericPatientId}`), {
             headers: { Authorization: `Bearer ${token}` },
@@ -131,7 +134,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           } else if (res.status === 404) {
             console.log('[useAppointments] No hay citas disponibles (404)');
             // Cargar solo datos offline
-            const offlineAppointments = await localDB.getAppointments(patientId);
+            const offlineAppointments = await localDB.getAppointments(String(patientId));
             set({ appointments: offlineAppointments });
             return;
           } else {
@@ -236,7 +239,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     
     try {
       const profile = useCurrentUser.getState().profile;
-      const patientId = profile?.patientProfileId || profile?.id;
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+      const patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id);
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -250,7 +255,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       }
       
       // Usar el ID numérico si está disponible (el servidor espera número)
-      const numericPatientId = (profile as any).patientProfileIdNumber || patientId;
+      const numericPatientId = (profile as any)?.patientProfileIdNumber || patientId;
       
       // VERIFICAR CONECTIVIDAD - NO PERMITIR AGREGAR SI ESTÁ OFFLINE
       if (!isOnline) {
@@ -311,7 +316,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           await localDB.saveAppointment(localAppointment);
           
           // Recargar la lista completa
-          await get().getAppointments();
+          await get().getAppointments(patientId);
           
         } else {
           // Si falla la API, no permitir guardar
@@ -342,7 +347,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const profile = useCurrentUser.getState().profile;
-      const patientId = profile?.patientProfileId || profile?.id;
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+      const patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id);
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -419,7 +426,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const profile = useCurrentUser.getState().profile;
-      const patientId = profile?.patientProfileId || profile?.id;
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+      const patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id);
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       

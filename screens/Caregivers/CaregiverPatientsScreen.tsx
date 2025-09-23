@@ -54,18 +54,48 @@ export default function CaregiverPatientsScreen() {
       ) : (
         patients.map((p) => (
           <LinearGradient key={p.id} colors={["#e0e7ff", "#f0fdfa"]} style={styles.patientCard} start={{x:0, y:0}} end={{x:1, y:1}}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <MaterialCommunityIcons name="account-circle" size={36} color="#2563eb" style={{ marginRight: 10 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.patientName}>{p.name}</Text>
-                <Text style={styles.patientDetail}>Edad: {p.age || '—'} años</Text>
+            <View style={styles.patientCardContent}>
+              <View style={styles.patientAvatarSection}>
+                <MaterialCommunityIcons name="account-circle" size={48} color="#2563eb" />
               </View>
-              {/* Botón revocar si hay permiso activo */}
-              {permissions.items.find(it => it.patientId === p.id && it.status === 'ACCEPTED') && (
-                <TouchableOpacity style={[styles.revokeBtn, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && permissions.revoke(permissions.items.find(it => it.patientId === p.id)?.id || '')} disabled={!isOnline}>
-                  <Text style={styles.revokeText}>Revocar</Text>
-                </TouchableOpacity>
-              )}
+              <View style={styles.patientInfoSection}>
+                <Text style={styles.patientName}>{p.name}</Text>
+                <View style={styles.patientDetailsRow}>
+                  <Text style={styles.patientDetail}>Edad: {p.age || '—'} años</Text>
+                  {p.birthDate && (
+                    <Text style={styles.patientBirthDate}>
+                      • Nacimiento: {new Date(p.birthDate).toLocaleDateString('es-ES', { 
+                        day: '2-digit', 
+                        month: '2-digit', 
+                        year: 'numeric' 
+                      })}
+                    </Text>
+                  )}
+                </View>
+                {p.weight && (
+                  <Text style={styles.patientAdditionalInfo}>Peso: {p.weight} kg</Text>
+                )}
+                {p.height && (
+                  <Text style={styles.patientAdditionalInfo}>Altura: {p.height} cm</Text>
+                )}
+                {p.allergies && (
+                  <Text style={styles.patientAllergies}>⚠️ Alergias: {p.allergies}</Text>
+                )}
+              </View>
+              <View style={styles.patientActionsSection}>
+                {/* Botón revocar si hay permiso activo */}
+                {permissions.items.find(it => it.patientId === p.id && it.status === 'ACCEPTED') && (
+                  <TouchableOpacity style={[styles.revokeBtn, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && permissions.revoke(permissions.items.find(it => it.patientId === p.id)?.id || '')} disabled={!isOnline}>
+                    <Text style={styles.revokeText}>Revocar</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={styles.patientStatusIndicator}>
+                  <View style={[styles.statusDot, { backgroundColor: permissions.items.find(it => it.patientId === p.id && it.status === 'ACCEPTED') ? '#22c55e' : '#f59e0b' }]} />
+                  <Text style={styles.statusText}>
+                    {permissions.items.find(it => it.patientId === p.id && it.status === 'ACCEPTED') ? 'Activo' : 'Pendiente'}
+                  </Text>
+                </View>
+              </View>
             </View>
           </LinearGradient>
         ))
@@ -105,7 +135,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     paddingHorizontal: 16,
-    paddingTop: 24,
+    paddingTop: 44, // Aumentado de 24 a 44 para margen superior de 20px
   },
   centered: {
     justifyContent: 'center',
@@ -154,10 +184,65 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   patientCard: {
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    backgroundColor: 'rgba(255,255,255,0.97)'
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  patientCardContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  patientAvatarSection: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#f0f9ff',
+    borderWidth: 2,
+    borderColor: '#e0f2fe',
+  },
+  patientInfoSection: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  patientDetailsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 4,
+  },
+  patientActionsSection: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    minHeight: 60,
+  },
+  patientStatusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
   },
   permissionCard: {
     borderRadius: 14,
@@ -166,13 +251,36 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.97)'
   },
   patientName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#2563eb',
+    color: '#1e293b',
+    marginBottom: 2,
   },
   patientDetail: {
     fontSize: 14,
     color: '#64748b',
+    marginRight: 8,
+  },
+  patientBirthDate: {
+    fontSize: 13,
+    color: '#94a3b8',
+  },
+  patientAdditionalInfo: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  patientAllergies: {
+    fontSize: 13,
+    color: '#dc2626',
+    fontWeight: '600',
+    marginTop: 4,
+    backgroundColor: '#fef2f2',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fecaca',
   },
   emptyText: {
     color: '#94a3b8',

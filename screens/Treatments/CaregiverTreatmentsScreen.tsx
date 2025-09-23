@@ -165,9 +165,45 @@ export default function CaregiverTreatmentsScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+            {/* Información clave */}
+            <View style={{ marginTop: 6 }}>
+              <View style={styles.infoRow}> 
+                <Text style={styles.infoLabel}>Inicio:</Text>
+                <Text style={styles.infoValue}>{t.startDate ? new Date(t.startDate).toLocaleDateString() : '—'}</Text>
+              </View>
+              <View style={styles.infoRow}> 
+                <Text style={styles.infoLabel}>Fin:</Text>
+                <Text style={styles.infoValue}>{t.endDate ? new Date(t.endDate).toLocaleDateString() : '—'}</Text>
+              </View>
+              <View style={styles.infoRow}> 
+                <Text style={styles.infoLabel}>Frecuencia:</Text>
+                <Text style={[styles.infoValue, styles.frequencyValue]}>
+                  {(() => {
+                    const freq = (t as any).frequency;
+                    if (!freq) return '—';
+                    const freqMap: { [key: string]: string } = {
+                      'daily': 'Diario',
+                      'weekly': 'Semanal', 
+                      'monthly': 'Mensual',
+                      'as_needed': 'Según necesidad'
+                    };
+                    return freqMap[freq.toLowerCase()] || freq;
+                  })()}
+                </Text>
+              </View>
+              {t.progress ? (
+                <View style={styles.progressPill}><Text style={styles.progressText}>{t.progress}</Text></View>
+              ) : null}
+            </View>
+
             {t.description ? (
               <View style={styles.notesBoxModern}>
                 <Text style={styles.notesTextModern}>{t.description}</Text>
+              </View>
+            ) : null}
+            {(t as any).notes ? (
+              <View style={[styles.notesBoxModern, { backgroundColor: '#eef2ff' }]}>
+                <Text style={[styles.notesTextModern, { color: '#475569' }]}>{(t as any).notes}</Text>
               </View>
             ) : null}
           </LinearGradient>
@@ -313,6 +349,38 @@ const styles = StyleSheet.create({
   notesTextModern: {
     color: '#64748b',
     fontSize: 14,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  infoLabel: {
+    color: '#64748b',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  infoValue: {
+    color: '#1e293b',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  progressPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#dbeafe',
+    borderRadius: 9999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  progressText: {
+    color: '#1d4ed8',
+    fontWeight: '600',
+  },
+  frequencyValue: {
+    color: '#059669',
+    fontWeight: 'bold',
+    fontSize: 15,
   },
   modalOverlayModern: {
     flex: 1,
