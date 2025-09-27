@@ -11,6 +11,7 @@ import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 import { validateTreatment } from '../../lib/treatmentValidator';
 import { useOffline } from '../../store/useOffline';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
@@ -60,10 +61,14 @@ export default function TreatmentsScreen() {
       frequency: 'daily',
       notes: ''
     });
+    setSelectedTimes([]);
+    setFrequencyType('daily');
+    setDaysOfWeek([]);
+    setEveryXHours('8');
     setModalVisible(true);
   };
 
-  const openEditModal = (treatment: any) => {
+  const openEditModal = async (treatment: any) => {
     setEditingTreatment(treatment);
     setFormData({
       name: treatment.name || '',
@@ -73,6 +78,23 @@ export default function TreatmentsScreen() {
       frequency: treatment.frequency || 'daily',
       notes: treatment.notes || ''
     });
+    
+    // Cargar alarmas existentes para el tratamiento
+    try {
+      const existingAlarms = await getExistingAlarmsForElement('treatment', treatment.id);
+      setSelectedTimes(existingAlarms.selectedTimes);
+      setFrequencyType(existingAlarms.frequencyType);
+      setDaysOfWeek(existingAlarms.daysOfWeek);
+      setEveryXHours(existingAlarms.everyXHours);
+    } catch (error) {
+      console.error('[TRATAMIENTOS] Error cargando alarmas existentes:', error);
+      // Resetear a valores por defecto si hay error
+      setSelectedTimes([]);
+      setFrequencyType('daily');
+      setDaysOfWeek([]);
+      setEveryXHours('8');
+    }
+    
     setModalVisible(true);
   };
 
@@ -319,7 +341,7 @@ export default function TreatmentsScreen() {
                     GLOBAL_STYLES.sectionTitle, 
                     { marginBottom: 0 },
                     isTablet && styles.treatmentTitleTablet
-                  ]}>{treatment.description || 'Sin nombre'}</Text>
+                  ]}>{treatment.name || 'Sin nombre'}</Text>
                 </View>
                 <View style={[
                   GLOBAL_STYLES.row,
@@ -333,7 +355,7 @@ export default function TreatmentsScreen() {
                     onPress={() => isOnline && openEditModal(treatment)}
                     disabled={!isOnline}
                     accessibilityRole="button"
-                    accessibilityLabel={`Editar tratamiento ${treatment.description || 'Sin nombre'}`}
+                    accessibilityLabel={`Editar tratamiento ${treatment.name || 'Sin nombre'}`}
                   >
                     <Ionicons 
                       name="create-outline" 
@@ -350,7 +372,7 @@ export default function TreatmentsScreen() {
                     onPress={() => isOnline && handleDelete(treatment.id)}
                     disabled={!isOnline}
                     accessibilityRole="button"
-                    accessibilityLabel={`Eliminar tratamiento ${treatment.description || 'Sin nombre'}`}
+                    accessibilityLabel={`Eliminar tratamiento ${treatment.name || 'Sin nombre'}`}
                   >
                     <Ionicons 
                       name="trash-outline" 
@@ -598,6 +620,32 @@ export default function TreatmentsScreen() {
                     {editingTreatment ? 'Guardar cambios' : 'Guardar'}
                   </Text>
                 </TouchableOpacity>
+                {editingTreatment ? (
+                  <TouchableOpacity
+                    style={[
+                      GLOBAL_STYLES.buttonWarning,
+                      { flex: 1, marginHorizontal: 8 },
+                      isTablet && styles.modalButtonTablet
+                    ]}
+                    onPress={async () => {
+                      try {
+                        await cancelTreatmentAlarms(editingTreatment.id);
+                        setSelectedTimes([]);
+                        setFrequencyType('daily');
+                        setDaysOfWeek([]);
+                        setEveryXHours('8');
+                        Alert.alert('Listo', 'Se eliminaron las alarmas de este tratamiento');
+                      } catch (e: any) {
+                        Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
+                      }
+                    }}
+                  >
+                    <Text style={[
+                      GLOBAL_STYLES.buttonText,
+                      isTablet && styles.modalButtonTextTablet
+                    ]}>Eliminar alarmas</Text>
+                  </TouchableOpacity>
+                ) : null}
                 <TouchableOpacity
                   style={[
                     GLOBAL_STYLES.buttonSecondary, 

@@ -73,8 +73,8 @@ export default function MedicationsScreen() {
   const medicationSchema = z.object({
     name: z.string().min(1, 'Obligatorio'),
     dosage: z.string().min(1, 'Obligatorio'),
-    type: z.enum(['Oral', 'Inyectable', 'Tópico']).optional(),
-    frequency: z.enum(['daily', 'weekly', 'custom']).optional(),
+    type: z.enum(['Oral', 'Inyectable', 'Tópico', 'Inhalación', 'Sublingual']).optional(),
+    frequency: z.enum(['daily', 'weekly', 'monthly', 'as_needed', 'custom']).optional(),
     startDate: z.date().refine((date) => date !== undefined, {
       message: 'Selecciona una fecha'
     }),
@@ -144,8 +144,28 @@ export default function MedicationsScreen() {
     setModalVisible(true);
     setValue('name', med.name);
     setValue('dosage', med.dosage);
-    setValue('type', med.type || '');
-    setValue('frequency', med.frequency || '');
+    
+    // Mapear type del servidor al formato del formulario
+    const typeMapping: { [key: string]: string } = {
+      'ORAL': 'Oral',
+      'INJECTABLE': 'Inyectable', 
+      'TOPICAL': 'Tópico',
+      'INHALATION': 'Inhalación',
+      'SUBLINGUAL': 'Sublingual'
+    };
+    setValue('type', typeMapping[med.type] || med.type || 'Oral');
+    
+    // Mapear frequency del servidor al formato del formulario
+    const frequencyMapping: { [key: string]: string } = {
+      'DAILY': 'daily',
+      'WEEKLY': 'weekly',
+      'MONTHLY': 'monthly',
+      'AS_NEEDED': 'as_needed',
+      'INTERVAL': 'custom',
+      'CUSTOM': 'custom'
+    };
+    setValue('frequency', frequencyMapping[med.frequency] || med.frequency || 'daily');
+    
     if (med.startDate) {
       setValue('startDate', new Date(med.startDate));
     }
@@ -496,7 +516,9 @@ export default function MedicationsScreen() {
                       options={[
                         { value: 'Oral', label: 'Oral', icon: 'oral', description: 'Pastillas, jarabes, etc.' },
                         { value: 'Inyectable', label: 'Inyectable', icon: 'injectable', description: 'Inyecciones, vacunas' },
-                        { value: 'Tópico', label: 'Tópico', icon: 'topical', description: 'Cremas, pomadas, etc.' }
+                        { value: 'Tópico', label: 'Tópico', icon: 'topical', description: 'Cremas, pomadas, etc.' },
+                        { value: 'Inhalación', label: 'Inhalación', icon: 'inhalation', description: 'Inhaladores, nebulizadores' },
+                        { value: 'Sublingual', label: 'Sublingual', icon: 'sublingual', description: 'Pastillas sublinguales' }
                       ]}
                       label="Tipo de medicamento"
                       placeholder="Seleccionar tipo"
@@ -518,6 +540,8 @@ export default function MedicationsScreen() {
                       options={[
                         { value: 'daily', label: 'Diario', icon: 'daily', description: 'Todos los días' },
                         { value: 'weekly', label: 'Semanal', icon: 'weekly', description: 'Una vez por semana' },
+                        { value: 'monthly', label: 'Mensual', icon: 'monthly', description: 'Una vez al mes' },
+                        { value: 'as_needed', label: 'Según necesidad', icon: 'as_needed', description: 'Cuando sea necesario' },
                         { value: 'custom', label: 'Personalizado', icon: 'custom', description: 'Horario específico' }
                       ]}
                       label="Frecuencia"
@@ -611,6 +635,38 @@ export default function MedicationsScreen() {
                   {isSubmitting || loading ? 'Guardando...' : (editingMed ? 'Guardar cambios' : 'Guardar')}
                 </Text>
               </TouchableOpacity>
+              {editingMed ? (
+                <TouchableOpacity
+                  style={[
+                    styles.addBtnModern, 
+                    { 
+                      backgroundColor: '#f59e0b',
+                      marginLeft: isTablet ? 16 : 12,
+                      flex: isTablet ? 0 : 1
+                    },
+                    isTablet && styles.addBtnTablet,
+                    isLandscape && styles.addBtnLandscape
+                  ]}
+                  onPress={async () => {
+                    try {
+                      await cancelMedicationAlarms(editingMed.id);
+                      setSelectedTimes([]);
+                      setFrequencyType('daily');
+                      setDaysOfWeek([]);
+                      setEveryXHours('8');
+                      Alert.alert('Listo', 'Se eliminaron las alarmas de este medicamento');
+                    } catch (e: any) {
+                      Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
+                    }
+                  }}
+                >
+                  <Ionicons name="alarm" size={isTablet ? 24 : 20} color="#ffffff" />
+                  <Text style={[
+                    styles.addBtnTextModern,
+                    isTablet && styles.addBtnTextTablet
+                  ]}>Eliminar alarmas</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[
                   styles.addBtnModern, 

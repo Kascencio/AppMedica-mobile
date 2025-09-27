@@ -403,7 +403,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       
       const config: AlarmConfig = {
         id: treatment.id,
-        type: 'medication', // Los tratamientos usan el mismo tipo que medicamentos
+        type: 'treatment',
         name: treatment.title,
         time: alarmConfig.time || '09:00',
         frequency: alarmConfig.frequency || 'daily',
@@ -432,7 +432,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
   cancelTreatmentAlarms: async (treatmentId) => {
     try {
       console.log('[useTreatments] Cancelando alarmas para tratamiento:', treatmentId);
-      const cancelledCount = await alarmSchedulerEngine.cancelAlarmsForElement('medication', treatmentId);
+      const cancelledCount = await alarmSchedulerEngine.cancelAlarmsForElement('treatment', treatmentId);
       console.log(`[useTreatments] ${cancelledCount} alarmas canceladas para tratamiento ${treatmentId}`);
       return cancelledCount;
     } catch (error) {
@@ -447,7 +447,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       
       const config: AlarmConfig = {
         id: treatment.id,
-        type: 'medication', // Los tratamientos usan el mismo tipo que medicamentos
+        type: 'treatment',
         name: treatment.title,
         time: alarmConfig.time || '09:00',
         frequency: alarmConfig.frequency || 'daily',

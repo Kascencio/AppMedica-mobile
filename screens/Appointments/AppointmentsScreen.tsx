@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import AlarmScheduler from '../../components/AlarmScheduler';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
 
@@ -122,9 +123,8 @@ export default function AppointmentsScreen() {
     setDaysOfWeek((prev) => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
   };
 
-  const openEditModal = (appt: any) => {
+  const openEditModal = async (appt: any) => {
     setEditingAppointment(appt);
-    setModalVisible(true);
     setValue('doctorName', appt.title);
     setValue('specialty', appt.specialty || '');
     setValue('location', appt.location);
@@ -133,11 +133,33 @@ export default function AppointmentsScreen() {
     }
     setValue('time', appt.dateTime ? new Date(appt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
     setValue('notes', appt.description || '');
+    
+    // Cargar alarmas existentes para la cita
+    try {
+      const existingAlarms = await getExistingAlarmsForElement('appointment', appt.id);
+      setSelectedTimes(existingAlarms.selectedTimes);
+      setFrequencyType(existingAlarms.frequencyType);
+      setDaysOfWeek(existingAlarms.daysOfWeek);
+      setEveryXHours(existingAlarms.everyXHours);
+    } catch (error) {
+      console.error('[CITAS] Error cargando alarmas existentes:', error);
+      // Resetear a valores por defecto si hay error
+      setSelectedTimes([]);
+      setFrequencyType('daily');
+      setDaysOfWeek([]);
+      setEveryXHours('8');
+    }
+    
+    setModalVisible(true);
   };
   const openCreateModal = () => {
     setEditingAppointment(null);
     setModalVisible(true);
     reset();
+    setSelectedTimes([]);
+    setFrequencyType('daily');
+    setDaysOfWeek([]);
+    setEveryXHours('8');
   };
   // Modifica onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: AppointmentForm) => {
@@ -504,6 +526,33 @@ export default function AppointmentsScreen() {
                   isTablet && styles.buttonTextTablet
                 ]}>{editingAppointment ? 'Guardar cambios' : 'Guardar'}</Text>
               </TouchableOpacity>
+              {editingAppointment ? (
+                <TouchableOpacity
+                  style={[
+                    styles.button, 
+                    { backgroundColor: '#f59e0b' },
+                    isTablet && styles.buttonTablet,
+                    isLandscape && styles.buttonLandscape
+                  ]}
+                  onPress={async () => {
+                    try {
+                      await cancelAppointmentAlarms(editingAppointment.id);
+                      setSelectedTimes([]);
+                      setFrequencyType('daily');
+                      setDaysOfWeek([]);
+                      setEveryXHours('8');
+                      Alert.alert('Listo', 'Se eliminaron las alarmas de esta cita');
+                    } catch (e: any) {
+                      Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
+                    }
+                  }}
+                >
+                  <Text style={[
+                    styles.buttonText,
+                    isTablet && styles.buttonTextTablet
+                  ]}>Eliminar alarmas</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity
                 style={[
                   styles.button, 

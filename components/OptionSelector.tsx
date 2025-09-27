@@ -79,7 +79,10 @@ export default function OptionSelector({
       'custom': 'calendar-edit',
       'oral': 'pill',
       'topical': 'tube-cream',
-      'injectable': 'needle'
+      'injectable': 'needle',
+      'inhalation': 'inhaler',
+      'sublingual': 'pill',
+      'as_needed': 'clock-alert'
     };
     return iconMap[iconName] || 'circle';
   };

@@ -8,6 +8,8 @@ import { useOffline } from '../../store/useOffline';
 import { LinearGradient } from 'expo-linear-gradient';
 import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher';
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
+import AlarmScheduler from '../../components/AlarmScheduler';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -33,6 +35,12 @@ export default function CaregiverAppointmentsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  
+  // Estados para configuración de alarmas
+  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [everyXHours, setEveryXHours] = useState('8');
 
   const { control, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<AppointmentForm>({
     resolver: zodResolver(appointmentSchema),
@@ -47,9 +55,14 @@ export default function CaregiverAppointmentsScreen() {
     setEditing(null);
     reset();
     setSelectedDate(undefined);
+    setSelectedTimes([]);
+    setFrequencyType('daily');
+    setDaysOfWeek([]);
+    setEveryXHours('8');
     setModalVisible(true);
   };
-  const openEdit = (apt: any) => {
+  
+  const openEdit = async (apt: any) => {
     setEditing(apt);
     setValue('doctorName', apt.title || '');
     setValue('specialty', apt.specialty || '');
@@ -59,6 +72,23 @@ export default function CaregiverAppointmentsScreen() {
     setSelectedDate(d);
     setValue('time', apt.dateTime ? new Date(apt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
     setValue('notes', apt.description || '');
+    
+    // Cargar alarmas existentes para la cita
+    try {
+      const existingAlarms = await getExistingAlarmsForElement('appointment', apt.id);
+      setSelectedTimes(existingAlarms.selectedTimes);
+      setFrequencyType(existingAlarms.frequencyType);
+      setDaysOfWeek(existingAlarms.daysOfWeek);
+      setEveryXHours(existingAlarms.everyXHours);
+    } catch (error) {
+      console.error('[CUIDADOR-CITAS] Error cargando alarmas existentes:', error);
+      // Resetear a valores por defecto si hay error
+      setSelectedTimes([]);
+      setFrequencyType('daily');
+      setDaysOfWeek([]);
+      setEveryXHours('8');
+    }
+    
     setModalVisible(true);
   };
 
@@ -216,10 +246,41 @@ export default function CaregiverAppointmentsScreen() {
             <Controller control={control} name="notes" render={({ field: { onChange, value } }) => (
               <TextInput style={[styles.inputModern, { height: 64 }]} value={value || ''} onChangeText={onChange} placeholder="Notas" multiline />
             )} />
+            
+            {/* Configuración de alarmas */}
+            <AlarmScheduler
+              selectedTimes={selectedTimes}
+              setSelectedTimes={setSelectedTimes}
+              frequencyType={frequencyType}
+              setFrequencyType={setFrequencyType}
+              daysOfWeek={daysOfWeek}
+              setDaysOfWeek={setDaysOfWeek}
+              everyXHours={everyXHours}
+              setEveryXHours={setEveryXHours}
+              title="Recordatorios de Cita"
+              subtitle="Configura cuándo quieres recibir recordatorios para esta cita médica"
+            />
+            
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
               <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={handleSubmit(onSubmit)} disabled={isSubmitting}>
                 <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
               </TouchableOpacity>
+              {editing ? (
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#f59e0b', marginLeft: 8 }]} onPress={async () => {
+                  try {
+                    await useAppointments.getState().cancelAppointmentAlarms(editing.id);
+                    setSelectedTimes([]);
+                    setFrequencyType('daily');
+                    setDaysOfWeek([]);
+                    setEveryXHours('8');
+                    Alert.alert('Listo', 'Se eliminaron las alarmas de esta cita');
+                  } catch (e: any) {
+                    Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
+                  }
+                }}>
+                  <Text style={styles.addBtnTextModern}>Eliminar alarmas</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
                 <Text style={styles.addBtnTextModern}>Cancelar</Text>
               </TouchableOpacity>

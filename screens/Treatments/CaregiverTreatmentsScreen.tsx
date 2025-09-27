@@ -9,6 +9,8 @@ import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher'
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import DateSelector from '../../components/DateSelector';
 import OptionSelector from '../../components/OptionSelector';
+import AlarmScheduler from '../../components/AlarmScheduler';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 
 export default function CaregiverTreatmentsScreen() {
   const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment } = useTreatments();
@@ -23,6 +25,12 @@ export default function CaregiverTreatmentsScreen() {
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [frequency, setFrequency] = useState('daily');
   const [notes, setNotes] = useState('');
+  
+  // Estados para configuración de alarmas
+  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [everyXHours, setEveryXHours] = useState('8');
 
   useEffect(() => {
     if (selectedPatientId) getTreatments(selectedPatientId).catch(() => {});
@@ -36,9 +44,14 @@ export default function CaregiverTreatmentsScreen() {
     setEndDate(undefined);
     setFrequency('');
     setNotes('');
+    setSelectedTimes([]);
+    setFrequencyType('daily');
+    setDaysOfWeek([]);
+    setEveryXHours('8');
     setModalVisible(true);
   };
-  const openEdit = (t: any) => {
+  
+  const openEdit = async (t: any) => {
     setEditing(t);
     setName(t.name || t.title || '');
     setDescription(t.description || '');
@@ -46,6 +59,23 @@ export default function CaregiverTreatmentsScreen() {
     setEndDate(t.endDate ? new Date(t.endDate) : undefined);
     setFrequency(t.frequency || '');
     setNotes(t.notes || '');
+    
+    // Cargar alarmas existentes para el tratamiento
+    try {
+      const existingAlarms = await getExistingAlarmsForElement('treatment', t.id);
+      setSelectedTimes(existingAlarms.selectedTimes);
+      setFrequencyType(existingAlarms.frequencyType);
+      setDaysOfWeek(existingAlarms.daysOfWeek);
+      setEveryXHours(existingAlarms.everyXHours);
+    } catch (error) {
+      console.error('[CUIDADOR-TRATAMIENTOS] Error cargando alarmas existentes:', error);
+      // Resetear a valores por defecto si hay error
+      setSelectedTimes([]);
+      setFrequencyType('daily');
+      setDaysOfWeek([]);
+      setEveryXHours('8');
+    }
+    
     setModalVisible(true);
   };
 
@@ -237,10 +267,41 @@ export default function CaregiverTreatmentsScreen() {
             />
             <Text style={styles.inputLabel}>Notas</Text>
             <TextInput style={[styles.inputModern, { height: 64 }]} value={notes} onChangeText={setNotes} placeholder="Notas adicionales" multiline />
+            
+            {/* Configuración de alarmas */}
+            <AlarmScheduler
+              selectedTimes={selectedTimes}
+              setSelectedTimes={setSelectedTimes}
+              frequencyType={frequencyType}
+              setFrequencyType={setFrequencyType}
+              daysOfWeek={daysOfWeek}
+              setDaysOfWeek={setDaysOfWeek}
+              everyXHours={everyXHours}
+              setEveryXHours={setEveryXHours}
+              title="Recordatorios de Tratamiento"
+              subtitle="Configura cuándo quieres recibir recordatorios para este tratamiento"
+            />
+            
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
               <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={onSave}>
                 <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
               </TouchableOpacity>
+              {editing ? (
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#f59e0b', marginLeft: 8 }]} onPress={async () => {
+                  try {
+                    await useTreatments.getState().cancelTreatmentAlarms(editing.id);
+                    setSelectedTimes([]);
+                    setFrequencyType('daily');
+                    setDaysOfWeek([]);
+                    setEveryXHours('8');
+                    Alert.alert('Listo', 'Se eliminaron las alarmas de este tratamiento');
+                  } catch (e: any) {
+                    Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
+                  }
+                }}>
+                  <Text style={styles.addBtnTextModern}>Eliminar alarmas</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
                 <Text style={styles.addBtnTextModern}>Cancelar</Text>
               </TouchableOpacity>

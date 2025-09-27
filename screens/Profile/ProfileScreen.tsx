@@ -226,6 +226,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (profile) {
       console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
+      console.log('[ProfileScreen] bloodType del perfil:', profile.bloodType);
       
       const newForm = {
         name: profile.name || '',
@@ -256,6 +257,7 @@ export default function ProfileScreen() {
       
       if (hasChanges || !formInitialized) {
         console.log('[ProfileScreen] Actualizando formulario con datos del perfil');
+        console.log('[ProfileScreen] bloodType en newForm:', newForm.bloodType);
         setForm(newForm);
         setFormInitialized(true);
         setLastSavedProfile(profile);
