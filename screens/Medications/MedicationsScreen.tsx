@@ -735,8 +735,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#10b981',
     borderRadius: 16,
-    paddingVertical: 14,
+    paddingVertical: 18,
     paddingHorizontal: 20,
+    minHeight: 56,
     shadowColor: '#059669',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -746,7 +747,7 @@ const styles = StyleSheet.create({
   addBtnTextModern: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 17,
     marginLeft: 8,
   },
   addBtnDisabled: {

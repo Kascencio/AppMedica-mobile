@@ -752,14 +752,16 @@ export default function TreatmentsScreen() {
               ]}>
                 <TouchableOpacity
                   style={[
-                    GLOBAL_STYLES.buttonPrimary, 
-                    { flex: 1, marginRight: 8 },
+                  GLOBAL_STYLES.buttonPrimary, 
+                  { flex: 1, marginRight: 8 },
+                  styles.modalButton,
                     isTablet && styles.modalButtonTablet
                   ]}
                   onPress={handleSubmit}
                 >
                   <Text style={[
-                    GLOBAL_STYLES.buttonText,
+                  GLOBAL_STYLES.buttonText,
+                  styles.modalButtonText,
                     isTablet && styles.modalButtonTextTablet
                   ]}>
                     {editingTreatment ? 'Guardar cambios' : 'Guardar'}
@@ -769,7 +771,8 @@ export default function TreatmentsScreen() {
                   <TouchableOpacity
                     style={[
                       GLOBAL_STYLES.buttonWarning,
-                      { flex: 1, marginHorizontal: 8 },
+                  { flex: 1, marginHorizontal: 8 },
+                  styles.modalButton,
                       isTablet && styles.modalButtonTablet
                     ]}
                     onPress={async () => {
@@ -793,14 +796,16 @@ export default function TreatmentsScreen() {
                 ) : null}
                 <TouchableOpacity
                   style={[
-                    GLOBAL_STYLES.buttonSecondary, 
-                    { flex: 1, marginLeft: 8 },
+                  GLOBAL_STYLES.buttonSecondary, 
+                  { flex: 1, marginLeft: 8 },
+                  styles.modalButton,
                     isTablet && styles.modalButtonTablet
                   ]}
                   onPress={() => { setModalVisible(false); setEditingTreatment(null); }}
                 >
                   <Text style={[
-                    GLOBAL_STYLES.buttonTextSecondary,
+                  GLOBAL_STYLES.buttonTextSecondary,
+                  styles.modalButtonText,
                     isTablet && styles.modalButtonTextTablet
                   ]}>Cancelar</Text>
                 </TouchableOpacity>
@@ -987,6 +992,15 @@ const styles = StyleSheet.create({
   modalButtonTablet: {
     paddingVertical: 16,
     borderRadius: 12,
+  },
+  // Botones de modal más grandes
+  modalButton: {
+    paddingVertical: 18,
+    minHeight: 56,
+    borderRadius: 14,
+  },
+  modalButtonText: {
+    fontSize: 16,
   },
   modalButtonTextTablet: {
     fontSize: 16,

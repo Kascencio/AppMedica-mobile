@@ -732,26 +732,27 @@ const styles = StyleSheet.create({
   button: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 18,
     borderRadius: 10,
     marginHorizontal: 4,
+    minHeight: 56,
   },
   buttonTablet: {
-    paddingVertical: 16,
+    paddingVertical: 20,
     paddingHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   buttonLandscape: {
-    paddingVertical: 14,
+    paddingVertical: 18,
     paddingHorizontal: 18,
   },
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: 15,
+    fontSize: 16,
   },
   buttonTextTablet: {
-    fontSize: 17,
+    fontSize: 18,
   },
   // Nuevos estilos modernos
   addBtnModern: {

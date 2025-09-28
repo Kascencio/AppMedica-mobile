@@ -364,8 +364,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#22c55e',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 18,
     paddingHorizontal: 18,
+    minHeight: 56,
     shadowColor: '#15803d',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.20,
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
   addBtnTextModern: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 17,
     marginLeft: 8,
   },
   cardModern: {
