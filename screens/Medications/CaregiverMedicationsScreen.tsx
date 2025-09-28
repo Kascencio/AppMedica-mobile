@@ -16,6 +16,8 @@ import { useCaregiver } from '../../store/useCaregiver';
 import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher';
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import { useOffline } from '../../store/useOffline';
+import AlarmScheduler from '../../components/AlarmScheduler';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 
 export default function CaregiverMedicationsScreen({ navigation }: any) {
   const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication } = useMedications();
@@ -25,6 +27,11 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   const [modalVisible, setModalVisible] = React.useState(false);
   const [editingMed, setEditingMed] = React.useState<any>(null);
   // Sin pickers nativos, usamos DateSelector
+  // Estado de alarmas para el modal
+  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [everyXHours, setEveryXHours] = useState('8');
 
   // En cuidador no se requiere completar perfil; solo seleccionar paciente
 
@@ -106,7 +113,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   };
   // Eliminado: toggleDay para configuraciones de recordatorio
 
-  const openEditModal = (med: any) => {
+  const openEditModal = async (med: any) => {
     setEditingMed(med);
     setModalVisible(true);
     setValue('name', med.name);
@@ -120,6 +127,20 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
       setValue('endDate', new Date(med.endDate));
     }
     setValue('notes', med.notes || '');
+    // Cargar alarmas existentes programadas para este medicamento
+    try {
+      const existingAlarms = await getExistingAlarmsForElement('medication', med.id);
+      setSelectedTimes(existingAlarms.selectedTimes);
+      setFrequencyType(existingAlarms.frequencyType);
+      setDaysOfWeek(existingAlarms.daysOfWeek);
+      setEveryXHours(existingAlarms.everyXHours);
+    } catch (error) {
+      console.error('[CUIDADOR-MEDICAMENTOS] Error cargando alarmas existentes:', error);
+      setSelectedTimes([]);
+      setFrequencyType('daily');
+      setDaysOfWeek([]);
+      setEveryXHours('8');
+    }
   };
   const openCreateModal = () => {
     setEditingMed(null);
@@ -436,8 +457,19 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               </View>
               {/* En cuidador no se configuran variantes de recordatorio */}
             </View>
-            {/* Horas */}
-            {/* En cuidador no se configuran horas de toma */}
+            {/* Configuración de alarmas (visualización y edición) */}
+            <AlarmScheduler
+              selectedTimes={selectedTimes}
+              setSelectedTimes={setSelectedTimes}
+              frequencyType={frequencyType}
+              setFrequencyType={setFrequencyType}
+              daysOfWeek={daysOfWeek}
+              setDaysOfWeek={setDaysOfWeek}
+              everyXHours={everyXHours}
+              setEveryXHours={setEveryXHours}
+              title="Recordatorios de Medicamento"
+              subtitle="Configura cuándo quieres recibir recordatorios para este medicamento"
+            />
             <Controller
               control={control}
               name="notes"
