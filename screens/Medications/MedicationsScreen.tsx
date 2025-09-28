@@ -13,6 +13,7 @@ import { useCurrentUser } from '../../store/useCurrentUser';
 import { LinearGradient } from 'expo-linear-gradient';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import AlarmScheduler from '../../components/AlarmScheduler';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 import DateSelector from '../../components/DateSelector';
 import OptionSelector from '../../components/OptionSelector';
 import COLORS from '../../constants/colors';
@@ -139,7 +140,7 @@ export default function MedicationsScreen() {
   const toggleDay = (day: number) => {
     setDaysOfWeek((prev) => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
   };
-  const openEditModal = (med: any) => {
+  const openEditModal = async (med: any) => {
     setEditingMed(med);
     setModalVisible(true);
     setValue('name', med.name);
@@ -173,10 +174,22 @@ export default function MedicationsScreen() {
       setValue('endDate', new Date(med.endDate));
     }
     setValue('notes', med.notes || '');
-    setSelectedTimes(med.times || []);
-    setFrequencyType(med.frequencyType || 'daily');
-    setDaysOfWeek(med.daysOfWeek || []);
-    setEveryXHours(med.everyXHours || '8');
+
+    // Cargar alarmas existentes programadas para este medicamento
+    try {
+      const existingAlarms = await getExistingAlarmsForElement('medication', med.id);
+      setSelectedTimes(existingAlarms.selectedTimes);
+      setFrequencyType(existingAlarms.frequencyType);
+      setDaysOfWeek(existingAlarms.daysOfWeek);
+      setEveryXHours(existingAlarms.everyXHours);
+    } catch (error) {
+      console.error('[MEDICAMENTOS] Error cargando alarmas existentes:', error);
+      // Resetear a valores por defecto si hay error
+      setSelectedTimes([]);
+      setFrequencyType('daily');
+      setDaysOfWeek([]);
+      setEveryXHours('8');
+    }
   };
   const openCreateModal = () => {
     setEditingMed(null);
