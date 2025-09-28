@@ -130,13 +130,23 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
               };
               await localDB.saveTreatment(localTreatment);
             }
-            
+
             // Combinar con tratamientos offline
             const offlineTreatments = await localDB.getTreatments(patientId);
             const offlineOnly = offlineTreatments.filter(treat => treat.isOffline);
-            const allTreatments = [...treatments, ...offlineOnly];
-            
-            set({ treatments: allTreatments });
+            const baseTreatments = [...treatments, ...offlineOnly];
+
+            // Enriquecer con medicamentos locales por tratamiento (para UI)
+            const enriched = await Promise.all(baseTreatments.map(async (t: any) => {
+              try {
+                const meds = await localDB.getTreatmentMedications(String(patientId), String(t.id));
+                return { ...t, medications: meds };
+              } catch {
+                return { ...t };
+              }
+            }));
+
+            set({ treatments: enriched });
             return;
           } else if (res.status === 404) {
             console.log('[useTreatments] No hay tratamientos disponibles (404)');
@@ -156,8 +166,16 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       // Si estamos offline o falló el servidor, cargar desde base de datos local
       console.log('[useTreatments] Cargando tratamientos desde base de datos local...');
       try {
-        const localTreatments = await localDB.getTreatments(String(patientId));
-        set({ treatments: localTreatments });
+            const localTreatments = await localDB.getTreatments(String(patientId));
+            const enrichedLocal = await Promise.all(localTreatments.map(async (t) => {
+              try {
+                const meds = await localDB.getTreatmentMedications(String(patientId), String(t.id));
+                return { ...t, medications: meds } as any;
+              } catch {
+                return t as any;
+              }
+            }));
+            set({ treatments: enrichedLocal });
       } catch (offlineError) {
         console.log('[useTreatments] Error cargando datos locales:', offlineError);
         set({ treatments: [] });
