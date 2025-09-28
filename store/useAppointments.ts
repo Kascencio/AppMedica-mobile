@@ -90,16 +90,18 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             
             console.log('[useAppointments] Citas procesadas:', appointments.length);
             
-            // Guardar en base de datos local
+            // Guardar en base de datos local, preservando specialty si ya existía localmente
+            const existingLocal = await localDB.getAppointments(String(patientId));
             for (const appointment of appointments) {
+              const previous = existingLocal.find(a => a.id === appointment.id);
               const localAppointment: LocalAppointment = {
                 ...appointment,
                 // Asegurar que title esté presente
                 title: appointment.title || appointment.doctorName || 'Sin título',
                 // Asegurar que dateTime esté presente
                 dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
-                // Specialty si existe en backend
-                specialty: (appointment as any).specialty,
+                // Specialty: usar del servidor si viene, si no, preservar el local previo
+                specialty: (appointment as any).specialty ?? previous?.specialty ?? null,
                 // Preservar doctorName si existe
                 doctorName: appointment.doctorName || appointment.title,
                 // Asegurar que patientProfileId sea string
@@ -109,7 +111,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
                 // Asegurar que createdAt y updatedAt estén presentes
                 createdAt: appointment.createdAt || new Date().toISOString(),
                 updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString()
-              };
+              } as LocalAppointment;
               await localDB.saveAppointment(localAppointment);
             }
             
@@ -118,18 +120,21 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             const offlineOnly = offlineAppointments.filter(apt => apt.isOffline);
             
             // Mapear las citas del servidor para que tengan el formato correcto
-            const mappedAppointments = appointments.map((appointment: any) => ({
-              ...appointment,
-              title: appointment.title || appointment.doctorName || 'Sin título',
-              dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
-              specialty: appointment.specialty,
-              doctorName: appointment.doctorName || appointment.title,
-              // Asegurar que patientProfileId sea string
-              patientProfileId: String(appointment.patientProfileId || patientId),
-              // Asegurar que createdAt y updatedAt estén presentes
-              createdAt: appointment.createdAt || new Date().toISOString(),
-              updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString(),
-            }));
+            const mappedAppointments = appointments.map((appointment: any) => {
+              const previous = (existingLocal || []).find(a => a.id === appointment.id);
+              return {
+                ...appointment,
+                title: appointment.title || appointment.doctorName || 'Sin título',
+                dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
+                specialty: appointment.specialty ?? previous?.specialty,
+                doctorName: appointment.doctorName || appointment.title,
+                // Asegurar que patientProfileId sea string
+                patientProfileId: String(appointment.patientProfileId || patientId),
+                // Asegurar que createdAt y updatedAt estén presentes
+                createdAt: appointment.createdAt || new Date().toISOString(),
+                updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString(),
+              };
+            });
             
             const allAppointments = [...mappedAppointments, ...offlineOnly];
             
@@ -307,7 +312,8 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             title: responseData.title || responseData.doctorName || 'Sin título',
             // Asegurar que dateTime esté presente
             dateTime: responseData.dateTime || responseData.date || responseData.scheduledFor,
-            specialty: (responseData as any).specialty,
+            // Specialty: si el servidor no lo envía, persistir el que venía en el formulario
+            specialty: (responseData as any).specialty ?? (data as any).specialty ?? null,
             // Preservar doctorName si existe
             doctorName: responseData.doctorName || responseData.title,
             // Asegurar que patientProfileId sea string
