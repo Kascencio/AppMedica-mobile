@@ -224,44 +224,65 @@ export default function ProfileScreen() {
 
   // Sincronizar formulario cuando cambie el perfil (inicialización y actualizaciones)
   useEffect(() => {
-    if (profile) {
-      console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
-      console.log('[ProfileScreen] bloodType del perfil:', profile.bloodType);
-      
-      const newForm = {
-        name: profile.name || '',
-        birthDate: profile.birthDate || profile.dateOfBirth || '',
-        gender: profile.gender || '',
-        weight: profile.weight?.toString() || '',
-        height: profile.height?.toString() || '',
-        bloodType: profile.bloodType || '',
-        emergencyContactName: profile.emergencyContactName || '',
-        emergencyContactRelation: profile.emergencyContactRelation || '',
-        emergencyContactPhone: profile.emergencyContactPhone || '',
-        allergies: profile.allergies || '',
-        chronicDiseases: profile.chronicDiseases || '',
-        currentConditions: profile.currentConditions || '',
-        reactions: profile.reactions || '',
-        doctorName: profile.doctorName || '',
-        doctorContact: profile.doctorContact || '',
-        hospitalReference: profile.hospitalReference || '',
-        photoUrl: profile.photoUrl || '',
-      };
-      
-      // Solo actualizar si hay cambios reales para evitar loops
-      const hasChanges = Object.keys(newForm).some(key => {
-        const formValue = form[key as keyof typeof form];
-        const newValue = newForm[key as keyof typeof newForm];
-        return formValue !== newValue;
-      });
-      
-      if (hasChanges || !formInitialized) {
-        console.log('[ProfileScreen] Actualizando formulario con datos del perfil');
-        console.log('[ProfileScreen] bloodType en newForm:', newForm.bloodType);
-        setForm(newForm);
-        setFormInitialized(true);
-        setLastSavedProfile(profile);
+    if (!profile) return;
+
+    console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
+    console.log('[ProfileScreen] bloodType del perfil:', profile.bloodType);
+
+    const newForm = {
+      name: profile.name || '',
+      birthDate: profile.birthDate || profile.dateOfBirth || '',
+      gender: profile.gender || '',
+      weight: profile.weight?.toString() || '',
+      height: profile.height?.toString() || '',
+      bloodType: profile.bloodType || '',
+      emergencyContactName: profile.emergencyContactName || '',
+      emergencyContactRelation: profile.emergencyContactRelation || '',
+      emergencyContactPhone: profile.emergencyContactPhone || '',
+      allergies: profile.allergies || '',
+      chronicDiseases: profile.chronicDiseases || '',
+      currentConditions: profile.currentConditions || '',
+      reactions: profile.reactions || '',
+      doctorName: profile.doctorName || '',
+      doctorContact: profile.doctorContact || '',
+      hospitalReference: profile.hospitalReference || '',
+      photoUrl: profile.photoUrl || '',
+    };
+
+    // Inicialización única del formulario
+    if (!formInitialized) {
+      console.log('[ProfileScreen] Inicializando formulario desde perfil');
+      setForm(newForm);
+      setFormInitialized(true);
+      setLastSavedProfile(profile);
+      return;
+    }
+
+    // Evitar sobreescribir cambios locales del usuario (incluye bloodType)
+    const userHasUnsavedChanges = (() => {
+      try {
+        // hasUnsavedChanges está definido más abajo; en tiempo de ejecución ya existe
+        return typeof hasUnsavedChanges === 'function' ? hasUnsavedChanges() : false;
+      } catch {
+        return false;
       }
+    })();
+    if (userHasUnsavedChanges) {
+      console.log('[ProfileScreen] Cambios locales detectados; se omite sincronización perfil->form');
+      return;
+    }
+
+    // Solo actualizar si hay diferencias reales y no hay cambios locales
+    const hasDifferences = Object.keys(newForm).some(key => {
+      const formValue = form[key as keyof typeof form];
+      const newValue = newForm[key as keyof typeof newForm];
+      return formValue !== newValue;
+    });
+
+    if (hasDifferences) {
+      console.log('[ProfileScreen] Actualizando formulario con datos del perfil (sin cambios locales)');
+      setForm(newForm);
+      setLastSavedProfile(profile);
     }
   }, [profile]); // Solo depende de profile
 
@@ -506,6 +527,14 @@ export default function ProfileScreen() {
 
       // 1) Actualiza store + sincroniza (usa tu flujo existente)
       await useCurrentUser.getState().updateProfile(dataToSave);
+
+      // Actualizar referencia de último perfil guardado para que no se considere "cambios sin guardar"
+      try {
+        const latestProfile = useCurrentUser.getState().profile;
+        if (latestProfile) {
+          setLastSavedProfile(latestProfile);
+        }
+      } catch {}
 
       // 2) **Persistencia local COMPLETA** (incluyendo nulls para limpiar campos)
       const { saveProfileLocally } = useCurrentUser.getState();

@@ -98,9 +98,9 @@ export default function CaregiverAppointmentsScreen() {
       const d = new Date(data.date);
       d.setHours(isNaN(h) ? 0 : h, isNaN(m) ? 0 : m, 0, 0);
       if (editing) {
-        await updateAppointment(editing.id, { title: data.doctorName, location: data.location, description: data.notes, dateTime: d.toISOString() });
+        await updateAppointment(editing.id, { title: data.doctorName, location: data.location, specialty: data.specialty, description: data.notes, dateTime: d.toISOString() });
       } else {
-        await createAppointment({ title: data.doctorName, location: data.location, description: data.notes, dateTime: d.toISOString() });
+        await createAppointment({ title: data.doctorName, location: data.location, specialty: data.specialty, description: data.notes, dateTime: d.toISOString() });
       }
       setModalVisible(false);
       setEditing(null);
