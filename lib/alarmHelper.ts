@@ -6,14 +6,17 @@ import { alarmSchedulerEngine } from './alarmSchedulerEngine';
  */
 export async function getExistingAlarmsForElement(type: string, elementId: string) {
   try {
-    // Obtener todas las notificaciones programadas
+    // 1) Intentar primero desde el motor en memoria (más fidedigno tras programar)
+    const fromEngine = getExistingAlarmsFromEngine(type, elementId);
+    const hasEngineData = fromEngine.selectedTimes.length > 0 || fromEngine.daysOfWeek.length > 0 || (fromEngine.everyXHours && fromEngine.everyXHours !== '8');
+    if (hasEngineData) return fromEngine;
+
+    // 2) Fallback: consultar notificaciones programadas del sistema
     const scheduledNotifications = await getScheduledNotifications();
     
-    // Filtrar las que corresponden al elemento específico
     const elementAlarms = scheduledNotifications.filter(notification => {
       const data = notification.content.data;
       return (
-        // Coincidir por ID del elemento, sin depender estrictamente del tipo
         (data?.medicationId === elementId || 
          data?.appointmentId === elementId || 
          data?.treatmentId === elementId ||
@@ -22,7 +25,6 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
       );
     });
 
-    // Extraer información de configuración de alarmas
     const alarmConfig = {
       selectedTimes: [] as Date[],
       frequencyType: 'daily' as 'daily' | 'daysOfWeek' | 'everyXHours',
@@ -30,29 +32,28 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
       everyXHours: '8'
     };
 
-    // Procesar cada alarma para extraer la configuración
     for (const alarm of elementAlarms) {
-      const data = alarm.content.data;
-      const trigger = alarm.trigger as any;
-      
-      if (trigger?.date) {
-        const alarmDate = new Date(trigger.date);
-        alarmConfig.selectedTimes.push(alarmDate);
+      const data = alarm.content.data as any;
+      const trigger = (alarm as any).trigger;
+
+      // Expo Notifications no siempre expone el trigger date; inferir desde datos guardados
+      if (data?.scheduledFor) {
+        const d = new Date(data.scheduledFor);
+        if (!isNaN(d.getTime())) {
+          alarmConfig.selectedTimes.push(d);
+        }
+      } else if (trigger?.date) {
+        const d = new Date(trigger.date);
+        if (!isNaN(d.getTime())) {
+          alarmConfig.selectedTimes.push(d);
+        }
       }
-      
-      // Extraer configuración de frecuencia si está disponible
-      if (data?.frequencyType) {
-        alarmConfig.frequencyType = data.frequencyType;
-      }
-      if (data?.daysOfWeek) {
-        alarmConfig.daysOfWeek = data.daysOfWeek;
-      }
-      if (data?.everyXHours) {
-        alarmConfig.everyXHours = data.everyXHours;
-      }
+
+      if (data?.frequencyType) alarmConfig.frequencyType = data.frequencyType;
+      if (Array.isArray(data?.daysOfWeek)) alarmConfig.daysOfWeek = data.daysOfWeek;
+      if (data?.everyXHours) alarmConfig.everyXHours = String(data.everyXHours);
     }
 
-    // Eliminar duplicados de selectedTimes
     alarmConfig.selectedTimes = alarmConfig.selectedTimes.filter((time, index, self) => 
       index === self.findIndex(t => t.getTime() === time.getTime())
     );
