@@ -85,19 +85,28 @@ export function getExistingAlarmsFromEngine(type: string, elementId: string) {
     };
 
     // Procesar cada alarma
-    for (const alarm of alarms) {
-      if (alarm.scheduledFor) {
-        alarmConfig.selectedTimes.push(new Date(alarm.scheduledFor));
+  for (const alarm of alarms) {
+      // Usar la fecha real programada por el motor
+      if ((alarm as any).scheduledDate) {
+        alarmConfig.selectedTimes.push(new Date((alarm as any).scheduledDate));
+      } else if ((alarm as any).scheduledFor) {
+        alarmConfig.selectedTimes.push(new Date((alarm as any).scheduledFor));
       }
       
-      if (alarm.config.frequencyType) {
-        alarmConfig.frequencyType = alarm.config.frequencyType;
+      // El motor usa 'frequency'; algunos flujos podrían usar 'frequencyType'
+      const cfg: any = (alarm as any).config || {};
+      if (cfg.frequency) {
+        const f = String(cfg.frequency);
+        alarmConfig.frequencyType = f === 'weekly' ? 'daysOfWeek' : (f === 'interval' ? 'everyXHours' : 'daily');
+      } else if (cfg.frequencyType) {
+        const f = String(cfg.frequencyType);
+        alarmConfig.frequencyType = f === 'weekly' ? 'daysOfWeek' : (f === 'interval' ? 'everyXHours' : 'daily');
       }
-      if (alarm.config.daysOfWeek) {
-        alarmConfig.daysOfWeek = alarm.config.daysOfWeek;
+      if (Array.isArray(cfg.daysOfWeek)) {
+        alarmConfig.daysOfWeek = cfg.daysOfWeek;
       }
-      if (alarm.config.intervalHours) {
-        alarmConfig.everyXHours = alarm.config.intervalHours.toString();
+      if (cfg.intervalHours != null) {
+        alarmConfig.everyXHours = String(cfg.intervalHours);
       }
     }
 
