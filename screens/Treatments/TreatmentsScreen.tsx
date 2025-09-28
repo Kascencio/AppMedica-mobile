@@ -77,7 +77,7 @@ export default function TreatmentsScreen() {
   const openEditModal = async (treatment: any) => {
     setEditingTreatment(treatment);
     setFormData({
-      name: treatment.name || '',
+      name: treatment.title || treatment.name || '',
       description: treatment.description || '',
       startDate: treatment.startDate ? new Date(treatment.startDate) : undefined,
       endDate: treatment.endDate ? new Date(treatment.endDate) : undefined,
@@ -87,7 +87,13 @@ export default function TreatmentsScreen() {
     
     // Cargar alarmas existentes para el tratamiento
     try {
-      const existingAlarms = await getExistingAlarmsForElement('treatment', treatment.id);
+      let existingAlarms = await getExistingAlarmsForElement('treatment', treatment.id);
+      // Fallback al motor de alarmas en memoria si no se encuentra nada
+      if (!existingAlarms || existingAlarms.selectedTimes.length === 0) {
+        const engine = require('../../lib/alarmHelper');
+        const engineAlarms = engine.getExistingAlarmsFromEngine('treatment', treatment.id);
+        if (engineAlarms) existingAlarms = engineAlarms;
+      }
       setSelectedTimes(existingAlarms.selectedTimes);
       setFrequencyType(existingAlarms.frequencyType);
       setDaysOfWeek(existingAlarms.daysOfWeek);
