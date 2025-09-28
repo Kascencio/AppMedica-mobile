@@ -8,7 +8,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppointments } from '../../store/useAppointments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import { useState } from 'react';
-import { cancelNotification, cancelAppointmentNotifications } from '../../lib/notifications';
+import { cancelNotification } from '../../lib/notifications';
 import * as Notifications from 'expo-notifications';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCaregiver } from '../../store/useCaregiver';
@@ -179,7 +179,7 @@ export default function AppointmentsScreen() {
         });
         apptId = editingAppointment.id;
         // Cancelar notificaciones anteriores usando el ID de la cita
-        await cancelAppointmentNotifications(apptId);
+        await cancelAppointmentAlarms(apptId);
       } else {
         await createAppointment({
           title: data.doctorName,
