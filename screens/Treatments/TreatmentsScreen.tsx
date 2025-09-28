@@ -402,7 +402,7 @@ export default function TreatmentsScreen() {
                     GLOBAL_STYLES.sectionTitle, 
                     { marginBottom: 0 },
                     isTablet && styles.treatmentTitleTablet
-                  ]}>{treatment.name || 'Sin nombre'}</Text>
+                  ]}>{treatment.title || treatment.name || 'Sin nombre'}</Text>
                 </View>
                 <View style={[
                   GLOBAL_STYLES.row,

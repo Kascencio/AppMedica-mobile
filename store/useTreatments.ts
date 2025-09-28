@@ -553,8 +553,14 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     }
 
     const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientIdForServer}`);
-    const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+    // Intentar endpoint de listado por tratamiento si el backend no tiene ruta anidada
+    let endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}?patientProfileId=${patientIdForServer}&treatmentId=${treatmentId}`);
+    let res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) {
+      // Fallback al endpoint anidado (por si existe en otro despliegue)
+      endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientIdForServer}`);
+      res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+    }
     if (!res.ok) {
       // Fallback a local si falla
       const localMeds = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
@@ -617,7 +623,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     }
 
     const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientIdForServer}`);
+    // Usar endpoint base de medicamentos con treatmentId en body
+    const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.MEDICATIONS.BASE);
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
@@ -626,6 +633,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         dosage: (medication.dosage || '').toString().trim(),
         frequency: (medication.frequency || 'DAILY').toUpperCase(),
         type: (medication.type || 'ORAL').toUpperCase(),
+        patientProfileId: patientIdForServer,
+        treatmentId,
       })
     });
     if (!res.ok) {
@@ -695,7 +704,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     }
 
     const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientIdForServer}`);
+    // Usar endpoint base de medicamentos con id
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}/${medicationId}`);
     const res = await fetch(endpoint, {
       method: 'PATCH',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
@@ -704,6 +714,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         dosage: (data.dosage || '').toString().trim(),
         frequency: (data.frequency || '').toString().toUpperCase() || undefined,
         type: (data.type || '').toString().toUpperCase() || undefined,
+        patientProfileId: patientIdForServer,
+        treatmentId,
       })
     });
     if (!res.ok) throw new Error('No se pudo actualizar el medicamento');
@@ -745,7 +757,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     }
 
     const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientIdForServer}`);
+    // Usar endpoint base de medicamentos con id y patientProfileId por query
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}/${medicationId}?patientProfileId=${patientIdForServer}`);
     const res = await fetch(endpoint, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
