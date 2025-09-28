@@ -141,13 +141,33 @@ export default function AppointmentsScreen() {
       setFrequencyType(existingAlarms.frequencyType);
       setDaysOfWeek(existingAlarms.daysOfWeek);
       setEveryXHours(existingAlarms.everyXHours);
+      // Fallback: si no hay alarmas detectadas, usar recordatorio por defecto 60 min antes
+      if (!existingAlarms.selectedTimes || existingAlarms.selectedTimes.length === 0) {
+        if (appt.dateTime) {
+          const d = new Date(appt.dateTime);
+          const reminder = new Date(d.getTime() - 60 * 60 * 1000);
+          setSelectedTimes([reminder]);
+          setFrequencyType('daily');
+          setDaysOfWeek([]);
+          setEveryXHours('8');
+        }
+      }
     } catch (error) {
       console.error('[CITAS] Error cargando alarmas existentes:', error);
-      // Resetear a valores por defecto si hay error
-      setSelectedTimes([]);
-      setFrequencyType('daily');
-      setDaysOfWeek([]);
-      setEveryXHours('8');
+      // Resetear a valores por defecto/fallback desde la hora de la cita
+      if (appt.dateTime) {
+        const d = new Date(appt.dateTime);
+        const reminder = new Date(d.getTime() - 60 * 60 * 1000);
+        setSelectedTimes([reminder]);
+        setFrequencyType('daily');
+        setDaysOfWeek([]);
+        setEveryXHours('8');
+      } else {
+        setSelectedTimes([]);
+        setFrequencyType('daily');
+        setDaysOfWeek([]);
+        setEveryXHours('8');
+      }
     }
     
     setModalVisible(true);
