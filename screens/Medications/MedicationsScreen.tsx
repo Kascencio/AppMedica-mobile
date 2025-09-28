@@ -610,42 +610,31 @@ export default function MedicationsScreen() {
             </ScrollView>
             {/* Botones de acción fuera del scroll para que siempre sean visibles */}
             <View style={[
-              { flexDirection: 'row', justifyContent: 'space-between', marginTop: 16 },
-              isTablet && { gap: 16 },
-              isLandscape && { gap: 20 }
+              styles.actionsRow,
+              isTablet && styles.actionsRowTablet,
+              isLandscape && styles.actionsRowLandscape
             ]}>
               <TouchableOpacity
                 style={[
-                  styles.addBtnModern, 
+                  styles.actionBtn, 
                   { 
                     backgroundColor: '#10b981',
                     opacity: (isSubmitting || loading) ? 0.6 : 1
-                  },
-                  isTablet && styles.addBtnTablet,
-                  isLandscape && styles.addBtnLandscape
+                  }
                 ]}
                 onPress={handleSubmit(onSubmit)}
                 disabled={isSubmitting || loading}
               >
-                <Ionicons name="save" size={isTablet ? 24 : 20} color="#ffffff" />
-                <Text style={[
-                  styles.addBtnTextModern,
-                  isTablet && styles.addBtnTextTablet
-                ]}>
-                  {isSubmitting || loading ? 'Guardando...' : (editingMed ? 'Guardar cambios' : 'Guardar')}
+                <Ionicons name="save" size={20} color="#ffffff" />
+                <Text numberOfLines={1} style={styles.actionBtnText}>
+                  {isSubmitting || loading ? 'Guardando…' : (editingMed ? 'Guardar' : 'Guardar')}
                 </Text>
               </TouchableOpacity>
               {editingMed ? (
                 <TouchableOpacity
                   style={[
-                    styles.addBtnModern, 
-                    { 
-                      backgroundColor: '#f59e0b',
-                      marginLeft: isTablet ? 16 : 12,
-                      flex: isTablet ? 0 : 1
-                    },
-                    isTablet && styles.addBtnTablet,
-                    isLandscape && styles.addBtnLandscape
+                    styles.actionBtn, 
+                    { backgroundColor: '#f59e0b' }
                   ]}
                   onPress={async () => {
                     try {
@@ -660,31 +649,19 @@ export default function MedicationsScreen() {
                     }
                   }}
                 >
-                  <Ionicons name="alarm" size={isTablet ? 24 : 20} color="#ffffff" />
-                  <Text style={[
-                    styles.addBtnTextModern,
-                    isTablet && styles.addBtnTextTablet
-                  ]}>Eliminar alarmas</Text>
+                  <Ionicons name="alarm" size={20} color="#ffffff" />
+                  <Text numberOfLines={1} style={styles.actionBtnText}>Quitar alarmas</Text>
                 </TouchableOpacity>
               ) : null}
               <TouchableOpacity
                 style={[
-                  styles.addBtnModern, 
-                  { 
-                    backgroundColor: '#ef4444',
-                    marginLeft: isTablet ? 16 : 12,
-                    flex: isTablet ? 0 : 1
-                  },
-                  isTablet && styles.addBtnTablet,
-                  isLandscape && styles.addBtnLandscape
+                  styles.actionBtn, 
+                  { backgroundColor: '#ef4444' }
                 ]}
                 onPress={() => { setModalVisible(false); setEditingMed(null); reset(); }}
               >
-                <Ionicons name="close" size={isTablet ? 24 : 20} color="#ffffff" />
-                <Text style={[
-                  styles.addBtnTextModern,
-                  isTablet && styles.addBtnTextTablet
-                ]}>Cancelar</Text>
+                <Ionicons name="close" size={20} color="#ffffff" />
+                <Text numberOfLines={1} style={styles.actionBtnText}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -748,6 +725,35 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 17,
+    marginLeft: 8,
+  },
+  // Nueva barra de acciones con botones homogéneos
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 16,
+  },
+  actionsRowTablet: {
+    gap: 16,
+  },
+  actionsRowLandscape: {
+    gap: 20,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: 18,
+    minHeight: 56,
+  },
+  actionBtnText: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+    fontSize: 16,
     marginLeft: 8,
   },
   addBtnDisabled: {
