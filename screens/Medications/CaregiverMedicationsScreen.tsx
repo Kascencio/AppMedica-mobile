@@ -328,7 +328,12 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         onRequestClose={() => { setModalVisible(false); setEditingMed(null); }}
       >
         <View style={styles.modalOverlayModern}>
-          <View style={styles.modalContentModern}>
+          <View style={[styles.modalContentModern, { maxHeight: '90%' }]}>
+            <ScrollView
+              showsVerticalScrollIndicator
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+            >
             <Text style={styles.headerTitle}>{editingMed ? 'Editar Medicamento' : 'Agregar Medicamento'}</Text>
             <Controller
               control={control}
@@ -464,6 +469,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
                 <Text style={styles.addBtnTextModern}>Cancelar</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>

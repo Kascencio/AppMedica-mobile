@@ -24,6 +24,7 @@ export interface LocalAppointment {
   title: string;
   dateTime: string;
   location?: string;
+  specialty?: string;
   description?: string;
   doctorName?: string;
   patientProfileId: string;
@@ -208,6 +209,7 @@ class LocalDatabase {
         title TEXT NOT NULL,
         dateTime TEXT NOT NULL,
         location TEXT,
+        specialty TEXT,
         description TEXT,
         doctorName TEXT,
         patientProfileId TEXT NOT NULL,
@@ -411,8 +413,8 @@ class LocalDatabase {
 
     const query = `
       INSERT OR REPLACE INTO appointments 
-      (id, title, dateTime, location, description, doctorName, patientProfileId, createdAt, updatedAt, isOffline, syncStatus)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, title, dateTime, location, specialty, description, doctorName, patientProfileId, createdAt, updatedAt, isOffline, syncStatus)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     await this.db!.runAsync(query, [
@@ -420,6 +422,7 @@ class LocalDatabase {
       appointment.title,
       appointment.dateTime,
       appointment.location || null,
+      appointment.specialty || null,
       appointment.description || null,
       appointment.doctorName || null,
       appointment.patientProfileId,

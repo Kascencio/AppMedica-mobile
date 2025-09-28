@@ -168,7 +168,7 @@ export default function CaregiverProfileScreen() {
           <Text style={styles.infoTitle}>Información del usuario</Text>
           <View style={styles.infoInner}>
             <Text style={styles.infoText}>Nombre: <Text style={styles.infoBold}>{profile?.name || '—'}</Text></Text>
-            <Text style={styles.infoText}>Correo: <Text style={styles.infoBold}>{(profile as any)?.email || '—'}</Text></Text>
+            <Text style={styles.infoText}>Correo: <Text style={styles.infoBold}>{(profile as any)?.email || (profile as any)?.username || (profile as any)?.user?.email || '—'}</Text></Text>
             <Text style={styles.infoText}>Rol: <Text style={styles.infoBold}>{profile?.role || '—'}</Text></Text>
             <Text style={styles.infoText}>ID Usuario: <Text style={styles.infoBold}>{profile?.userId || '—'}</Text></Text>
           </View>

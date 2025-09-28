@@ -12,6 +12,7 @@ interface Appointment {
   title: string;
   dateTime: string;
   location?: string;
+  specialty?: string;
   description?: string;
   patientProfileId?: string;
   createdAt?: string;
@@ -97,6 +98,8 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
                 title: appointment.title || appointment.doctorName || 'Sin título',
                 // Asegurar que dateTime esté presente
                 dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
+                // Specialty si existe en backend
+                specialty: (appointment as any).specialty,
                 // Preservar doctorName si existe
                 doctorName: appointment.doctorName || appointment.title,
                 // Asegurar que patientProfileId sea string
@@ -119,6 +122,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
               ...appointment,
               title: appointment.title || appointment.doctorName || 'Sin título',
               dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
+              specialty: appointment.specialty,
               doctorName: appointment.doctorName || appointment.title,
               // Asegurar que patientProfileId sea string
               patientProfileId: String(appointment.patientProfileId || patientId),
@@ -303,6 +307,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             title: responseData.title || responseData.doctorName || 'Sin título',
             // Asegurar que dateTime esté presente
             dateTime: responseData.dateTime || responseData.date || responseData.scheduledFor,
+            specialty: (responseData as any).specialty,
             // Preservar doctorName si existe
             doctorName: responseData.doctorName || responseData.title,
             // Asegurar que patientProfileId sea string

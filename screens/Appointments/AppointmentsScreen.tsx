@@ -126,7 +126,7 @@ export default function AppointmentsScreen() {
   const openEditModal = async (appt: any) => {
     setEditingAppointment(appt);
     setValue('doctorName', appt.title);
-    setValue('specialty', appt.specialty || '');
+    setValue('specialty', (appt as any).specialty || '');
     setValue('location', appt.location);
     if (appt.dateTime) {
       setValue('date', new Date(appt.dateTime));
@@ -174,6 +174,7 @@ export default function AppointmentsScreen() {
           title: data.doctorName,
           dateTime: date.toISOString(),
           location: data.location,
+          specialty: data.specialty,
           description: data.notes,
         });
         apptId = editingAppointment.id;
@@ -184,6 +185,7 @@ export default function AppointmentsScreen() {
           title: data.doctorName,
           dateTime: date.toISOString(),
           location: data.location,
+          specialty: data.specialty,
           description: data.notes,
         });
         // Espera a que getAppointments actualice la lista

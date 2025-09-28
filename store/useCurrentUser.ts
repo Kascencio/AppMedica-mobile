@@ -332,6 +332,10 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
                 // Mapear otros campos
                 name: serverData.name || baseProfile.name,
                 role: serverData.role || baseProfile.role,
+                // Mapear tipo de sangre desde posibles nombres de campo
+                bloodType: serverData.bloodType || (serverData as any).blood_type || baseProfile.bloodType,
+                // Mapear email si el backend lo provee (directo o anidado en user)
+                email: (serverData as any).email || (serverData as any)?.user?.email || (baseProfile as any)?.email,
             };
             
             console.log('[useCurrentUser] Datos mapeados del servidor:', mappedData);
@@ -572,6 +576,16 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
             return;
           }
         }
+        else if (key === 'bloodType') {
+          // Aceptar únicamente tipos válidos
+          const allowed = ['A+','A-','B+','B-','AB+','AB-','O+','O-'];
+          if (typeof value === 'string' && allowed.includes(value)) {
+            bodyData[key] = value;
+          } else {
+            console.log(`[useCurrentUser] ⚠️ bloodType inválido excluido: ${value}`);
+            return;
+          }
+        }
         else bodyData[key] = value;
       });
 
@@ -681,7 +695,15 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
       const serverProfile = await res.json();
       
       // Actualizar estado con la respuesta del servidor para consistencia
-      const finalProfile = { ...get().profile, ...serverProfile, updatedAt: new Date().toISOString() };
+      // Mantener valores existentes cuando el servidor no devuelve el campo (evitar sobreescrituras a vacío)
+      const currentProfile = get().profile || {} as any;
+      const finalProfile = {
+        ...currentProfile,
+        ...serverProfile,
+        bloodType: serverProfile.bloodType ?? currentProfile.bloodType,
+        email: (serverProfile as any).email ?? (currentProfile as any).email,
+        updatedAt: new Date().toISOString(),
+      };
       set({ profile: finalProfile, loading: false });
       await get().saveProfileLocally(finalProfile);
 

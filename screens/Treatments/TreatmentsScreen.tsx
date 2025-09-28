@@ -594,6 +594,7 @@ export default function TreatmentsScreen() {
                       isTablet && styles.inputTablet
                     ]}
                     placeholder="Nombre del tratamiento"
+                    placeholderTextColor={COLORS.text.secondary}
                     value={formData.name}
                     onChangeText={(text) => setFormData({ ...formData, name: text })}
                   />
@@ -614,6 +615,7 @@ export default function TreatmentsScreen() {
                       isTablet && styles.inputTablet
                     ]}
                     placeholder="Descripción del tratamiento"
+                    placeholderTextColor={COLORS.text.secondary}
                     value={formData.description}
                     onChangeText={(text) => setFormData({ ...formData, description: text })}
                     multiline
@@ -640,12 +642,14 @@ export default function TreatmentsScreen() {
                         <TextInput
                           style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
                           placeholder="Nombre"
+                          placeholderTextColor={COLORS.text.secondary}
                           value={med.name}
                           onChangeText={(t) => updateMedicationField(idx, 'name', t)}
                         />
                         <TextInput
                           style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
                           placeholder="Dosis (ej. 10mg)"
+                          placeholderTextColor={COLORS.text.secondary}
                           value={med.dosage}
                           onChangeText={(t) => updateMedicationField(idx, 'dosage', t)}
                         />
@@ -654,12 +658,14 @@ export default function TreatmentsScreen() {
                         <TextInput
                           style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
                           placeholder="Frecuencia (ej. cada 12 horas)"
+                          placeholderTextColor={COLORS.text.secondary}
                           value={med.frequency}
                           onChangeText={(t) => updateMedicationField(idx, 'frequency', t)}
                         />
                         <TextInput
                           style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
                           placeholder="Tipo (ej. pastilla)"
+                          placeholderTextColor={COLORS.text.secondary}
                           value={med.type}
                           onChangeText={(t) => updateMedicationField(idx, 'type', t)}
                         />

@@ -196,7 +196,7 @@ export default function CaregiverHomeScreen({ navigation }: any) {
             )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>¡Hola, {profile?.name || 'Cuidador'}!</Text>
+            <Text style={styles.greeting}>¡Hola, {profile?.name || (profile as any)?.username || (profile as any)?.user?.name || 'Cuidador'}!</Text>
             <Text style={styles.motivational}>Gestiona y cuida a tus pacientes desde aquí.</Text>
           </View>
         </View>
