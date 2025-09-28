@@ -995,14 +995,22 @@ export const useCurrentUser = create<CurrentUserState>((set, get) => ({
           const patientData = await res.json();
           console.log('[useCurrentUser] Datos del paciente obtenidos:', patientData);
           
-          // Crear perfil completo con los datos correctos
+          // Mapear campos a nuestro modelo (manejar snake_case y variaciones)
+          const genderMapReverse = { 'male': 'Masculino', 'female': 'Femenino', 'other': 'Otro' } as const;
           const completeProfile = {
             ...patientData,
             id: patientData.id, // patientId del servidor
             userId: userId, // userId del /auth/me
             patientProfileId: patientData.id, // patientId del servidor
             role: role, // role del /auth/me
-          };
+            // Compatibilidad de fechas
+            birthDate: (patientData as any).dateOfBirth || patientData.birthDate,
+            dateOfBirth: (patientData as any).dateOfBirth || patientData.birthDate,
+            // Mapear género del backend si viene en formato corto
+            gender: patientData.gender ? (genderMapReverse[patientData.gender as keyof typeof genderMapReverse] || patientData.gender) : patientData.gender,
+            // Mapear tipo de sangre en snake_case
+            bloodType: patientData.bloodType || (patientData as any).blood_type || (patientData as any).bloodtype || (patientData as any).blood,
+          } as any;
           
           console.log('[useCurrentUser] Perfil completo creado:', completeProfile);
           

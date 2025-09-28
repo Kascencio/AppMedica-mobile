@@ -623,33 +623,60 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     }
 
     const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
+
+    // Normalización y saneo de campos del medicamento anidado
+    const name = (medication.name || '').toString().trim();
+    const dosage = (medication.dosage || '').toString().trim();
+    const rawFrequency = (medication.frequency || '').toString().trim();
+    const rawType = (medication.type || '').toString().trim();
+
+    if (!name) {
+      // Omitir silenciosamente medicamentos vacíos
+      return { id: `skipped_${Date.now()}`, name, dosage, frequency: rawFrequency, type: rawType } as any;
+    }
+
+    // Mapear y validar frecuencia a valores admitidos por el backend
+    const freqMap: Record<string, string> = {
+      daily: 'DAILY', diario: 'DAILY',
+      weekly: 'WEEKLY', semanal: 'WEEKLY',
+      monthly: 'MONTHLY', mensual: 'MONTHLY',
+      as_needed: 'AS_NEEDED', "as needed": 'AS_NEEDED', necesario: 'AS_NEEDED',
+      interval: 'INTERVAL', custom: 'INTERVAL', personalizado: 'INTERVAL'
+    };
+    const frequencyUpper = (rawFrequency || '').toUpperCase();
+    const frequency = freqMap[rawFrequency.toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL'].includes(frequencyUpper) ? frequencyUpper : 'DAILY');
+
+    // Mapear y validar tipo a valores admitidos
+    const typeMap: Record<string, string> = {
+      oral: 'ORAL',
+      inyectable: 'INJECTABLE', injectable: 'INJECTABLE',
+      tópico: 'TOPICAL', topico: 'TOPICAL', topical: 'TOPICAL',
+      inhalación: 'INHALATION', inhalacion: 'INHALATION', inhalation: 'INHALATION',
+      sublingual: 'SUBLINGUAL'
+    };
+    const typeUpper = (rawType || '').toUpperCase();
+    const type = typeMap[rawType.toLowerCase()] || (['ORAL','INJECTABLE','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUpper) ? typeUpper : 'ORAL');
+
     // Usar endpoint base de medicamentos con treatmentId en body
     const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.MEDICATIONS.BASE);
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        name: (medication.name || '').trim(),
-        dosage: (medication.dosage || '').toString().trim(),
-        frequency: (medication.frequency || 'DAILY').toUpperCase(),
-        type: (medication.type || 'ORAL').toUpperCase(),
+        name,
+        dosage: dosage || undefined,
+        frequency,
+        type,
         patientProfileId: patientIdForServer,
         treatmentId,
       })
     });
     if (!res.ok) {
       let errorBody: any = null;
-      try {
-        errorBody = await res.json();
-      } catch {
-        try { errorBody = await res.text(); } catch {}
-      }
-      console.log('[useTreatments] Error creando medicamento anidado:', {
-        status: res.status,
-        statusText: res.statusText,
-        error: errorBody,
-      });
-      throw new Error('No se pudo agregar el medicamento');
+      try { errorBody = await res.json(); } catch { try { errorBody = await res.text(); } catch {} }
+      console.log('[useTreatments] Error creando medicamento anidado:', { status: res.status, statusText: res.statusText, error: errorBody });
+      const msg = (errorBody && errorBody.error === 'VALIDATION') ? 'Validación de medicamento: verifica nombre/dosis/frecuencia/tipo' : 'No se pudo agregar el medicamento';
+      throw new Error(msg);
     }
     const created = await res.json();
     // Guardar local como sincronizado
@@ -706,14 +733,31 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
     // Usar endpoint base de medicamentos con id
     const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.MEDICATIONS.BASE}/${medicationId}`);
+
+    // Normalización igual que en creación
+    const nameU = (data.name || '').toString().trim();
+    const dosageU = (data.dosage || '').toString().trim();
+    const rawFreqU = (data.frequency || '').toString().trim();
+    const rawTypeU = (data.type || '').toString().trim();
+    const freqMapU: Record<string, string> = {
+      daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', as_needed: 'AS_NEEDED', interval: 'INTERVAL', custom: 'INTERVAL'
+    };
+    const frequencyUUpper = (rawFreqU || '').toUpperCase();
+    const frequencyU = rawFreqU ? (freqMapU[rawFreqU.toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL'].includes(frequencyUUpper) ? frequencyUUpper : undefined)) : undefined;
+    const typeMapU: Record<string, string> = {
+      oral: 'ORAL', injectable: 'INJECTABLE', inyectable: 'INJECTABLE', topical: 'TOPICAL', topico: 'TOPICAL', inhalation: 'INHALATION', inhalacion: 'INHALATION', sublingual: 'SUBLINGUAL'
+    };
+    const typeUUpper = (rawTypeU || '').toUpperCase();
+    const typeU = rawTypeU ? (typeMapU[rawTypeU.toLowerCase()] || (['ORAL','INJECTABLE','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUUpper) ? typeUUpper : undefined)) : undefined;
+
     const res = await fetch(endpoint, {
       method: 'PATCH',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        name: (data.name || '').trim(),
-        dosage: (data.dosage || '').toString().trim(),
-        frequency: (data.frequency || '').toString().toUpperCase() || undefined,
-        type: (data.type || '').toString().toUpperCase() || undefined,
+        name: nameU || undefined,
+        dosage: dosageU || undefined,
+        frequency: frequencyU,
+        type: typeU,
         patientProfileId: patientIdForServer,
         treatmentId,
       })
