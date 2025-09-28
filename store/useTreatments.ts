@@ -8,6 +8,20 @@ import { syncService } from '../lib/syncService';
 import { validateAndFormatTreatment } from '../lib/treatmentValidator';
 import { alarmSchedulerEngine, AlarmConfig } from '../lib/alarmSchedulerEngine';
 
+// Tipos locales para medicamentos dentro de un tratamiento
+interface NewTreatmentMedication {
+  name: string;
+  dosage: string;
+  frequency: string;
+  type: string;
+}
+
+interface TreatmentMedication extends NewTreatmentMedication {
+  id: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 interface Treatment {
   id: string;
   title: string;
@@ -20,6 +34,7 @@ interface Treatment {
   updatedAt?: string;
   isOffline?: boolean;
   syncStatus?: 'pending' | 'synced' | 'failed';
+  medications?: TreatmentMedication[];
 }
 
 interface TreatmentsState {
@@ -34,6 +49,24 @@ interface TreatmentsState {
   scheduleTreatmentAlarms: (treatment: Treatment, alarmConfig: Partial<AlarmConfig>) => Promise<string[]>;
   cancelTreatmentAlarms: (treatmentId: string) => Promise<number>;
   rescheduleTreatmentAlarms: (treatment: Treatment, alarmConfig: Partial<AlarmConfig>) => Promise<string[]>;
+  // Medicamentos del tratamiento
+  getTreatmentMedications: (treatmentId: string, patientIdOverride?: string) => Promise<TreatmentMedication[]>;
+  addMedicationToTreatment: (
+    treatmentId: string,
+    medication: NewTreatmentMedication,
+    patientIdOverride?: string
+  ) => Promise<TreatmentMedication>;
+  updateTreatmentMedication: (
+    treatmentId: string,
+    medicationId: string,
+    data: Partial<NewTreatmentMedication>,
+    patientIdOverride?: string
+  ) => Promise<TreatmentMedication>;
+  deleteTreatmentMedication: (
+    treatmentId: string,
+    medicationId: string,
+    patientIdOverride?: string
+  ) => Promise<void>;
 }
 
 export const useTreatments = create<TreatmentsState>((set, get) => ({
@@ -190,10 +223,14 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       try {
         console.log('[useTreatments] Intentando sincronizar con servidor...');
         
-        const bodyData = { 
+        const bodyData: any = { 
           ...formattedData, 
           patientProfileId: patientId
         };
+        // Incluir medicamentos si vienen desde el formulario de creación
+        if ((data as any).medications && Array.isArray((data as any).medications)) {
+          bodyData.medications = (data as any).medications;
+        }
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.TREATMENTS.BASE);
         
         console.log('[useTreatments] Enviando petición a:', endpoint);
@@ -471,5 +508,198 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       console.error('[useTreatments] Error reprogramando alarmas:', error);
       throw error;
     }
+  },
+
+  // ========================
+  // Medicamentos por tratamiento
+  // ========================
+  getTreatmentMedications: async (treatmentId, patientIdOverride) => {
+    const profile = useCurrentUser.getState().profile;
+    const role = (profile?.role || 'PATIENT').toUpperCase();
+    const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+    const patientId = patientIdOverride || (role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id));
+    if (!patientId) throw new Error('No hay perfil de paciente');
+
+    const token = useAuth.getState().userToken;
+    const isOnline = await syncService.isOnline();
+    if (!isOnline || !token) {
+      // Cargar desde local si offline
+      const localMeds = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
+      return localMeds as any;
+    }
+
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientId}`);
+    const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      // Fallback a local si falla
+      const localMeds = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
+      return localMeds as any;
+    }
+    const data = await res.json();
+    const meds: TreatmentMedication[] = Array.isArray(data) ? data : (data?.items || data?.medications || []);
+    // Persistir localmente como sincronizadas
+    for (const m of meds) {
+      await localDB.saveTreatmentMedication({
+        id: m.id,
+        treatmentId: String(treatmentId),
+        name: m.name,
+        dosage: m.dosage,
+        frequency: m.frequency,
+        type: (m as any).type,
+        patientProfileId: String(patientId),
+        createdAt: (m as any).createdAt || new Date().toISOString(),
+        updatedAt: (m as any).updatedAt || new Date().toISOString(),
+        isOffline: false,
+        syncStatus: 'synced'
+      } as any);
+    }
+    return meds;
+  },
+
+  addMedicationToTreatment: async (treatmentId, medication, patientIdOverride) => {
+    const profile = useCurrentUser.getState().profile;
+    const role = (profile?.role || 'PATIENT').toUpperCase();
+    const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+    const patientId = patientIdOverride || (role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id));
+    if (!patientId) throw new Error('No hay perfil de paciente');
+
+    const token = useAuth.getState().userToken;
+    const isOnline = await syncService.isOnline();
+    if (!isOnline || !token) {
+      // Guardado offline: crear ID temporal y encolar
+      const tempId = `temp_med_${Date.now()}_${Math.random()}`;
+      // Guardar en base local de treatment_medications como pendiente
+      await localDB.saveTreatmentMedication({
+        id: tempId,
+        treatmentId,
+        name: medication.name,
+        dosage: medication.dosage,
+        frequency: medication.frequency,
+        type: medication.type,
+        patientProfileId: String(patientId),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isOffline: true,
+        syncStatus: 'pending'
+      } as any);
+      await syncService.addToSyncQueue('CREATE', 'treatments', {
+        __nested: 'medication',
+        treatmentId,
+        patientProfileId: String(patientId),
+        payload: medication
+      });
+      return { id: tempId, ...medication } as any;
+    }
+
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientId}`);
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(medication)
+    });
+    if (!res.ok) throw new Error('No se pudo agregar el medicamento');
+    const created = await res.json();
+    // Guardar local como sincronizado
+    await localDB.saveTreatmentMedication({
+      id: created.id,
+      treatmentId,
+      name: created.name,
+      dosage: created.dosage,
+      frequency: created.frequency,
+      type: created.type,
+      patientProfileId: String(patientId),
+      createdAt: created.createdAt || new Date().toISOString(),
+      updatedAt: created.updatedAt || new Date().toISOString(),
+      isOffline: false,
+      syncStatus: 'synced'
+    } as any);
+    return created as TreatmentMedication;
+  },
+
+  updateTreatmentMedication: async (treatmentId, medicationId, data, patientIdOverride) => {
+    const profile = useCurrentUser.getState().profile;
+    const role = (profile?.role || 'PATIENT').toUpperCase();
+    const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+    const patientId = patientIdOverride || (role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id));
+    if (!patientId) throw new Error('No hay perfil de paciente');
+
+    const token = useAuth.getState().userToken;
+    const isOnline = await syncService.isOnline();
+    if (!isOnline || !token) {
+      // Guardar local en modo pendiente y encolar
+      await localDB.saveTreatmentMedication({
+        id: medicationId,
+        treatmentId,
+        name: data.name || '',
+        dosage: data.dosage || '',
+        frequency: data.frequency,
+        type: data.type,
+        patientProfileId: String(patientId),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isOffline: true,
+        syncStatus: 'pending'
+      } as any);
+      await syncService.addToSyncQueue('UPDATE', 'treatments', {
+        __nested: 'medication',
+        treatmentId,
+        medicationId,
+        patientProfileId: String(patientId),
+        payload: data
+      });
+      return { id: medicationId, ...(data as any) } as any;
+    }
+
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientId}`);
+    const res = await fetch(endpoint, {
+      method: 'PATCH',
+      headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('No se pudo actualizar el medicamento');
+    const updated = await res.json();
+    await localDB.saveTreatmentMedication({
+      id: medicationId,
+      treatmentId,
+      name: updated.name || data.name || '',
+      dosage: updated.dosage || data.dosage || '',
+      frequency: updated.frequency || data.frequency,
+      type: updated.type || data.type,
+      patientProfileId: String(patientId),
+      createdAt: updated.createdAt || new Date().toISOString(),
+      updatedAt: updated.updatedAt || new Date().toISOString(),
+      isOffline: false,
+      syncStatus: 'synced'
+    } as any);
+    return updated as TreatmentMedication;
+  },
+
+  deleteTreatmentMedication: async (treatmentId, medicationId, patientIdOverride) => {
+    const profile = useCurrentUser.getState().profile;
+    const role = (profile?.role || 'PATIENT').toUpperCase();
+    const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+    const patientId = patientIdOverride || (role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id));
+    if (!patientId) throw new Error('No hay perfil de paciente');
+
+    const token = useAuth.getState().userToken;
+    const isOnline = await syncService.isOnline();
+    if (!isOnline || !token) {
+      await localDB.deleteTreatmentMedication(medicationId);
+      await syncService.addToSyncQueue('DELETE', 'treatments', {
+        __nested: 'medication',
+        treatmentId,
+        medicationId,
+        patientProfileId: String(patientId)
+      });
+      return;
+    }
+
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientId}`);
+    const res = await fetch(endpoint, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error('No se pudo eliminar el medicamento');
+    await localDB.deleteTreatmentMedication(medicationId);
   },
 }));

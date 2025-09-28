@@ -18,7 +18,7 @@ const isTablet = width > 768;
 const isLandscape = width > height;
 
 export default function TreatmentsScreen() {
-  const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment, scheduleTreatmentAlarms, cancelTreatmentAlarms, rescheduleTreatmentAlarms } = useTreatments();
+  const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment, scheduleTreatmentAlarms, cancelTreatmentAlarms, rescheduleTreatmentAlarms, getTreatmentMedications, addMedicationToTreatment, updateTreatmentMedication, deleteTreatmentMedication } = useTreatments();
   const { profile } = useCurrentUser();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTreatment, setEditingTreatment] = useState<any>(null);
@@ -30,6 +30,10 @@ export default function TreatmentsScreen() {
     frequency: 'daily',
     notes: ''
   });
+
+  // Lista de medicamentos (para crear/editar)
+  const [medications, setMedications] = useState<Array<{ id?: string; name: string; dosage: string; frequency: string; type: string }>>([]);
+  const [originalMedications, setOriginalMedications] = useState<Array<{ id: string; name: string; dosage: string; frequency: string; type: string }>>([]);
 
   // Estados para configuración de alarmas
   const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
@@ -61,6 +65,8 @@ export default function TreatmentsScreen() {
       frequency: 'daily',
       notes: ''
     });
+    setMedications([]);
+    setOriginalMedications([]);
     setSelectedTimes([]);
     setFrequencyType('daily');
     setDaysOfWeek([]);
@@ -95,6 +101,18 @@ export default function TreatmentsScreen() {
       setEveryXHours('8');
     }
     
+    // Cargar medicamentos actuales del tratamiento
+    try {
+      const meds = await getTreatmentMedications(treatment.id);
+      const mapped = (meds || []).map((m: any) => ({ id: m.id, name: m.name || '', dosage: m.dosage || '', frequency: m.frequency || '', type: m.type || '' }));
+      setMedications(mapped);
+      setOriginalMedications(mapped as any);
+    } catch (e) {
+      console.log('[TRATAMIENTOS] No se pudieron cargar medicamentos:', (e as any)?.message);
+      setMedications([]);
+      setOriginalMedications([]);
+    }
+
     setModalVisible(true);
   };
 
@@ -125,12 +143,42 @@ export default function TreatmentsScreen() {
           endDate: treatmentData.endDate || undefined
         });
         treatmentId = editingTreatment.id;
+
+        // Sincronizar medicamentos (diff entre originalMedications y medications)
+        const byIdOriginal = new Map(originalMedications.filter(m => !!m.id).map(m => [m.id!, m]));
+        const currentById = new Map(medications.filter(m => !!m.id).map(m => [m.id!, m]));
+
+        const adds = medications.filter(m => !m.id && m.name.trim());
+        const updates = medications.filter(m => m.id && (() => {
+          const orig = byIdOriginal.get(m.id!);
+          if (!orig) return false;
+          return orig.name !== m.name || orig.dosage !== m.dosage || orig.frequency !== m.frequency || (orig as any).type !== m.type;
+        })());
+        const deletions = [...byIdOriginal.keys()].filter(id => !currentById.has(id));
+
+        try {
+          await Promise.all([
+            ...adds.map(m => addMedicationToTreatment(editingTreatment.id, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
+            ...updates.map(m => updateTreatmentMedication(editingTreatment.id, m.id!, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
+            ...deletions.map(id => deleteTreatmentMedication(editingTreatment.id, id))
+          ]);
+        } catch (syncErr: any) {
+          console.log('[TreatmentsScreen] Error sincronizando medicamentos:', syncErr?.message || syncErr);
+          Alert.alert('Advertencia', 'El tratamiento se guardó, pero hubo errores sincronizando algunos medicamentos.');
+        }
+
         Alert.alert('Éxito', 'Tratamiento actualizado correctamente');
       } else {
+        // Preparar medicamentos para creación (solo los válidos no vacíos)
+        const medsToCreate = medications
+          .filter(m => m.name?.trim())
+          .map(m => ({ name: m.name.trim(), dosage: (m.dosage || '').trim(), frequency: (m.frequency || '').trim(), type: (m.type || '').trim() }));
+
         await createTreatment({
           ...treatmentData,
-          endDate: treatmentData.endDate || undefined
-        });
+          endDate: treatmentData.endDate || undefined,
+          medications: medsToCreate
+        } as any);
         // Obtener el ID del tratamiento recién creado
         await new Promise(res => setTimeout(res, 500));
         const newTreatment = treatments.find(t => t.title === treatmentData.name && t.startDate === treatmentData.startDate);
@@ -183,10 +231,23 @@ export default function TreatmentsScreen() {
         frequency: 'daily',
         notes: ''
       });
+      setMedications([]);
+      setOriginalMedications([]);
     } catch (error) {
       console.error('[TreatmentsScreen] Error:', error);
       Alert.alert('Error', 'No se pudo guardar el tratamiento');
     }
+  };
+
+  // Helpers UI medicamentos
+  const addMedicationRow = () => {
+    setMedications(prev => [...prev, { name: '', dosage: '', frequency: '', type: '' }]);
+  };
+  const updateMedicationField = (index: number, field: 'name' | 'dosage' | 'frequency' | 'type', value: string) => {
+    setMedications(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+  };
+  const removeMedicationRow = (index: number) => {
+    setMedications(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleDelete = async (id: string) => {
@@ -455,6 +516,23 @@ export default function TreatmentsScreen() {
                   ]}>{treatment.description}</Text>
                 </View>
               )}
+
+              {/* Resumen de medicamentos (si el backend devuelve medications en el objeto tratamiento) */}
+              {Array.isArray((treatment as any).medications) && (treatment as any).medications.length > 0 ? (
+                <View style={[GLOBAL_STYLES.card, { marginTop: 12, padding: 12 }]}>
+                  <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', marginBottom: 6 }]}>Medicamentos</Text>
+                  {(treatment as any).medications.slice(0, 3).map((m: any) => (
+                    <Text key={m.id || m.name} style={GLOBAL_STYLES.caption}>
+                      - {m.name} {m.dosage ? `(${m.dosage})` : ''} {m.frequency ? `• ${m.frequency}` : ''}
+                    </Text>
+                  ))}
+                  {(treatment as any).medications.length > 3 ? (
+                    <Text style={[GLOBAL_STYLES.caption, { color: COLORS.text.secondary, marginTop: 4 }]}>
+                      y {(treatment as any).medications.length - 3} más
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
           ))
         )}
@@ -536,6 +614,67 @@ export default function TreatmentsScreen() {
                   />
                 </View>
                 
+                {/* Lista de medicamentos */}
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Medicamentos</Text>
+
+                  {medications.length === 0 ? (
+                    <Text style={[GLOBAL_STYLES.caption, { marginBottom: 8 }]}>No hay medicamentos. Agrega uno con el botón +</Text>
+                  ) : null}
+
+                  {medications.map((med, idx) => (
+                    <View key={med.id || idx} style={{ marginBottom: 8 }}>
+                      <View style={[GLOBAL_STYLES.row, { gap: 8 }]}>
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Nombre"
+                          value={med.name}
+                          onChangeText={(t) => updateMedicationField(idx, 'name', t)}
+                        />
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Dosis (ej. 10mg)"
+                          value={med.dosage}
+                          onChangeText={(t) => updateMedicationField(idx, 'dosage', t)}
+                        />
+                      </View>
+                      <View style={[GLOBAL_STYLES.row, { gap: 8, marginTop: 6 }]}>
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Frecuencia (ej. cada 12 horas)"
+                          value={med.frequency}
+                          onChangeText={(t) => updateMedicationField(idx, 'frequency', t)}
+                        />
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Tipo (ej. pastilla)"
+                          value={med.type}
+                          onChangeText={(t) => updateMedicationField(idx, 'type', t)}
+                        />
+                      </View>
+                      <View style={[GLOBAL_STYLES.row, { justifyContent: 'flex-end', marginTop: 6 }]}>
+                        <TouchableOpacity
+                          onPress={() => removeMedicationRow(idx)}
+                          style={[MEDICAL_STYLES.actionButton, { backgroundColor: COLORS.error }]}>
+                          <Ionicons name="remove-circle-outline" size={20} color={COLORS.text.inverse} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    onPress={addMedicationRow}
+                    style={[GLOBAL_STYLES.buttonSecondary, { alignSelf: 'flex-start', marginTop: 8 }]}>
+                    <Text style={GLOBAL_STYLES.buttonTextSecondary}>+ Agregar medicamento</Text>
+                  </TouchableOpacity>
+                </View>
+
                 {/* Configuración de alarmas mejorada */}
                 <AlarmScheduler
                   selectedTimes={selectedTimes}

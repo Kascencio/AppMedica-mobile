@@ -47,6 +47,20 @@ export interface LocalTreatment {
   syncStatus: 'pending' | 'synced' | 'failed';
 }
 
+export interface LocalTreatmentMedication {
+  id: string;
+  treatmentId: string;
+  name: string;
+  dosage: string;
+  frequency?: string;
+  type?: string;
+  patientProfileId: string;
+  createdAt: string;
+  updatedAt: string;
+  isOffline: boolean;
+  syncStatus: 'pending' | 'synced' | 'failed';
+}
+
 export interface LocalNote {
   id: string;
   title: string;
@@ -220,6 +234,22 @@ class LocalDatabase {
       );
     `;
 
+    const createTreatmentMedicationsTable = `
+      CREATE TABLE IF NOT EXISTS treatment_medications (
+        id TEXT PRIMARY KEY,
+        treatmentId TEXT NOT NULL,
+        name TEXT NOT NULL,
+        dosage TEXT NOT NULL,
+        frequency TEXT,
+        type TEXT,
+        patientProfileId TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        isOffline INTEGER DEFAULT 0,
+        syncStatus TEXT DEFAULT 'synced'
+      );
+    `;
+
     const createNotesTable = `
       CREATE TABLE IF NOT EXISTS notes (
         id TEXT PRIMARY KEY,
@@ -298,6 +328,7 @@ class LocalDatabase {
     await this.db.execAsync(createMedicationsTable);
     await this.db.execAsync(createAppointmentsTable);
     await this.db.execAsync(createTreatmentsTable);
+    await this.db.execAsync(createTreatmentMedicationsTable);
     await this.db.execAsync(createNotesTable);
     await this.db.execAsync(createIntakeEventsTable);
     await this.db.execAsync(createProfilesTable);
@@ -456,6 +487,48 @@ class LocalDatabase {
   async deleteTreatment(id: string): Promise<void> {
     await this.ensureInitialized();
     await this.db!.runAsync('DELETE FROM treatments WHERE id = ?', [id]);
+  }
+
+  // Métodos para treatment_medications
+  async saveTreatmentMedication(medication: LocalTreatmentMedication): Promise<void> {
+    await this.ensureInitialized();
+
+    const query = `
+      INSERT OR REPLACE INTO treatment_medications 
+      (id, treatmentId, name, dosage, frequency, type, patientProfileId, createdAt, updatedAt, isOffline, syncStatus)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    await this.db!.runAsync(query, [
+      medication.id,
+      medication.treatmentId,
+      medication.name,
+      medication.dosage,
+      medication.frequency || null,
+      medication.type || null,
+      medication.patientProfileId,
+      medication.createdAt,
+      medication.updatedAt,
+      medication.isOffline ? 1 : 0,
+      medication.syncStatus
+    ]);
+  }
+
+  async getTreatmentMedications(patientProfileId: string, treatmentId: string): Promise<LocalTreatmentMedication[]> {
+    await this.ensureInitialized();
+
+    const query = `SELECT * FROM treatment_medications WHERE patientProfileId = ? AND treatmentId = ? ORDER BY createdAt DESC`;
+    const result = await this.db!.getAllAsync(query, [patientProfileId, treatmentId]);
+
+    return result.map((row: any) => ({
+      ...row,
+      isOffline: Boolean(row.isOffline)
+    }));
+  }
+
+  async deleteTreatmentMedication(id: string): Promise<void> {
+    await this.ensureInitialized();
+    await this.db!.runAsync('DELETE FROM treatment_medications WHERE id = ?', [id]);
   }
 
   // Métodos para notes
@@ -679,6 +752,7 @@ class LocalDatabase {
     await this.db!.runAsync('DELETE FROM medications WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
     await this.db!.runAsync('DELETE FROM appointments WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
     await this.db!.runAsync('DELETE FROM treatments WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
+    await this.db!.runAsync('DELETE FROM treatment_medications WHERE createdAt < ? AND isOffline = 0', [cutoffString]);
   }
 
   // Método para cerrar la base de datos
@@ -699,6 +773,7 @@ class LocalDatabase {
       await this.db!.execAsync('DELETE FROM medications');
       await this.db!.execAsync('DELETE FROM appointments');
       await this.db!.execAsync('DELETE FROM treatments');
+      await this.db!.execAsync('DELETE FROM treatment_medications');
       await this.db!.execAsync('DELETE FROM notes');
       await this.db!.execAsync('DELETE FROM intake_events');
       await this.db!.execAsync('DELETE FROM profiles');

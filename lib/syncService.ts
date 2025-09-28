@@ -203,27 +203,36 @@ class SyncService {
 
   private async syncTreatment(item: SyncQueue, headers: any): Promise<void> {
     const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.TREATMENTS.BASE);
-    
+
+    // Soportar operaciones anidadas de medicamentos bajo tratamientos
+    const nested = item.data && item.data.__nested === 'medication';
+    if (nested) {
+      const { treatmentId, medicationId, patientProfileId, payload } = item.data;
+      const base = `${endpoint}/${treatmentId}/medications?patientProfileId=${patientProfileId}`;
+      const byId = `${endpoint}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientProfileId}`;
+      switch (item.action) {
+        case 'CREATE':
+          await fetch(base, { method: 'POST', headers, body: JSON.stringify(payload) });
+          return;
+        case 'UPDATE':
+          await fetch(byId, { method: 'PATCH', headers, body: JSON.stringify(payload) });
+          return;
+        case 'DELETE':
+          await fetch(byId, { method: 'DELETE', headers });
+          return;
+      }
+      return;
+    }
+
     switch (item.action) {
       case 'CREATE':
-        await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(item.data)
-        });
+        await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(item.data) });
         break;
       case 'UPDATE':
-        await fetch(`${endpoint}/${item.data.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(item.data)
-        });
+        await fetch(`${endpoint}/${item.data.id}`, { method: 'PUT', headers, body: JSON.stringify(item.data) });
         break;
       case 'DELETE':
-        await fetch(`${endpoint}/${item.data.id}`, {
-          method: 'DELETE',
-          headers
-        });
+        await fetch(`${endpoint}/${item.data.id}`, { method: 'DELETE', headers });
         break;
     }
   }
