@@ -693,8 +693,32 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       let errorBody: any = null;
       try { errorBody = await res.json(); } catch { try { errorBody = await res.text(); } catch {} }
       console.log('[useTreatments] Error creando medicamento anidado:', { status: res.status, statusText: res.statusText, error: errorBody });
+
+      // Guardar localmente como pendiente para que se muestre en la UI y se reintente
+      const tempId = `temp_med_${Date.now()}_${Math.random()}`;
+      await localDB.saveTreatmentMedication({
+        id: tempId,
+        treatmentId,
+        name,
+        dosage: dosage || '',
+        frequency,
+        type,
+        patientProfileId: String(patientId),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isOffline: true,
+        syncStatus: 'pending'
+      } as any);
+      await syncService.addToSyncQueue('CREATE', 'treatments', {
+        __nested: 'medication',
+        treatmentId,
+        patientProfileId: String(patientId),
+        payload: { name, dosage, frequency, type }
+      });
+
       const msg = (errorBody && errorBody.error === 'VALIDATION') ? 'Validación de medicamento: verifica nombre/dosis/frecuencia/tipo' : 'No se pudo agregar el medicamento';
-      throw new Error(msg);
+      // Devolver objeto temporal para que la UI lo refleje sin bloquear
+      return { id: tempId, name, dosage, frequency, type } as any;
     }
     const created = await res.json();
     // Guardar local como sincronizado
