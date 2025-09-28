@@ -227,10 +227,10 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
           ...formattedData, 
           patientProfileId: patientId
         };
-        // Incluir medicamentos si vienen desde el formulario de creación
-        if ((data as any).medications && Array.isArray((data as any).medications)) {
-          bodyData.medications = (data as any).medications;
-        }
+        // NUEVO: no enviamos medications en el POST de tratamiento; se crearán luego
+        const medicationsToCreate: NewTreatmentMedication[] = Array.isArray((data as any)?.medications)
+          ? (data as any).medications
+          : [];
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.TREATMENTS.BASE);
         
         console.log('[useTreatments] Enviando petición a:', endpoint);
@@ -264,6 +264,25 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
           
           // Recargar la lista completa
           await get().getTreatments(patientId);
+
+          // Crear medicamentos anidados si se enviaron
+          try {
+            const createdTreatmentId = (responseData as any)?.id;
+            if (createdTreatmentId && medicationsToCreate.length > 0) {
+              await Promise.all(
+                medicationsToCreate.map((m) =>
+                  get().addMedicationToTreatment(createdTreatmentId, {
+                    name: m.name,
+                    dosage: m.dosage,
+                    frequency: m.frequency,
+                    type: m.type,
+                  })
+                )
+              );
+            }
+          } catch (nestedErr) {
+            console.log('[useTreatments] Advertencia: error creando medicamentos anidados:', nestedErr);
+          }
           
         } else {
           // Si falla la API, obtener detalles del error
