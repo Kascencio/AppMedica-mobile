@@ -223,8 +223,9 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       try {
         console.log('[useTreatments] Intentando sincronizar con servidor...');
         
+        const { medications, ...restFormatted } = (formattedData as any);
         const bodyData: any = { 
-          ...formattedData, 
+          ...restFormatted, 
           patientProfileId: patientId
         };
         // NUEVO: no enviamos medications en el POST de tratamiento; se crearán luego
@@ -270,18 +271,22 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
             const createdTreatmentId = (responseData as any)?.id;
             if (createdTreatmentId && medicationsToCreate.length > 0) {
               await Promise.all(
-                medicationsToCreate.map((m) =>
-                  get().addMedicationToTreatment(createdTreatmentId, {
-                    name: m.name,
-                    dosage: m.dosage,
-                    frequency: m.frequency,
-                    type: m.type,
+                medicationsToCreate
+                  .filter((m) => (m?.name || '').trim().length > 0)
+                  .map((m) => {
+                    const frequency = (m.frequency || 'DAILY').toUpperCase();
+                    const type = (m.type || 'ORAL').toUpperCase();
+                    return get().addMedicationToTreatment(createdTreatmentId, {
+                      name: m.name.trim(),
+                      dosage: (m.dosage || '').toString().trim(),
+                      frequency,
+                      type,
+                    });
                   })
-                )
               );
             }
-          } catch (nestedErr) {
-            console.log('[useTreatments] Advertencia: error creando medicamentos anidados:', nestedErr);
+          } catch (nestedErr: any) {
+            console.log('[useTreatments] Advertencia: error creando medicamentos anidados:', nestedErr?.message || nestedErr);
           }
           
         } else {
@@ -547,7 +552,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       return localMeds as any;
     }
 
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientId}`);
+    const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientIdForServer}`);
     const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
       // Fallback a local si falla
@@ -565,7 +571,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         dosage: m.dosage,
         frequency: m.frequency,
         type: (m as any).type,
-        patientProfileId: String(patientId),
+        patientProfileId: String(patientIdForServer),
         createdAt: (m as any).createdAt || new Date().toISOString(),
         updatedAt: (m as any).updatedAt || new Date().toISOString(),
         isOffline: false,
@@ -610,13 +616,32 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       return { id: tempId, ...medication } as any;
     }
 
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientId}`);
+    const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications?patientProfileId=${patientIdForServer}`);
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-      body: JSON.stringify(medication)
+      body: JSON.stringify({
+        name: (medication.name || '').trim(),
+        dosage: (medication.dosage || '').toString().trim(),
+        frequency: (medication.frequency || 'DAILY').toUpperCase(),
+        type: (medication.type || 'ORAL').toUpperCase(),
+      })
     });
-    if (!res.ok) throw new Error('No se pudo agregar el medicamento');
+    if (!res.ok) {
+      let errorBody: any = null;
+      try {
+        errorBody = await res.json();
+      } catch {
+        try { errorBody = await res.text(); } catch {}
+      }
+      console.log('[useTreatments] Error creando medicamento anidado:', {
+        status: res.status,
+        statusText: res.statusText,
+        error: errorBody,
+      });
+      throw new Error('No se pudo agregar el medicamento');
+    }
     const created = await res.json();
     // Guardar local como sincronizado
     await localDB.saveTreatmentMedication({
@@ -626,7 +651,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       dosage: created.dosage,
       frequency: created.frequency,
       type: created.type,
-      patientProfileId: String(patientId),
+      patientProfileId: String(patientIdForServer),
       createdAt: created.createdAt || new Date().toISOString(),
       updatedAt: created.updatedAt || new Date().toISOString(),
       isOffline: false,
@@ -669,11 +694,17 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       return { id: medicationId, ...(data as any) } as any;
     }
 
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientId}`);
+    const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientIdForServer}`);
     const res = await fetch(endpoint, {
       method: 'PATCH',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-      body: JSON.stringify(data)
+      body: JSON.stringify({
+        name: (data.name || '').trim(),
+        dosage: (data.dosage || '').toString().trim(),
+        frequency: (data.frequency || '').toString().toUpperCase() || undefined,
+        type: (data.type || '').toString().toUpperCase() || undefined,
+      })
     });
     if (!res.ok) throw new Error('No se pudo actualizar el medicamento');
     const updated = await res.json();
@@ -684,7 +715,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       dosage: updated.dosage || data.dosage || '',
       frequency: updated.frequency || data.frequency,
       type: updated.type || data.type,
-      patientProfileId: String(patientId),
+      patientProfileId: String(patientIdForServer),
       createdAt: updated.createdAt || new Date().toISOString(),
       updatedAt: updated.updatedAt || new Date().toISOString(),
       isOffline: false,
@@ -713,7 +744,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       return;
     }
 
-    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientId}`);
+    const patientIdForServer = (profile as any)?.patientProfileIdNumber || patientId;
+    const endpoint = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${treatmentId}/medications/${medicationId}?patientProfileId=${patientIdForServer}`);
     const res = await fetch(endpoint, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
