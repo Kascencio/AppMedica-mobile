@@ -344,6 +344,8 @@ class LocalDatabase {
       // Importar y ejecutar migraciones
       const { addDoctorNameToAppointments } = await import('./migrations/add_doctor_name_to_appointments');
       await addDoctorNameToAppointments(this.db);
+      const { addSpecialtyToAppointments } = await import('./migrations/add_specialty_to_appointments');
+      await addSpecialtyToAppointments(this.db);
       
       // Ejecutar migración para corregir createdAt en perfiles
       const { fixProfilesCreatedAt } = await import('./migrations/fix_profiles_created_at');
