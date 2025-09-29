@@ -760,7 +760,13 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
 
     const token = useAuth.getState().userToken;
     const isOnline = await syncService.isOnline();
-    if (!isOnline || !token) {
+    
+    // Verificar si es un ID temporal (medicamento creado offline)
+    const isTemporaryId = medicationId.startsWith('temp_');
+    
+    if (!isOnline || !token || isTemporaryId) {
+      console.log(`[updateTreatmentMedication] Modo offline o ID temporal detectado. ID: ${medicationId}, Online: ${isOnline}, Token: ${!!token}`);
+      
       // Guardar local en modo pendiente y encolar
       await localDB.saveTreatmentMedication({
         id: medicationId,
@@ -775,6 +781,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         isOffline: true,
         syncStatus: 'pending'
       } as any);
+      
       await syncService.addToSyncQueue('UPDATE', 'treatments', {
         __nested: 'medication',
         treatmentId,
@@ -782,6 +789,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         patientProfileId: String(patientId),
         payload: data
       });
+      
+      console.log(`[updateTreatmentMedication] Medicamento guardado offline: ${medicationId}`);
       return { id: medicationId, ...(data as any) } as any;
     }
 
@@ -810,16 +819,46 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     }
     
     const freqMapU: Record<string, string> = {
-      daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', as_needed: 'AS_NEEDED', interval: 'INTERVAL', custom: 'INTERVAL'
+      // Valores en inglés
+      daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', as_needed: 'AS_NEEDED', interval: 'INTERVAL', custom: 'INTERVAL',
+      // Valores en español de la UI
+      'una vez al día': 'DAILY',
+      'dos veces al día': 'TWICE_DAILY',
+      'tres veces al día': 'THREE_TIMES_DAILY',
+      'cuatro veces al día': 'FOUR_TIMES_DAILY',
+      'cada 4 horas': 'EVERY_4_HOURS',
+      'cada 6 horas': 'EVERY_6_HOURS',
+      'cada 8 horas': 'EVERY_8_HOURS',
+      'cada 12 horas': 'EVERY_12_HOURS',
+      'cada 24 horas': 'EVERY_24_HOURS',
+      'antes de las comidas': 'BEFORE_MEALS',
+      'después de las comidas': 'AFTER_MEALS',
+      'con las comidas': 'WITH_MEALS',
+      'en ayunas': 'ON_EMPTY_STOMACH',
+      'según necesidad': 'AS_NEEDED'
     };
-    const frequencyUUpper = rawFreqU.toUpperCase();
-    const frequencyU = freqMapU[rawFreqU.toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL'].includes(frequencyUUpper) ? frequencyUUpper : 'DAILY');
+    const frequencyU = freqMapU[rawFreqU.toLowerCase()] || rawFreqU || 'DAILY';
     
     const typeMapU: Record<string, string> = {
-      oral: 'ORAL', injectable: 'INJECTION', inyectable: 'INJECTION', topical: 'TOPICAL', topico: 'TOPICAL', inhalation: 'INHALATION', inhalacion: 'INHALATION', sublingual: 'SUBLINGUAL'
+      // Valores en inglés
+      oral: 'ORAL', injectable: 'INJECTION', inyectable: 'INJECTION', topical: 'TOPICAL', topico: 'TOPICAL', inhalation: 'INHALATION', inhalacion: 'INHALATION', sublingual: 'SUBLINGUAL',
+      // Valores en español de la UI
+      'pastilla': 'PILL',
+      'tableta': 'TABLET',
+      'cápsula': 'CAPSULE',
+      'comprimido': 'TABLET',
+      'jarabe': 'SYRUP',
+      'suspensión': 'SUSPENSION',
+      'inyección': 'INJECTION',
+      'parche': 'PATCH',
+      'crema': 'CREAM',
+      'pomada': 'OINTMENT',
+      'gel': 'GEL',
+      'gotas': 'DROPS',
+      'spray': 'SPRAY',
+      'inhalador': 'INHALER'
     };
-    const typeUUpper = rawTypeU.toUpperCase();
-    const typeU = typeMapU[rawTypeU.toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUUpper) ? typeUUpper : 'ORAL');
+    const typeU = typeMapU[rawTypeU.toLowerCase()] || rawTypeU || 'ORAL';
 
     const res = await fetch(endpoint, {
       method: 'PATCH',

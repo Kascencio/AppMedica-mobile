@@ -24,6 +24,7 @@ interface OfflineState extends OfflineData {
   syncPendingData: () => Promise<void>;
   clearOfflineData: () => Promise<void>;
   initializeOffline: () => Promise<void>;
+  refreshPendingSync: () => Promise<void>;
   checkConnectivity: () => Promise<boolean>;
 }
 
@@ -49,6 +50,18 @@ export const useOffline = create<OfflineState>((set, get) => ({
     }
   },
 
+  // Refrescar cola de sincronización desde la base de datos
+  refreshPendingSync: async () => {
+    try {
+      const { localDB } = await import('../data/db');
+      const syncQueue = await localDB.getSyncQueue();
+      console.log(`[useOffline] Cola de sincronización refrescada: ${syncQueue.length} elementos`);
+      set({ pendingSync: syncQueue });
+    } catch (error) {
+      console.error('[useOffline] Error refrescando cola de sincronización:', error);
+    }
+  },
+
   // Inicializar sistema offline
   initializeOffline: async () => {
     try {
@@ -65,14 +78,23 @@ export const useOffline = create<OfflineState>((set, get) => ({
         console.error('[useOffline] Error cargando datos offline:', storageError);
       }
       
-      // Cargar cola de sincronización de forma segura
+      // Cargar cola de sincronización desde la base de datos local
       try {
-        const pendingSync = await AsyncStorage.getItem('pendingSync');
-        if (pendingSync) {
-          set({ pendingSync: JSON.parse(pendingSync) });
-        }
+        const { localDB } = await import('../data/db');
+        const syncQueue = await localDB.getSyncQueue();
+        console.log(`[useOffline] Cola de sincronización cargada: ${syncQueue.length} elementos`);
+        set({ pendingSync: syncQueue });
       } catch (syncError) {
         console.error('[useOffline] Error cargando cola de sincronización:', syncError);
+        // Fallback a AsyncStorage si falla la base de datos
+        try {
+          const pendingSync = await AsyncStorage.getItem('pendingSync');
+          if (pendingSync) {
+            set({ pendingSync: JSON.parse(pendingSync) });
+          }
+        } catch (fallbackError) {
+          console.error('[useOffline] Error en fallback de cola de sincronización:', fallbackError);
+        }
       }
       
       // Verificar conectividad inicial de forma segura
@@ -192,13 +214,21 @@ export const useOffline = create<OfflineState>((set, get) => ({
       // Actualizar estado
       set({ pendingSync: newPendingSync });
       
-      // Persistir en AsyncStorage de forma segura
+      // Persistir usando syncService (base de datos local)
       try {
-        await AsyncStorage.setItem('pendingSync', JSON.stringify(newPendingSync));
-        console.log(`[useOffline] Acción agregada a cola de sincronización: ${action} ${entity}`);
-      } catch (storageError) {
-        console.error('[useOffline] Error guardando cola de sincronización:', storageError);
-        // No lanzar el error para evitar cierres
+        const { syncService } = await import('../lib/syncService');
+        await syncService.addToSyncQueue(action, entity as any, data);
+        console.log(`[useOffline] Item agregado a cola de sincronización: ${pendingItem.id}`);
+      } catch (syncServiceError) {
+        console.error('[useOffline] Error guardando en syncService:', syncServiceError);
+        // Fallback a AsyncStorage si falla syncService
+        try {
+          await AsyncStorage.setItem('pendingSync', JSON.stringify(newPendingSync));
+          console.log(`[useOffline] Item guardado en AsyncStorage como fallback: ${pendingItem.id}`);
+        } catch (storageError) {
+          console.error('[useOffline] Error en fallback de guardado:', storageError);
+          // No lanzar el error para evitar cierres
+        }
       }
       
       // Si estamos online, intentar sincronizar inmediatamente de forma segura
