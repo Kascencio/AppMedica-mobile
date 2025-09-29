@@ -361,6 +361,8 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       const role = (profile?.role || 'PATIENT').toUpperCase();
       const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
       const patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id);
+      // Usar el ID numérico si está disponible (el servidor puede requerirlo)
+      const numericPatientId = (profile as any)?.patientProfileIdNumber || patientId;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -373,17 +375,17 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       
       // Actualizar localmente primero
       const currentAppointments = get().appointments;
-      const updatedAppointment = currentAppointments.find(apt => apt.id === id);
+      const existingAppointment = currentAppointments.find(apt => apt.id === id);
       
-      if (!updatedAppointment) {
+      if (!existingAppointment) {
         throw new Error('Cita no encontrada');
       }
       
       const newAppointment = {
-        ...updatedAppointment,
+        ...existingAppointment,
         ...data,
         updatedAt: new Date().toISOString()
-      };
+      } as Appointment;
       
       // Guardar en base de datos local
       const localAppointment: LocalAppointment = {
@@ -404,26 +406,64 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       // Si estamos online, intentar sincronizar
       if (token) {
         try {
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE}/${id}`), {
+          // Enviar objeto completo esperado por el backend, incluyendo patientProfileId
+          const payload = {
+            title: newAppointment.title,
+            dateTime: newAppointment.dateTime,
+            location: newAppointment.location,
+            specialty: newAppointment.specialty,
+            description: newAppointment.description,
+            patientProfileId: numericPatientId,
+          };
+          const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BY_ID, { id });
+          const res = await fetch(endpoint, {
             method: 'PUT',
             headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ ...data, patientProfileId: patientId }),
+            body: JSON.stringify(payload),
           });
           
           if (res.ok) {
-            // Marcar como sincronizado
-            const syncedAppointment: LocalAppointment = {
-              ...localAppointment,
+            // Actualizar con respuesta del servidor si devuelve datos
+            let serverAppointment: any = null;
+            try {
+              serverAppointment = await res.json();
+            } catch {}
+            const mergedForLocal: LocalAppointment = {
+              ...(serverAppointment || {}),
+              // Preservar/asegurar campos
+              id,
+              title: (serverAppointment?.title ?? newAppointment.title) || 'Sin título',
+              dateTime: serverAppointment?.dateTime || newAppointment.dateTime,
+              location: serverAppointment?.location ?? newAppointment.location ?? null,
+              specialty: serverAppointment?.specialty ?? newAppointment.specialty ?? null,
+              description: serverAppointment?.description ?? newAppointment.description ?? null,
+              doctorName: serverAppointment?.doctorName ?? newAppointment.title,
+              patientProfileId: String(serverAppointment?.patientProfileId || numericPatientId),
+              createdAt: serverAppointment?.createdAt || newAppointment.createdAt || new Date().toISOString(),
+              updatedAt: serverAppointment?.updatedAt || new Date().toISOString(),
               isOffline: false,
-              syncStatus: 'synced'
-            };
-            await localDB.saveAppointment(syncedAppointment);
+              syncStatus: 'synced',
+            } as LocalAppointment;
+            await localDB.saveAppointment(mergedForLocal);
+            // Actualizar estado en memoria con lo más fresco
+            const refreshedAppointments = get().appointments.map(apt =>
+              apt.id === id ? { ...apt, ...mergedForLocal } as any : apt
+            );
+            set({ appointments: refreshedAppointments });
           } else {
             // Agregar a cola de sincronización
-            await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...data });
+            await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...payload });
           }
         } catch (syncError) {
-          await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...data });
+          const fallbackPayload = {
+            title: newAppointment.title,
+            dateTime: newAppointment.dateTime,
+            location: newAppointment.location,
+            specialty: newAppointment.specialty,
+            description: newAppointment.description,
+            patientProfileId: numericPatientId,
+          };
+          await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...fallbackPayload });
         }
       }
     } catch (err: any) {

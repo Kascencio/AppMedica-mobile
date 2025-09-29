@@ -41,6 +41,19 @@ const f = (v?: string | null) => {
 // Opciones estándar para tipo de sangre
 const BLOOD_TYPES = ['A+','A-','B+','B-','AB+','AB-','O+','O-'] as const;
 
+// Utilidades de fecha (evitar desfase por zona horaria con 'YYYY-MM-DD')
+const parseLocalDateFromYMD = (ymd: string): Date | null => {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [y, m, d] = ymd.split('-').map((v) => parseInt(v, 10));
+  // new Date(y, m-1, d) crea fecha en hora local sin desfase
+  return new Date(y, m - 1, d);
+};
+
+const formatLocalDateFromYMD = (ymd: string): string => {
+  const date = parseLocalDateFromYMD(ymd);
+  return date ? date.toLocaleDateString('es-ES') : '';
+};
+
 export default function ProfileScreen() {
   console.log('[ProfileScreen] Componente montándose/re-renderizando...');
   
@@ -771,12 +784,12 @@ export default function ProfileScreen() {
               onPress={() => setShowDatePicker(true)}
             >
               <Text style={{ color: form.birthDate ? '#1e293b' : '#9ca3af' }}>
-                {form.birthDate ? new Date(form.birthDate).toLocaleDateString('es-ES') : 'Seleccionar fecha'}
+                {form.birthDate ? formatLocalDateFromYMD(form.birthDate) : 'Seleccionar fecha'}
               </Text>
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
-                value={form.birthDate ? new Date(form.birthDate) : new Date()}
+                value={form.birthDate ? (parseLocalDateFromYMD(form.birthDate) || new Date()) : new Date()}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 maximumDate={new Date()} // No permitir fechas futuras
@@ -836,7 +849,10 @@ export default function ProfileScreen() {
           <View style={styles.pickerModern}>
             <Picker
               selectedValue={form.bloodType || ''}
-              onValueChange={(value) => handleChange('bloodType', value)}
+              onValueChange={(value) => handleChange('bloodType', value as string)}
+              mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+              dropdownIconColor={Platform.OS === 'android' ? '#334155' : undefined}
+              style={{ color: '#1e293b' }}
             >
               <Picker.Item label="Seleccionar tipo" value="" color="#9ca3af" />
               {BLOOD_TYPES.map(bt => (

@@ -8,8 +8,6 @@ import { useOffline } from '../../store/useOffline';
 import { LinearGradient } from 'expo-linear-gradient';
 import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher';
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
-import AlarmScheduler from '../../components/AlarmScheduler';
-import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -35,12 +33,6 @@ export default function CaregiverAppointmentsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
-  
-  // Estados para configuración de alarmas
-  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
-  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
-  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
-  const [everyXHours, setEveryXHours] = useState('8');
 
   const { control, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<AppointmentForm>({
     resolver: zodResolver(appointmentSchema),
@@ -55,10 +47,6 @@ export default function CaregiverAppointmentsScreen() {
     setEditing(null);
     reset();
     setSelectedDate(undefined);
-    setSelectedTimes([]);
-    setFrequencyType('daily');
-    setDaysOfWeek([]);
-    setEveryXHours('8');
     setModalVisible(true);
   };
   
@@ -72,22 +60,6 @@ export default function CaregiverAppointmentsScreen() {
     setSelectedDate(d);
     setValue('time', apt.dateTime ? new Date(apt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
     setValue('notes', apt.description || '');
-    
-    // Cargar alarmas existentes para la cita
-    try {
-      const existingAlarms = await getExistingAlarmsForElement('appointment', apt.id);
-      setSelectedTimes(existingAlarms.selectedTimes);
-      setFrequencyType(existingAlarms.frequencyType);
-      setDaysOfWeek(existingAlarms.daysOfWeek);
-      setEveryXHours(existingAlarms.everyXHours);
-    } catch (error) {
-      console.error('[CUIDADOR-CITAS] Error cargando alarmas existentes:', error);
-      // Resetear a valores por defecto si hay error
-      setSelectedTimes([]);
-      setFrequencyType('daily');
-      setDaysOfWeek([]);
-      setEveryXHours('8');
-    }
     
     setModalVisible(true);
   };
@@ -198,93 +170,65 @@ export default function CaregiverAppointmentsScreen() {
       <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => { setModalVisible(false); setEditing(null); }}>
         <View style={styles.modalOverlayModern}>
           <View style={styles.modalContentModern}>
-            <Text style={styles.headerTitle}>{editing ? 'Editar cita' : 'Agregar cita'}</Text>
-            <Text style={styles.inputLabel}>Doctor *</Text>
-            <Controller control={control} name="doctorName" render={({ field: { onChange, value } }) => (
-              <TextInput style={styles.inputModern} value={value} onChangeText={onChange} placeholder="Nombre del doctor" />
-            )} />
-            {errors.doctorName && <Text style={{ color: '#ef4444' }}>{errors.doctorName.message}</Text>}
-            <Text style={styles.inputLabel}>Especialidad</Text>
-            <Controller control={control} name="specialty" render={({ field: { onChange, value } }) => (
-              <TextInput style={styles.inputModern} value={value || ''} onChangeText={onChange} placeholder="Especialidad" />
-            )} />
-            <Text style={styles.inputLabel}>Ubicación *</Text>
-            <Controller control={control} name="location" render={({ field: { onChange, value } }) => (
-              <TextInput style={styles.inputModern} value={value} onChangeText={onChange} placeholder="Ubicación" />
-            )} />
-            {errors.location && <Text style={{ color: '#ef4444' }}>{errors.location.message}</Text>}
-            <Text style={styles.inputLabel}>Fecha *</Text>
-            <Controller control={control} name="date" render={({ field: { value } }) => (
-              <TouchableOpacity style={styles.inputModern} onPress={() => setShowDatePicker(true)}>
-                <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
-              </TouchableOpacity>
-            )} />
-            {showDatePicker && (
-              <DateTimePicker
-                value={selectedDate || new Date()}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(e, d) => { setShowDatePicker(false); if (d) { setSelectedDate(d); setValue('date', d); } }}
-              />
-            )}
-            {errors.date && <Text style={{ color: '#ef4444' }}>{errors.date.message as string}</Text>}
-            <Text style={styles.inputLabel}>Hora *</Text>
-            <Controller control={control} name="time" render={({ field: { value } }) => (
-              <TouchableOpacity style={styles.inputModern} onPress={() => setShowTimePicker(true)}>
-                <Text>{value ? value : 'Seleccionar hora'}</Text>
-              </TouchableOpacity>
-            )} />
-            {showTimePicker && (
-              <DateTimePicker
-                value={selectedDate || new Date()}
-                mode="time"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(e, d) => { setShowTimePicker(false); if (d) { const hh = d.getHours().toString().padStart(2, '0'); const mm = d.getMinutes().toString().padStart(2, '0'); setValue('time', `${hh}:${mm}`); } }}
-              />
-            )}
-            <Text style={styles.inputLabel}>Notas</Text>
-            <Controller control={control} name="notes" render={({ field: { onChange, value } }) => (
-              <TextInput style={[styles.inputModern, { height: 64 }]} value={value || ''} onChangeText={onChange} placeholder="Notas" multiline />
-            )} />
-            
-            {/* Configuración de alarmas */}
-            <AlarmScheduler
-              selectedTimes={selectedTimes}
-              setSelectedTimes={setSelectedTimes}
-              frequencyType={frequencyType}
-              setFrequencyType={setFrequencyType}
-              daysOfWeek={daysOfWeek}
-              setDaysOfWeek={setDaysOfWeek}
-              everyXHours={everyXHours}
-              setEveryXHours={setEveryXHours}
-              title="Recordatorios de Cita"
-              subtitle="Configura cuándo quieres recibir recordatorios para esta cita médica"
-            />
-            
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-              <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={handleSubmit(onSubmit)} disabled={isSubmitting}>
-                <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
-              </TouchableOpacity>
-              {editing ? (
-                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#f59e0b', marginLeft: 8 }]} onPress={async () => {
-                  try {
-                    await useAppointments.getState().cancelAppointmentAlarms(editing.id);
-                    setSelectedTimes([]);
-                    setFrequencyType('daily');
-                    setDaysOfWeek([]);
-                    setEveryXHours('8');
-                    Alert.alert('Listo', 'Se eliminaron las alarmas de esta cita');
-                  } catch (e: any) {
-                    Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
-                  }
-                }}>
-                  <Text style={styles.addBtnTextModern}>Eliminar alarmas</Text>
+            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={true}>
+              <Text style={styles.headerTitle}>{editing ? 'Editar cita' : 'Agregar cita'}</Text>
+              <Text style={styles.inputLabel}>Doctor *</Text>
+              <Controller control={control} name="doctorName" render={({ field: { onChange, value } }) => (
+                <TextInput style={styles.inputModern} value={value} onChangeText={onChange} placeholder="Nombre del doctor" />
+              )} />
+              {errors.doctorName && <Text style={{ color: '#ef4444' }}>{errors.doctorName.message}</Text>}
+              <Text style={styles.inputLabel}>Especialidad</Text>
+              <Controller control={control} name="specialty" render={({ field: { onChange, value } }) => (
+                <TextInput style={styles.inputModern} value={value || ''} onChangeText={onChange} placeholder="Especialidad" />
+              )} />
+              <Text style={styles.inputLabel}>Ubicación *</Text>
+              <Controller control={control} name="location" render={({ field: { onChange, value } }) => (
+                <TextInput style={styles.inputModern} value={value} onChangeText={onChange} placeholder="Ubicación" />
+              )} />
+              {errors.location && <Text style={{ color: '#ef4444' }}>{errors.location.message}</Text>}
+              <Text style={styles.inputLabel}>Fecha *</Text>
+              <Controller control={control} name="date" render={({ field: { value } }) => (
+                <TouchableOpacity style={styles.inputModern} onPress={() => setShowDatePicker(true)}>
+                  <Text>{value ? value.toLocaleDateString() : 'Seleccionar fecha'}</Text>
                 </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
-                <Text style={styles.addBtnTextModern}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
+              )} />
+              {showDatePicker && (
+                <DateTimePicker
+                  value={selectedDate || new Date()}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(e, d) => { setShowDatePicker(false); if (d) { setSelectedDate(d); setValue('date', d); } }}
+                />
+              )}
+              {errors.date && <Text style={{ color: '#ef4444' }}>{errors.date.message as string}</Text>}
+              <Text style={styles.inputLabel}>Hora *</Text>
+              <Controller control={control} name="time" render={({ field: { value } }) => (
+                <TouchableOpacity style={styles.inputModern} onPress={() => setShowTimePicker(true)}>
+                  <Text>{value ? value : 'Seleccionar hora'}</Text>
+                </TouchableOpacity>
+              )} />
+              {showTimePicker && (
+                <DateTimePicker
+                  value={selectedDate || new Date()}
+                  mode="time"
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(e, d) => { setShowTimePicker(false); if (d) { const hh = d.getHours().toString().padStart(2, '0'); const mm = d.getMinutes().toString().padStart(2, '0'); setValue('time', `${hh}:${mm}`); } }}
+                />
+              )}
+              <Text style={styles.inputLabel}>Notas</Text>
+              <Controller control={control} name="notes" render={({ field: { onChange, value } }) => (
+                <TextInput style={[styles.inputModern, { height: 64 }]} value={value || ''} onChangeText={onChange} placeholder="Notas" multiline />
+              )} />
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 20 }}>
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={handleSubmit(onSubmit)} disabled={isSubmitting}>
+                  <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
+                  <Text style={styles.addBtnTextModern}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -418,6 +362,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 24,
     width: '95%',
+    maxHeight: '90%',
+  },
+  modalScrollView: {
+    maxHeight: '100%',
   },
   inputModern: {
     borderWidth: 1,

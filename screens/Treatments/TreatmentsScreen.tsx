@@ -17,6 +17,25 @@ const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
 const isLandscape = width > height;
 
+// Función para traducir frecuencias al español
+const translateFrequency = (frequency: string): string => {
+  const frequencyMap: Record<string, string> = {
+    'DAILY': 'Diario',
+    'daily': 'Diario',
+    'WEEKLY': 'Semanal',
+    'weekly': 'Semanal',
+    'MONTHLY': 'Mensual',
+    'monthly': 'Mensual',
+    'AS_NEEDED': 'Según necesidad',
+    'as_needed': 'Según necesidad',
+    'as-needed': 'Según necesidad',
+    'CUSTOM': 'Personalizado',
+    'custom': 'Personalizado'
+  };
+  
+  return frequencyMap[frequency] || frequency || 'Personalizado';
+};
+
 export default function TreatmentsScreen() {
   const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment, scheduleTreatmentAlarms, cancelTreatmentAlarms, rescheduleTreatmentAlarms, getTreatmentMedications, addMedicationToTreatment, updateTreatmentMedication, deleteTreatmentMedication } = useTreatments();
   const { profile } = useCurrentUser();
@@ -68,7 +87,7 @@ export default function TreatmentsScreen() {
     setMedications([]);
     setOriginalMedications([]);
     setSelectedTimes([]);
-    setFrequencyType('daily');
+    setFrequencyType('dia');
     setDaysOfWeek([]);
     setEveryXHours('8');
     setModalVisible(true);
@@ -470,7 +489,7 @@ export default function TreatmentsScreen() {
                   { fontWeight: '600', color: COLORS.text.primary },
                   isTablet && styles.valueTextTablet
                 ]}>
-                                    {'Personalizado'}
+                  {translateFrequency((treatment as any).frequency)}
                 </Text>
               </View>
               

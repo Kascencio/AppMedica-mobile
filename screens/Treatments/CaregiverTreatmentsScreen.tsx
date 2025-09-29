@@ -9,8 +9,25 @@ import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher'
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import DateSelector from '../../components/DateSelector';
 import OptionSelector from '../../components/OptionSelector';
-import AlarmScheduler from '../../components/AlarmScheduler';
-import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
+
+// Función para traducir frecuencias al español
+const translateFrequency = (frequency: string): string => {
+  const frequencyMap: Record<string, string> = {
+    'DAILY': 'Diario',
+    'daily': 'Diario',
+    'WEEKLY': 'Semanal',
+    'weekly': 'Semanal',
+    'MONTHLY': 'Mensual',
+    'monthly': 'Mensual',
+    'AS_NEEDED': 'Según necesidad',
+    'as_needed': 'Según necesidad',
+    'as-needed': 'Según necesidad',
+    'CUSTOM': 'Personalizado',
+    'custom': 'Personalizado'
+  };
+  
+  return frequencyMap[frequency] || frequency || 'Personalizado';
+};
 
 export default function CaregiverTreatmentsScreen() {
   const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment } = useTreatments();
@@ -25,12 +42,6 @@ export default function CaregiverTreatmentsScreen() {
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [frequency, setFrequency] = useState('daily');
   const [notes, setNotes] = useState('');
-  
-  // Estados para configuración de alarmas
-  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
-  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
-  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
-  const [everyXHours, setEveryXHours] = useState('8');
 
   useEffect(() => {
     if (selectedPatientId) getTreatments(selectedPatientId).catch(() => {});
@@ -44,10 +55,6 @@ export default function CaregiverTreatmentsScreen() {
     setEndDate(undefined);
     setFrequency('');
     setNotes('');
-    setSelectedTimes([]);
-    setFrequencyType('daily');
-    setDaysOfWeek([]);
-    setEveryXHours('8');
     setModalVisible(true);
   };
   
@@ -59,22 +66,6 @@ export default function CaregiverTreatmentsScreen() {
     setEndDate(t.endDate ? new Date(t.endDate) : undefined);
     setFrequency(t.frequency || '');
     setNotes(t.notes || '');
-    
-    // Cargar alarmas existentes para el tratamiento
-    try {
-      const existingAlarms = await getExistingAlarmsForElement('treatment', t.id);
-      setSelectedTimes(existingAlarms.selectedTimes);
-      setFrequencyType(existingAlarms.frequencyType);
-      setDaysOfWeek(existingAlarms.daysOfWeek);
-      setEveryXHours(existingAlarms.everyXHours);
-    } catch (error) {
-      console.error('[CUIDADOR-TRATAMIENTOS] Error cargando alarmas existentes:', error);
-      // Resetear a valores por defecto si hay error
-      setSelectedTimes([]);
-      setFrequencyType('daily');
-      setDaysOfWeek([]);
-      setEveryXHours('8');
-    }
     
     setModalVisible(true);
   };
@@ -208,17 +199,7 @@ export default function CaregiverTreatmentsScreen() {
               <View style={styles.infoRow}> 
                 <Text style={styles.infoLabel}>Frecuencia:</Text>
                 <Text style={[styles.infoValue, styles.frequencyValue]}>
-                  {(() => {
-                    const freq = (t as any).frequency;
-                    if (!freq) return '—';
-                    const freqMap: { [key: string]: string } = {
-                      'daily': 'Diario',
-                      'weekly': 'Semanal', 
-                      'monthly': 'Mensual',
-                      'as_needed': 'Según necesidad'
-                    };
-                    return freqMap[freq.toLowerCase()] || freq;
-                  })()}
+                  {translateFrequency((t as any).frequency)}
                 </Text>
               </View>
               {t.progress ? (
@@ -243,69 +224,41 @@ export default function CaregiverTreatmentsScreen() {
       <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => { setModalVisible(false); setEditing(null); }}>
         <View style={styles.modalOverlayModern}>
           <View style={styles.modalContentModern}>
-            <Text style={styles.headerTitle}>{editing ? 'Editar tratamiento' : 'Agregar tratamiento'}</Text>
-            <Text style={styles.inputLabel}>Nombre *</Text>
-            <TextInput style={styles.inputModern} value={name} onChangeText={setName} placeholder="Nombre del tratamiento" />
-            <Text style={styles.inputLabel}>Descripción</Text>
-            <TextInput style={[styles.inputModern, { height: 64 }]} value={description} onChangeText={setDescription} placeholder="Descripción" multiline />
-            <Text style={styles.inputLabel}>Fecha de inicio</Text>
-            <DateSelector value={startDate} onDateChange={setStartDate} label="" placeholder="Seleccionar fecha de inicio" />
-            <Text style={styles.inputLabel}>Fecha de fin</Text>
-            <DateSelector value={endDate} onDateChange={setEndDate} label="" placeholder="Seleccionar fecha de fin (opcional)" minDate={startDate} />
-            <OptionSelector
-              value={frequency}
-              onValueChange={setFrequency}
-              label="Frecuencia"
-              options={[
-                { value: 'daily', label: 'Diario', icon: 'daily' },
-                { value: 'weekly', label: 'Semanal', icon: 'weekly' },
-                { value: 'monthly', label: 'Mensual', icon: 'monthly' },
-                { value: 'as_needed', label: 'Según necesidad', icon: 'custom' }
-              ]}
-              placeholder="Selecciona la frecuencia"
-              required={true}
-            />
-            <Text style={styles.inputLabel}>Notas</Text>
-            <TextInput style={[styles.inputModern, { height: 64 }]} value={notes} onChangeText={setNotes} placeholder="Notas adicionales" multiline />
-            
-            {/* Configuración de alarmas */}
-            <AlarmScheduler
-              selectedTimes={selectedTimes}
-              setSelectedTimes={setSelectedTimes}
-              frequencyType={frequencyType}
-              setFrequencyType={setFrequencyType}
-              daysOfWeek={daysOfWeek}
-              setDaysOfWeek={setDaysOfWeek}
-              everyXHours={everyXHours}
-              setEveryXHours={setEveryXHours}
-              title="Recordatorios de Tratamiento"
-              subtitle="Configura cuándo quieres recibir recordatorios para este tratamiento"
-            />
-            
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-              <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={onSave}>
-                <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
-              </TouchableOpacity>
-              {editing ? (
-                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#f59e0b', marginLeft: 8 }]} onPress={async () => {
-                  try {
-                    await useTreatments.getState().cancelTreatmentAlarms(editing.id);
-                    setSelectedTimes([]);
-                    setFrequencyType('daily');
-                    setDaysOfWeek([]);
-                    setEveryXHours('8');
-                    Alert.alert('Listo', 'Se eliminaron las alarmas de este tratamiento');
-                  } catch (e: any) {
-                    Alert.alert('Error', e?.message || 'No se pudieron eliminar las alarmas');
-                  }
-                }}>
-                  <Text style={styles.addBtnTextModern}>Eliminar alarmas</Text>
+            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={true}>
+              <Text style={styles.headerTitle}>{editing ? 'Editar tratamiento' : 'Agregar tratamiento'}</Text>
+              <Text style={styles.inputLabel}>Nombre *</Text>
+              <TextInput style={styles.inputModern} value={name} onChangeText={setName} placeholder="Nombre del tratamiento" />
+              <Text style={styles.inputLabel}>Descripción</Text>
+              <TextInput style={[styles.inputModern, { height: 64 }]} value={description} onChangeText={setDescription} placeholder="Descripción" multiline />
+              <Text style={styles.inputLabel}>Fecha de inicio</Text>
+              <DateSelector value={startDate} onDateChange={setStartDate} label="" placeholder="Seleccionar fecha de inicio" />
+              <Text style={styles.inputLabel}>Fecha de fin</Text>
+              <DateSelector value={endDate} onDateChange={setEndDate} label="" placeholder="Seleccionar fecha de fin (opcional)" minDate={startDate} />
+              <OptionSelector
+                value={frequency}
+                onValueChange={setFrequency}
+                label="Frecuencia"
+                options={[
+                  { value: 'daily', label: 'Diario', icon: 'daily' },
+                  { value: 'weekly', label: 'Semanal', icon: 'weekly' },
+                  { value: 'monthly', label: 'Mensual', icon: 'monthly' },
+                  { value: 'as_needed', label: 'Según necesidad', icon: 'custom' }
+                ]}
+                placeholder="Selecciona la frecuencia"
+                required={true}
+              />
+              <Text style={styles.inputLabel}>Notas</Text>
+              <TextInput style={[styles.inputModern, { height: 64 }]} value={notes} onChangeText={setNotes} placeholder="Notas adicionales" multiline />
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 20 }}>
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={onSave}>
+                  <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
                 </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
-                <Text style={styles.addBtnTextModern}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
+                  <Text style={styles.addBtnTextModern}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -455,6 +408,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 24,
     width: '95%',
+    maxHeight: '90%',
+  },
+  modalScrollView: {
+    maxHeight: '100%',
   },
   inputModern: {
     borderWidth: 1,
