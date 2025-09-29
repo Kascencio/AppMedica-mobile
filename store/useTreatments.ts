@@ -585,9 +585,9 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       return localMeds as any;
     }
     const data = await res.json();
-    const meds: TreatmentMedication[] = Array.isArray(data) ? data : (data?.items || data?.medications || []);
+    const medsFromServer: TreatmentMedication[] = Array.isArray(data) ? data : (data?.items || data?.medications || []);
     // Persistir localmente como sincronizadas
-    for (const m of meds) {
+    for (const m of medsFromServer) {
       await localDB.saveTreatmentMedication({
         id: m.id,
         treatmentId: String(treatmentId),
@@ -602,7 +602,17 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         syncStatus: 'synced'
       } as any);
     }
-    return meds;
+    // Incluir medicamentos locales pendientes (no sincronizados) para que aparezcan en el editor
+    const localPending = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
+    // Unir por id, priorizando los del servidor cuando hay duplicados
+    const byId: Record<string, any> = {};
+    for (const m of localPending as any[]) {
+      byId[m.id] = m;
+    }
+    for (const m of medsFromServer as any[]) {
+      byId[m.id] = m;
+    }
+    return Object.values(byId) as any[];
   },
 
   addMedicationToTreatment: async (treatmentId, medication, patientIdOverride) => {
