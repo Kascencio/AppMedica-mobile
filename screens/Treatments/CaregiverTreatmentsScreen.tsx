@@ -181,19 +181,53 @@ export default function CaregiverTreatmentsScreen() {
         const deletions = [...byIdOriginal.keys()].filter(id => !currentById.has(id));
 
         try {
+          // Validar medicamentos antes de sincronizar
+          const validAdds = adds.filter(m => {
+            const isValid = m.name?.trim() && m.dosage?.trim() && m.frequency?.trim() && m.type?.trim();
+            if (!isValid) {
+              console.warn('[CUIDADOR-TRATAMIENTOS] Medicamento omitido por campos incompletos:', m);
+            }
+            return isValid;
+          });
+          
+          const validUpdates = updates.filter(m => {
+            const isValid = m.name?.trim() && m.dosage?.trim() && m.frequency?.trim() && m.type?.trim();
+            if (!isValid) {
+              console.warn('[CUIDADOR-TRATAMIENTOS] Actualización de medicamento omitida por campos incompletos:', m);
+            }
+            return isValid;
+          });
+
           await Promise.all([
-            ...adds.map(m => addMedicationToTreatment(editingTreatment.id, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
-            ...updates.map(m => updateTreatmentMedication(editingTreatment.id, m.id!, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
+            ...validAdds.map(m => addMedicationToTreatment(editingTreatment.id, { 
+              name: m.name.trim(), 
+              dosage: m.dosage.trim(), 
+              frequency: m.frequency.trim(), 
+              type: m.type.trim() 
+            })),
+            ...validUpdates.map(m => updateTreatmentMedication(editingTreatment.id, m.id!, { 
+              name: m.name.trim(), 
+              dosage: m.dosage.trim(), 
+              frequency: m.frequency.trim(), 
+              type: m.type.trim() 
+            })),
             ...deletions.map(id => deleteTreatmentMedication(editingTreatment.id, id))
           ]);
         } catch (syncErr: any) {
           console.error('[CUIDADOR-TRATAMIENTOS] Error sincronizando medicamentos:', syncErr);
-          // Mostrar alerta informativa pero no bloquear el guardado del tratamiento
-          Alert.alert(
-            'Advertencia', 
-            'El tratamiento se guardó correctamente, pero algunos medicamentos no se pudieron sincronizar. Se reintentará automáticamente cuando haya conexión.',
-            [{ text: 'Entendido' }]
-          );
+          
+          // Determinar el tipo de error y mostrar mensaje apropiado
+          let errorMessage = 'El tratamiento se guardó correctamente, pero algunos medicamentos no se pudieron sincronizar. Se reintentará automáticamente cuando haya conexión.';
+          
+          if (syncErr.message?.includes('permisos')) {
+            errorMessage = 'El tratamiento se guardó correctamente, pero no tienes permisos para modificar algunos medicamentos. Contacta al administrador.';
+          } else if (syncErr.message?.includes('no fue encontrado')) {
+            errorMessage = 'El tratamiento se guardó correctamente, pero algunos medicamentos ya no existen. Se actualizará la lista automáticamente.';
+          } else if (syncErr.message?.includes('no son válidos')) {
+            errorMessage = 'El tratamiento se guardó correctamente, pero algunos medicamentos tienen datos incompletos. Revisa los campos requeridos.';
+          }
+          
+          Alert.alert('Advertencia', errorMessage, [{ text: 'Entendido' }]);
         }
       } else {
         // Crear nuevo tratamiento

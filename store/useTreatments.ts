@@ -794,23 +794,39 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     const dosageU = (data.dosage || '').toString().trim();
     const rawFreqU = (data.frequency || '').toString().trim();
     const rawTypeU = (data.type || '').toString().trim();
+    
+    // Validar que los campos requeridos no estén vacíos
+    if (!nameU) {
+      throw new Error('El nombre del medicamento es requerido');
+    }
+    if (!dosageU) {
+      throw new Error('La dosis del medicamento es requerida');
+    }
+    if (!rawFreqU) {
+      throw new Error('La frecuencia del medicamento es requerida');
+    }
+    if (!rawTypeU) {
+      throw new Error('El tipo del medicamento es requerido');
+    }
+    
     const freqMapU: Record<string, string> = {
       daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', as_needed: 'AS_NEEDED', interval: 'INTERVAL', custom: 'INTERVAL'
     };
-    const frequencyUUpper = (rawFreqU || '').toUpperCase();
-    const frequencyU = rawFreqU ? (freqMapU[rawFreqU.toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL'].includes(frequencyUUpper) ? frequencyUUpper : undefined)) : undefined;
+    const frequencyUUpper = rawFreqU.toUpperCase();
+    const frequencyU = freqMapU[rawFreqU.toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL'].includes(frequencyUUpper) ? frequencyUUpper : 'DAILY');
+    
     const typeMapU: Record<string, string> = {
       oral: 'ORAL', injectable: 'INJECTION', inyectable: 'INJECTION', topical: 'TOPICAL', topico: 'TOPICAL', inhalation: 'INHALATION', inhalacion: 'INHALATION', sublingual: 'SUBLINGUAL'
     };
-    const typeUUpper = (rawTypeU || '').toUpperCase();
-    const typeU = rawTypeU ? (typeMapU[rawTypeU.toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUUpper) ? typeUUpper : undefined)) : undefined;
+    const typeUUpper = rawTypeU.toUpperCase();
+    const typeU = typeMapU[rawTypeU.toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUUpper) ? typeUUpper : 'ORAL');
 
     const res = await fetch(endpoint, {
       method: 'PATCH',
       headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        name: nameU || undefined,
-        dosage: dosageU || undefined,
+        name: nameU,
+        dosage: dosageU,
         frequency: frequencyU,
         type: typeU,
         patientProfileId: patientIdForServer,
@@ -833,7 +849,17 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
           type: typeU
         }
       });
-      throw new Error(`No se pudo actualizar el medicamento: ${res.status} - ${errorText}`);
+      
+      // Manejo específico para diferentes tipos de errores
+      if (res.status === 403) {
+        throw new Error('No tienes permisos para modificar este medicamento. Verifica que seas el cuidador autorizado del paciente.');
+      } else if (res.status === 404) {
+        throw new Error('El medicamento no fue encontrado. Puede haber sido eliminado por otro usuario.');
+      } else if (res.status === 400) {
+        throw new Error('Los datos del medicamento no son válidos. Verifica que todos los campos estén completos.');
+      } else {
+        throw new Error(`No se pudo actualizar el medicamento: ${res.status} - ${errorText}`);
+      }
     }
     const updated = await res.json();
     await localDB.saveTreatmentMedication({
