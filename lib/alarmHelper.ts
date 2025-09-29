@@ -54,9 +54,28 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
       if (data?.everyXHours) alarmConfig.everyXHours = String(data.everyXHours);
     }
 
+    // Eliminar duplicados exactos
     alarmConfig.selectedTimes = alarmConfig.selectedTimes.filter((time, index, self) => 
       index === self.findIndex(t => t.getTime() === time.getTime())
     );
+
+    // Normalizar a plantillas de hora (evitar múltiples días duplicados)
+    if (alarmConfig.selectedTimes.length > 0) {
+      const byTime: Record<string, Date> = {};
+      for (const d of alarmConfig.selectedTimes) {
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const key = `${hh}:${mm}`;
+        if (!byTime[key]) byTime[key] = d;
+      }
+      const today = new Date();
+      alarmConfig.selectedTimes = Object.keys(byTime).sort().map((key) => {
+        const [hh, mm] = key.split(':').map(n => parseInt(n, 10));
+        const base = new Date(today);
+        base.setHours(hh, mm, 0, 0);
+        return base;
+      });
+    }
 
     return alarmConfig;
   } catch (error) {
@@ -111,9 +130,28 @@ export function getExistingAlarmsFromEngine(type: string, elementId: string) {
     }
 
     // Eliminar duplicados de selectedTimes
+    // Eliminar duplicados exactos
     alarmConfig.selectedTimes = alarmConfig.selectedTimes.filter((time, index, self) => 
       index === self.findIndex(t => t.getTime() === time.getTime())
     );
+
+    // Normalizar a plantillas de hora (evitar múltiples días duplicados)
+    if (alarmConfig.selectedTimes.length > 0) {
+      const byTime: Record<string, Date> = {};
+      for (const d of alarmConfig.selectedTimes) {
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const key = `${hh}:${mm}`;
+        if (!byTime[key]) byTime[key] = d;
+      }
+      const today = new Date();
+      alarmConfig.selectedTimes = Object.keys(byTime).sort().map((key) => {
+        const [hh, mm] = key.split(':').map(n => parseInt(n, 10));
+        const base = new Date(today);
+        base.setHours(hh, mm, 0, 0);
+        return base;
+      });
+    }
 
     return alarmConfig;
   } catch (error) {

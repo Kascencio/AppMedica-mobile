@@ -169,8 +169,8 @@ export default function TreatmentsScreen() {
             ...deletions.map(id => deleteTreatmentMedication(editingTreatment.id, id))
           ]);
         } catch (syncErr: any) {
-          console.log('[TreatmentsScreen] Error sincronizando medicamentos:', syncErr?.message || syncErr);
-          Alert.alert('Advertencia', 'El tratamiento se guardó, pero hubo errores sincronizando algunos medicamentos.');
+          console.log('[TreatmentsScreen] Aviso: algunos medicamentos quedaron pendientes de sincronización:', syncErr?.message || syncErr);
+          // Ya se guardaron localmente como pendientes y se verán en el editor; evitamos alerta bloqueante.
         }
 
         Alert.alert('Éxito', 'Tratamiento actualizado correctamente');
