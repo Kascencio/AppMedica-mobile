@@ -16,6 +16,68 @@ const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
 const isLandscape = width > height;
 
+// Mapeo de valores del servidor a valores de la UI
+const mapServerFrequencyToUI = (serverFreq: string): string => {
+  const freqMap: Record<string, string> = {
+    // Valores del servidor (inglés) → Valores de la UI (español)
+    'DAILY': 'una vez al día',
+    'TWICE_DAILY': 'dos veces al día',
+    'THREE_TIMES_DAILY': 'tres veces al día',
+    'FOUR_TIMES_DAILY': 'cuatro veces al día',
+    'EVERY_4_HOURS': 'cada 4 horas',
+    'EVERY_6_HOURS': 'cada 6 horas',
+    'EVERY_8_HOURS': 'cada 8 horas',
+    'EVERY_12_HOURS': 'cada 12 horas',
+    'EVERY_24_HOURS': 'cada 24 horas',
+    'BEFORE_MEALS': 'antes de las comidas',
+    'AFTER_MEALS': 'después de las comidas',
+    'WITH_MEALS': 'con las comidas',
+    'ON_EMPTY_STOMACH': 'en ayunas',
+    'AS_NEEDED': 'según necesidad',
+    'WEEKLY': 'semanal',
+    'MONTHLY': 'mensual',
+    'INTERVAL': 'intervalo personalizado'
+  };
+  
+  // Si ya está en español, devolverlo tal como está
+  if (serverFreq && !freqMap[serverFreq]) {
+    return serverFreq;
+  }
+  
+  return freqMap[serverFreq] || 'una vez al día';
+};
+
+const mapServerTypeToUI = (serverType: string): string => {
+  const typeMap: Record<string, string> = {
+    // Valores del servidor (inglés) → Valores de la UI (español)
+    'PILL': 'pastilla',
+    'TABLET': 'tableta',
+    'CAPSULE': 'cápsula',
+    'COMPRIMIDO': 'comprimido',
+    'SYRUP': 'jarabe',
+    'SUSPENSION': 'suspensión',
+    'INJECTION': 'inyección',
+    'PATCH': 'parche',
+    'CREAM': 'crema',
+    'OINTMENT': 'pomada',
+    'GEL': 'gel',
+    'DROPS': 'gotas',
+    'SPRAY': 'spray',
+    'INHALER': 'inhalador',
+    'ORAL': 'oral',
+    'TOPICAL': 'tópico',
+    'INHALATION': 'inhalación',
+    'SUBLINGUAL': 'sublingual'
+  };
+  
+  // Si ya está en español, devolverlo tal como está
+  if (serverType && !typeMap[serverType]) {
+    return serverType;
+  }
+  
+  return typeMap[serverType] || 'oral';
+};
+
 // Función para traducir frecuencias al español
 const translateFrequency = (frequency: string): string => {
   const frequencyMap: Record<string, string> = {
@@ -131,13 +193,20 @@ export default function CaregiverTreatmentsScreen() {
       console.log('[CUIDADOR-TRATAMIENTOS] Cargando medicamentos para tratamiento:', treatment.id);
       const meds = await getTreatmentMedications(treatment.id);
       console.log('[CUIDADOR-TRATAMIENTOS] Medicamentos obtenidos del servidor:', meds);
-      const mapped = (meds || []).map((m: any) => ({ 
-        id: m.id, 
-        name: m.name || '', 
-        dosage: m.dosage || '', 
-        frequency: m.frequency || 'daily', 
-        type: m.type || 'oral' 
-      }));
+      const mapped = (meds || []).map((m: any) => {
+        const mappedMed = { 
+          id: m.id, 
+          name: m.name || '', 
+          dosage: m.dosage || '', 
+          frequency: mapServerFrequencyToUI(m.frequency || ''), 
+          type: mapServerTypeToUI(m.type || '') 
+        };
+        console.log(`[CUIDADOR-TRATAMIENTOS] Mapeando medicamento ${m.id}:`, {
+          original: { frequency: m.frequency, type: m.type },
+          mapped: { frequency: mappedMed.frequency, type: mappedMed.type }
+        });
+        return mappedMed;
+      });
       console.log('[CUIDADOR-TRATAMIENTOS] Medicamentos mapeados para UI:', mapped);
       setMedications(mapped);
       setOriginalMedications(mapped as any);
