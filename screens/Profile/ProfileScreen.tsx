@@ -780,7 +780,7 @@ export default function ProfileScreen() {
           <View style={[styles.formGroupModern, { flex: 1, marginRight: 8 }] }>
             <Text style={styles.labelModern}>Fecha de nacimiento *</Text>
             <TouchableOpacity 
-              style={styles.inputModern} 
+              style={[styles.inputModern, !form.birthDate && styles.inputPlaceholder]} 
               onPress={() => setShowDatePicker(true)}
             >
               <Text style={{ color: form.birthDate ? '#1e293b' : '#9ca3af' }}>
@@ -1257,6 +1257,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
     fontSize: 16,
     color: '#1e293b',
+  },
+  inputPlaceholder: {
+    borderColor: '#9ca3af',
+    backgroundColor: '#f3f4f6',
   },
   pickerModern: {
     borderWidth: 1,

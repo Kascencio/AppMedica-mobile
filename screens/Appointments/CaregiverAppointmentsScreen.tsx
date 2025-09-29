@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Platform, Alert, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
 import { useAppointments } from '../../store/useAppointments';
 import { useCaregiver } from '../../store/useCaregiver';
 import { useOffline } from '../../store/useOffline';
@@ -28,6 +29,39 @@ const appointmentSchema = z.object({
 });
 
 type AppointmentForm = z.infer<typeof appointmentSchema>;
+
+// Opciones de especialidades médicas
+const MEDICAL_SPECIALTIES = [
+  { value: '', label: 'Seleccionar especialidad' },
+  { value: 'Cardiology', label: 'Cardiología' },
+  { value: 'Dermatology', label: 'Dermatología' },
+  { value: 'Endocrinology', label: 'Endocrinología' },
+  { value: 'Gastroenterology', label: 'Gastroenterología' },
+  { value: 'General Medicine', label: 'Medicina General' },
+  { value: 'Gynecology', label: 'Ginecología' },
+  { value: 'Hematology', label: 'Hematología' },
+  { value: 'Infectious Diseases', label: 'Enfermedades Infecciosas' },
+  { value: 'Internal Medicine', label: 'Medicina Interna' },
+  { value: 'Nephrology', label: 'Nefrología' },
+  { value: 'Neurology', label: 'Neurología' },
+  { value: 'Oncology', label: 'Oncología' },
+  { value: 'Ophthalmology', label: 'Oftalmología' },
+  { value: 'Orthopedics', label: 'Ortopedia' },
+  { value: 'Otolaryngology', label: 'Otorrinolaringología' },
+  { value: 'Pediatrics', label: 'Pediatría' },
+  { value: 'Pulmonology', label: 'Neumología' },
+  { value: 'Psychiatry', label: 'Psiquiatría' },
+  { value: 'Radiology', label: 'Radiología' },
+  { value: 'Rheumatology', label: 'Reumatología' },
+  { value: 'Urology', label: 'Urología' },
+  { value: 'Emergency Medicine', label: 'Medicina de Emergencias' },
+  { value: 'Family Medicine', label: 'Medicina Familiar' },
+  { value: 'Physical Therapy', label: 'Fisioterapia' },
+  { value: 'Nutrition', label: 'Nutrición' },
+  { value: 'Psychology', label: 'Psicología' },
+  { value: 'Dentistry', label: 'Odontología' },
+  { value: 'Other', label: 'Otra especialidad' }
+];
 
 export default function CaregiverAppointmentsScreen() {
   const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment } = useAppointments();
@@ -176,6 +210,14 @@ export default function CaregiverAppointmentsScreen() {
             </View>
             <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Fecha:</Text><Text style={styles.cardValueModern}>{a.dateTime ? new Date(a.dateTime).toLocaleString() : '—'}</Text></View>
             <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Lugar:</Text><Text style={styles.cardValueModern}>{a.location || '—'}</Text></View>
+            {(a as any).specialty && (
+              <View style={styles.cardRowModern}>
+                <Text style={styles.cardLabelModern}>Especialidad:</Text>
+                <Text style={styles.cardValueModern}>
+                  {MEDICAL_SPECIALTIES.find(s => s.value === (a as any).specialty)?.label || (a as any).specialty}
+                </Text>
+              </View>
+            )}
             {a.description ? (
               <View style={styles.notesBoxModern}>
                 <Text style={styles.notesTextModern}>{a.description}</Text>
@@ -197,7 +239,19 @@ export default function CaregiverAppointmentsScreen() {
               {errors.doctorName && <Text style={{ color: '#ef4444' }}>{errors.doctorName.message}</Text>}
               <Text style={styles.inputLabel}>Especialidad</Text>
               <Controller control={control} name="specialty" render={({ field: { onChange, value } }) => (
-                <TextInput style={styles.inputModern} value={value || ''} onChangeText={onChange} placeholder="Especialidad" />
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={value || ''}
+                    onValueChange={onChange}
+                    mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+                    dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}
+                    style={[styles.picker, isTablet && styles.pickerTablet]}
+                  >
+                    {MEDICAL_SPECIALTIES.map((specialty) => (
+                      <Picker.Item key={specialty.value} label={specialty.label} value={specialty.value} />
+                    ))}
+                  </Picker>
+                </View>
               )} />
               <Text style={styles.inputLabel}>Ubicación *</Text>
               <Controller control={control} name="location" render={({ field: { onChange, value } }) => (
@@ -397,6 +451,23 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontWeight: '600',
     marginBottom: 6,
+  },
+  
+  // Estilos para picker de especialidad
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#f9fafb',
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  picker: {
+    color: '#1e293b',
+    fontSize: 15,
+  },
+  pickerTablet: {
+    fontSize: 16,
   },
 });
 

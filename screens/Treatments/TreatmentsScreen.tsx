@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Modal, TextInput, Alert, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Picker } from '@react-native-picker/picker';
 import { useTreatments } from '../../store/useTreatments';
 import { useCurrentUser } from '../../store/useCurrentUser';
 import OfflineIndicator from '../../components/OfflineIndicator';
@@ -35,6 +36,47 @@ const translateFrequency = (frequency: string): string => {
   
   return frequencyMap[frequency] || frequency || 'Personalizado';
 };
+
+// Opciones para frecuencia de medicamentos
+const MEDICATION_FREQUENCIES = [
+  { value: '', label: 'Seleccionar frecuencia' },
+  { value: 'cada 8 horas', label: 'Cada 8 horas' },
+  { value: 'cada 12 horas', label: 'Cada 12 horas' },
+  { value: 'cada 24 horas', label: 'Cada 24 horas' },
+  { value: 'dos veces al día', label: 'Dos veces al día' },
+  { value: 'tres veces al día', label: 'Tres veces al día' },
+  { value: 'cuatro veces al día', label: 'Cuatro veces al día' },
+  { value: 'antes de las comidas', label: 'Antes de las comidas' },
+  { value: 'después de las comidas', label: 'Después de las comidas' },
+  { value: 'con las comidas', label: 'Con las comidas' },
+  { value: 'en ayunas', label: 'En ayunas' },
+  { value: 'según necesidad', label: 'Según necesidad' },
+  { value: 'una vez al día', label: 'Una vez al día' },
+  { value: 'cada 6 horas', label: 'Cada 6 horas' },
+  { value: 'cada 4 horas', label: 'Cada 4 horas' }
+];
+
+// Opciones para tipo de medicamento
+const MEDICATION_TYPES = [
+  { value: '', label: 'Seleccionar tipo' },
+  { value: 'pastilla', label: 'Pastilla' },
+  { value: 'tableta', label: 'Tableta' },
+  { value: 'cápsula', label: 'Cápsula' },
+  { value: 'comprimido', label: 'Comprimido' },
+  { value: 'jarabe', label: 'Jarabe' },
+  { value: 'suspensión', label: 'Suspensión' },
+  { value: 'inyección', label: 'Inyección' },
+  { value: 'parche', label: 'Parche' },
+  { value: 'crema', label: 'Crema' },
+  { value: 'pomada', label: 'Pomada' },
+  { value: 'gel', label: 'Gel' },
+  { value: 'gotas', label: 'Gotas' },
+  { value: 'spray', label: 'Spray' },
+  { value: 'inhalador', label: 'Inhalador' },
+  { value: 'supositorio', label: 'Supositorio' },
+  { value: 'polvo', label: 'Polvo' },
+  { value: 'granulado', label: 'Granulado' }
+];
 
 export default function TreatmentsScreen() {
   const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment, scheduleTreatmentAlarms, cancelTreatmentAlarms, rescheduleTreatmentAlarms, getTreatmentMedications, addMedicationToTreatment, updateTreatmentMedication, deleteTreatmentMedication } = useTreatments();
@@ -87,7 +129,7 @@ export default function TreatmentsScreen() {
     setMedications([]);
     setOriginalMedications([]);
     setSelectedTimes([]);
-    setFrequencyType('dia');
+    setFrequencyType('daily');
     setDaysOfWeek([]);
     setEveryXHours('8');
     setModalVisible(true);
@@ -96,7 +138,7 @@ export default function TreatmentsScreen() {
   const openEditModal = async (treatment: any) => {
     setEditingTreatment(treatment);
     setFormData({
-      name: treatment.title || treatment.name || '',
+      name: treatment.title || '',
       description: treatment.description || '',
       startDate: treatment.startDate ? new Date(treatment.startDate) : undefined,
       endDate: treatment.endDate ? new Date(treatment.endDate) : undefined,
@@ -251,8 +293,8 @@ export default function TreatmentsScreen() {
       setFormData({
         name: '',
         description: '',
-        startDate: '',
-        endDate: '',
+        startDate: undefined,
+        endDate: undefined,
         frequency: 'daily',
         notes: ''
       });
@@ -427,7 +469,7 @@ export default function TreatmentsScreen() {
                     GLOBAL_STYLES.sectionTitle, 
                     { marginBottom: 0 },
                     isTablet && styles.treatmentTitleTablet
-                  ]}>{treatment.title || treatment.name || 'Sin nombre'}</Text>
+                  ]}>{treatment.title || 'Sin nombre'}</Text>
                 </View>
                 <View style={[
                   GLOBAL_STYLES.row,
@@ -441,7 +483,7 @@ export default function TreatmentsScreen() {
                     onPress={() => isOnline && openEditModal(treatment)}
                     disabled={!isOnline}
                     accessibilityRole="button"
-                    accessibilityLabel={`Editar tratamiento ${treatment.name || 'Sin nombre'}`}
+                    accessibilityLabel={`Editar tratamiento ${treatment.title || 'Sin nombre'}`}
                   >
                     <Ionicons 
                       name="create-outline" 
@@ -458,7 +500,7 @@ export default function TreatmentsScreen() {
                     onPress={() => isOnline && handleDelete(treatment.id)}
                     disabled={!isOnline}
                     accessibilityRole="button"
-                    accessibilityLabel={`Eliminar tratamiento ${treatment.name || 'Sin nombre'}`}
+                    accessibilityLabel={`Eliminar tratamiento ${treatment.title || 'Sin nombre'}`}
                   >
                     <Ionicons 
                       name="trash-outline" 
@@ -674,20 +716,32 @@ export default function TreatmentsScreen() {
                         />
                       </View>
                       <View style={[GLOBAL_STYLES.row, { gap: 8, marginTop: 6 }]}>
-                        <TextInput
-                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
-                          placeholder="Frecuencia (ej. cada 12 horas)"
-                          placeholderTextColor={COLORS.text.secondary}
-                          value={med.frequency}
-                          onChangeText={(t) => updateMedicationField(idx, 'frequency', t)}
-                        />
-                        <TextInput
-                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
-                          placeholder="Tipo (ej. pastilla)"
-                          placeholderTextColor={COLORS.text.secondary}
-                          value={med.type}
-                          onChangeText={(t) => updateMedicationField(idx, 'type', t)}
-                        />
+                        <View style={[styles.pickerContainer, { flex: 1 }]}>
+                          <Picker
+                            selectedValue={med.frequency || ''}
+                            onValueChange={(value) => updateMedicationField(idx, 'frequency', value)}
+                            mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+                            dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}
+                            style={[styles.picker, isTablet && styles.pickerTablet]}
+                          >
+                            {MEDICATION_FREQUENCIES.map((freq) => (
+                              <Picker.Item key={freq.value} label={freq.label} value={freq.value} />
+                            ))}
+                          </Picker>
+                        </View>
+                        <View style={[styles.pickerContainer, { flex: 1 }]}>
+                          <Picker
+                            selectedValue={med.type || ''}
+                            onValueChange={(value) => updateMedicationField(idx, 'type', value)}
+                            mode={Platform.OS === 'android' ? 'dropdown' : undefined}
+                            dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}
+                            style={[styles.picker, isTablet && styles.pickerTablet]}
+                          >
+                            {MEDICATION_TYPES.map((type) => (
+                              <Picker.Item key={type.value} label={type.label} value={type.value} />
+                            ))}
+                          </Picker>
+                        </View>
                       </View>
                       <View style={[GLOBAL_STYLES.row, { justifyContent: 'flex-end', marginTop: 6 }]}>
                         <TouchableOpacity
@@ -795,8 +849,8 @@ export default function TreatmentsScreen() {
                 {editingTreatment ? (
                   <TouchableOpacity
                     style={[
-                      GLOBAL_STYLES.buttonWarning,
-                  { flex: 1, marginHorizontal: 8 },
+                      GLOBAL_STYLES.buttonSecondary,
+                  { flex: 1, marginHorizontal: 8, backgroundColor: '#f59e0b' },
                   styles.modalButton,
                       isTablet && styles.modalButtonTablet
                     ]}
@@ -1041,6 +1095,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   warningTextTablet: {
+    fontSize: 16,
+  },
+  
+  // Estilos para pickers de medicamentos
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 10,
+    backgroundColor: '#f9fafb',
+    overflow: 'hidden',
+  },
+  picker: {
+    color: '#1e293b',
+    fontSize: 15,
+  },
+  pickerTablet: {
     fontSize: 16,
   },
 });
