@@ -16,7 +16,7 @@ import { IMAGEKIT_CONFIG } from '../../constants/imagekit';
 const { width } = Dimensions.get('window');
 
 export default function CaregiverHomeScreen({ navigation }: any) {
-  const { patients, loading, fetchPatients, selectedPatientId } = useCaregiver();
+  const { patients, loading, fetchPatients, selectedPatientId, caregiverProfile, profileLoading, fetchCaregiverProfile } = useCaregiver();
   const { profile } = useCurrentUser();
   const { logout } = useAuth();
   const { isOnline } = useOffline();
@@ -116,6 +116,7 @@ export default function CaregiverHomeScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchPatients();
+    try { fetchCaregiverProfile(); } catch {}
   }, []);
 
   useEffect(() => {
@@ -173,6 +174,20 @@ export default function CaregiverHomeScreen({ navigation }: any) {
     return events.slice(0, 5);
   }, [appointments, medications, treatments]);
 
+  // Datos del cuidador para cabecera
+  const caregiverPhoto = normalizeImageUrl(
+    (caregiverProfile && caregiverProfile.photoUrl) || (profile && profile.photoUrl) || undefined
+  );
+  const caregiverName = (
+    (caregiverProfile && caregiverProfile.name) ||
+    (profile && profile.name) ||
+    (profile as any)?.username ||
+    (profile as any)?.user?.name ||
+    (caregiverProfile as any)?.username ||
+    (caregiverProfile as any)?.user?.name ||
+    'Cuidador'
+  );
+
   return (
     <LinearGradient colors={["#e0f2fe", "#f0fdfa"]} style={styles.gradient}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -189,14 +204,14 @@ export default function CaregiverHomeScreen({ navigation }: any) {
         )}
         <View style={styles.headerBox}>
           <View style={styles.avatarBox}>
-            {profile?.photoUrl ? (
-              <Image source={{ uri: profile.photoUrl }} style={styles.avatar} />
+            {caregiverPhoto ? (
+              <Image source={{ uri: caregiverPhoto }} style={styles.avatar} />
             ) : (
               <Ionicons name="person-circle" size={70} color="#cbd5e1" />
             )}
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>¡Hola, {profile?.name || (profile as any)?.username || (profile as any)?.user?.name || 'Cuidador'}!</Text>
+            <Text style={styles.greeting}>¡Hola, {caregiverName}!</Text>
             <Text style={styles.motivational}>Gestiona y cuida a tus pacientes desde aquí.</Text>
           </View>
         </View>

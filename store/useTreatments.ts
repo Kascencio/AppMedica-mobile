@@ -359,6 +359,9 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const profile = useCurrentUser.getState().profile;
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+      const patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id);
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -367,7 +370,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         throw new Error('No hay conexión a internet. No se pueden modificar tratamientos en modo offline.');
       }
 
-      if (!profile?.id) throw new Error('No hay perfil de paciente');
+      if (!patientId) throw new Error('No hay perfil de paciente');
       
       // Actualizar localmente primero
       const currentTreatments = get().treatments;
@@ -386,7 +389,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       // Guardar en base de datos local
       const localTreatment: LocalTreatment = {
         ...newTreatment,
-        patientProfileId: profile.id,
+        patientProfileId: String(patientId),
         createdAt: newTreatment.createdAt || new Date().toISOString(),
         isOffline: !isOnline,
         syncStatus: isOnline ? 'synced' : 'pending'
@@ -405,7 +408,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
           const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${id}`), {
             method: 'PUT',
             headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ ...data, patientProfileId: profile.id }),
+            body: JSON.stringify({ ...data, patientProfileId: patientId }),
           });
           
           if (res.ok) {
@@ -677,13 +680,13 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     // Mapear y validar tipo a valores admitidos
     const typeMap: Record<string, string> = {
       oral: 'ORAL',
-      inyectable: 'INJECTABLE', injectable: 'INJECTABLE',
+      inyectable: 'INJECTION', injectable: 'INJECTION',
       tópico: 'TOPICAL', topico: 'TOPICAL', topical: 'TOPICAL',
       inhalación: 'INHALATION', inhalacion: 'INHALATION', inhalation: 'INHALATION',
       sublingual: 'SUBLINGUAL'
     };
     const typeUpper = (rawType || '').toUpperCase();
-    const type = typeMap[rawType.toLowerCase()] || (['ORAL','INJECTABLE','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUpper) ? typeUpper : 'ORAL');
+    const type = typeMap[rawType.toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUpper) ? typeUpper : 'ORAL');
 
     // Usar endpoint base de medicamentos con treatmentId en body
     const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.MEDICATIONS.BASE);
@@ -797,10 +800,10 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     const frequencyUUpper = (rawFreqU || '').toUpperCase();
     const frequencyU = rawFreqU ? (freqMapU[rawFreqU.toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL'].includes(frequencyUUpper) ? frequencyUUpper : undefined)) : undefined;
     const typeMapU: Record<string, string> = {
-      oral: 'ORAL', injectable: 'INJECTABLE', inyectable: 'INJECTABLE', topical: 'TOPICAL', topico: 'TOPICAL', inhalation: 'INHALATION', inhalacion: 'INHALATION', sublingual: 'SUBLINGUAL'
+      oral: 'ORAL', injectable: 'INJECTION', inyectable: 'INJECTION', topical: 'TOPICAL', topico: 'TOPICAL', inhalation: 'INHALATION', inhalacion: 'INHALATION', sublingual: 'SUBLINGUAL'
     };
     const typeUUpper = (rawTypeU || '').toUpperCase();
-    const typeU = rawTypeU ? (typeMapU[rawTypeU.toLowerCase()] || (['ORAL','INJECTABLE','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUUpper) ? typeUUpper : undefined)) : undefined;
+    const typeU = rawTypeU ? (typeMapU[rawTypeU.toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes(typeUUpper) ? typeUUpper : undefined)) : undefined;
 
     const res = await fetch(endpoint, {
       method: 'PATCH',

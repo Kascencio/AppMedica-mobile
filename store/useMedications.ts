@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { useAuth } from './useAuth';
 import { useCurrentUser } from './useCurrentUser';
+import { useCaregiver } from './useCaregiver';
 import { buildApiUrl, API_CONFIG } from '../constants/config';
 import { localDB, LocalMedication } from '../data/db';
 import { syncService } from '../lib/syncService';
@@ -213,18 +214,26 @@ export const useMedications = create<MedicationsState>((set, get) => ({
       
       console.log('[useMedications] ✅ Validación exitosa');
       
-      if (!profile?.id) {
-        throw new Error('No hay perfil de paciente disponible');
+      if (!profile?.id && !profile?.patientProfileId) {
+        throw new Error('No hay perfil de usuario disponible');
       }
       
-      // Usar el patientProfileId correcto del perfil
-      let patientId = profile.patientProfileId || profile.id;
+      // Determinar patientId según rol (cuidador usa paciente seleccionado)
+      const role = (profile?.role || 'PATIENT').toUpperCase();
+      const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
+      let patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile.patientProfileId || profile.id);
       
       console.log('[useMedications] IDs disponibles:', {
+        role,
         patientProfileId: profile.patientProfileId,
         id: profile.id,
-        selectedPatientId: patientId
+        caregiverSelectedId,
+        resolvedPatientId: patientId
       });
+
+      if (!patientId) {
+        throw new Error('Debes seleccionar un paciente para crear medicamentos');
+      }
       
       // Verificar autenticación y permisos
       const authToken = useAuth.getState().userToken;
@@ -285,7 +294,7 @@ export const useMedications = create<MedicationsState>((set, get) => ({
 
         const bodyData = { 
           ...formattedData, 
-          patientProfileId: patientId // Usar el ID del perfil
+          patientProfileId: patientId // Usar el ID del paciente objetivo
         };
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.MEDICATIONS.BASE);
         

@@ -125,13 +125,8 @@ export const useAuth = create<AuthState>((set, get) => ({
       console.error('[useAuth] Error limpiando AsyncStorage en logout:', e);
     }
 
-    try {
-      // Limpiar base de datos local (SQLite)
-      const { localDB } = await import('../data/db');
-      await localDB.clearAll();
-    } catch (e) {
-      console.error('[useAuth] Error limpiando base de datos local en logout:', e);
-    }
+    // Nota: No limpiamos la base de datos local para preservar datos pendientes (p. ej. medicamentos anidados no sincronizados)
+    // Los loaders filtran por patientProfileId, así que no se mezclarán datos entre cuentas.
 
     try {
       // Limpiar estado de stores relacionados

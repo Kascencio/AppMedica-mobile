@@ -90,18 +90,18 @@ export default function CaregiverTreatmentsScreen() {
         Alert.alert('Error', 'La fecha de fin debe ser posterior a la fecha de inicio');
         return;
       }
-      const allowed = ['daily', 'weekly', 'monthly', 'as_needed'];
-      if (!allowed.includes((frequency || '').toLowerCase())) {
-        Alert.alert('Error', 'La frecuencia debe ser: daily, weekly, monthly o as_needed');
-        return;
-      }
+      // Mapear frecuencia a valores válidos del backend
+      const freqMap: Record<string, string> = {
+        daily: 'DAILY', semanal: 'WEEKLY', weekly: 'WEEKLY', mensual: 'MONTHLY', monthly: 'MONTHLY', as_needed: 'AS_NEEDED'
+      };
+      const mappedFrequency = freqMap[(frequency || '').toLowerCase()] || 'DAILY';
       if (editing) {
         await updateTreatment(editing.id, {
           name: name.trim(),
           description: description.trim(),
           startDate: startDate ? startDate.toISOString() : undefined,
           endDate: endDate ? endDate.toISOString() : undefined,
-          frequency: frequency || undefined,
+          frequency: mappedFrequency,
           notes: notes || undefined,
         });
       } else {
@@ -110,7 +110,7 @@ export default function CaregiverTreatmentsScreen() {
           description: description.trim(),
           startDate: startDate ? startDate.toISOString() : undefined,
           endDate: endDate ? endDate.toISOString() : undefined,
-          frequency: frequency || undefined,
+          frequency: mappedFrequency,
           notes: notes || undefined,
         });
       }

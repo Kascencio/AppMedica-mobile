@@ -195,7 +195,29 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
   const onSubmit = async (data: MedicationForm) => {
     try {
       // Validar datos usando el validador (sin alarmas)
-      const validation = validateMedication({ ...data });
+      // Mapear frecuencia y tipo a valores válidos del backend antes de validar
+      const freqMap: Record<string, string> = {
+        daily: 'DAILY', diario: 'DAILY',
+        weekly: 'WEEKLY', semanal: 'WEEKLY',
+        monthly: 'MONTHLY', mensual: 'MONTHLY',
+        as_needed: 'AS_NEEDED', asneeded: 'AS_NEEDED', prn: 'AS_NEEDED', segun_necesidad: 'AS_NEEDED',
+        interval: 'INTERVAL', custom: 'INTERVAL', personalizado: 'INTERVAL'
+      };
+      const typeMap: Record<string, string> = {
+        oral: 'ORAL',
+        inyectable: 'INJECTION', injectable: 'INJECTION', injection: 'INJECTION',
+        topico: 'TOPICAL', topical: 'TOPICAL',
+        inhalacion: 'INHALATION', inhalation: 'INHALATION',
+        sublingual: 'SUBLINGUAL'
+      };
+      const mappedFrequency = data.frequency
+        ? (freqMap[(data.frequency || '').toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL','CUSTOM'].includes((data.frequency || '').toUpperCase()) ? (data.frequency as string).toUpperCase() : 'DAILY'))
+        : 'DAILY';
+      const mappedType = data.type
+        ? (typeMap[(data.type || '').toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes((data.type || '').toUpperCase()) ? (data.type as string).toUpperCase() : 'ORAL'))
+        : 'ORAL';
+
+      const validation = validateMedication({ ...data, frequency: mappedFrequency, type: mappedType });
       if (!validation.isValid) {
         Alert.alert('Error de validación', validation.errors.join('\n'));
         return;
@@ -206,8 +228,8 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         await updateMedication(editingMed.id, {
           name: data.name,
           dosage: data.dosage,
-          type: data.type,
-          frequency: data.frequency,
+          type: mappedType,
+          frequency: mappedFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
@@ -219,8 +241,8 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         await createMedication({
           name: data.name,
           dosage: data.dosage,
-          type: data.type,
-          frequency: data.frequency,
+          type: mappedType,
+          frequency: mappedFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
