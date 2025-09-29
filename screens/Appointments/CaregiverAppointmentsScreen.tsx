@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Platform, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Platform, Alert, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppointments } from '../../store/useAppointments';
@@ -11,6 +11,12 @@ import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import COLORS from '../../constants/colors';
+import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
+
+const { width, height } = Dimensions.get('window');
+const isTablet = width > 768;
+const isLandscape = width > height;
 
 const appointmentSchema = z.object({
   doctorName: z.string().min(1, 'Obligatorio'),
@@ -29,7 +35,7 @@ export default function CaregiverAppointmentsScreen() {
   const { isOnline } = useOffline();
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
+  const [editingAppointment, setEditingAppointment] = useState<any>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -43,15 +49,15 @@ export default function CaregiverAppointmentsScreen() {
     if (selectedPatientId) getAppointments(selectedPatientId).catch(() => {});
   }, [selectedPatientId]);
 
-  const openCreate = () => {
-    setEditing(null);
+  const openCreateModal = () => {
+    setEditingAppointment(null);
     reset();
     setSelectedDate(undefined);
     setModalVisible(true);
   };
   
-  const openEdit = async (apt: any) => {
-    setEditing(apt);
+  const openEditModal = async (apt: any) => {
+    setEditingAppointment(apt);
     setValue('doctorName', apt.title || '');
     setValue('specialty', apt.specialty || '');
     setValue('location', apt.location || '');
@@ -69,14 +75,26 @@ export default function CaregiverAppointmentsScreen() {
       const [h, m] = data.time.split(':').map((n) => parseInt(n, 10));
       const d = new Date(data.date);
       d.setHours(isNaN(h) ? 0 : h, isNaN(m) ? 0 : m, 0, 0);
-      if (editing) {
-        await updateAppointment(editing.id, { title: data.doctorName, location: data.location, specialty: data.specialty, description: data.notes, dateTime: d.toISOString() });
+      
+      const appointmentData = {
+        title: data.doctorName.trim(),
+        specialty: data.specialty?.trim() || undefined,
+        location: data.location.trim(),
+        dateTime: d.toISOString(),
+        description: data.notes?.trim() || undefined,
+        patientProfileId: selectedPatientId
+      };
+
+      if (editingAppointment) {
+        await updateAppointment(editingAppointment.id, appointmentData);
       } else {
-        await createAppointment({ title: data.doctorName, location: data.location, specialty: data.specialty, description: data.notes, dateTime: d.toISOString() });
+        await createAppointment(appointmentData);
       }
-      setModalVisible(false);
-      setEditing(null);
+      
       reset();
+      setSelectedDate(undefined);
+      setModalVisible(false);
+      setEditingAppointment(null);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo guardar la cita');
     }
@@ -124,7 +142,7 @@ export default function CaregiverAppointmentsScreen() {
       <SelectedPatientBanner onChange={() => {}} />
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Citas</Text>
-        <TouchableOpacity style={[styles.addBtnModern, !isOnline && { opacity: 0.5 }]} onPress={openCreate} activeOpacity={0.85} disabled={!isOnline}>
+        <TouchableOpacity style={[styles.addBtnModern, !isOnline && { opacity: 0.5 }]} onPress={openCreateModal} activeOpacity={0.85} disabled={!isOnline}>
           <Ionicons name="add-circle" size={28} color="#ffffff" />
           <Text style={styles.addBtnTextModern}>Nueva</Text>
         </TouchableOpacity>
@@ -148,7 +166,7 @@ export default function CaregiverAppointmentsScreen() {
                 <Text style={styles.cardTitleModern}>{a.title || 'Sin título'}</Text>
               </View>
               <View style={{ flexDirection: 'row' }}>
-                <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEdit(a)} disabled={!isOnline}>
+                <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEditModal(a)} disabled={!isOnline}>
                   <Ionicons name="create-outline" size={20} color="#2563eb" />
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && onDelete(a.id)} disabled={!isOnline}>
@@ -167,11 +185,11 @@ export default function CaregiverAppointmentsScreen() {
         ))
       )}
 
-      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => { setModalVisible(false); setEditing(null); }}>
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => { setModalVisible(false); setEditingAppointment(null); }}>
         <View style={styles.modalOverlayModern}>
           <View style={styles.modalContentModern}>
             <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={true}>
-              <Text style={styles.headerTitle}>{editing ? 'Editar cita' : 'Agregar cita'}</Text>
+              <Text style={styles.headerTitle}>{editingAppointment ? 'Editar cita' : 'Agregar cita'}</Text>
               <Text style={styles.inputLabel}>Doctor *</Text>
               <Controller control={control} name="doctorName" render={({ field: { onChange, value } }) => (
                 <TextInput style={styles.inputModern} value={value} onChangeText={onChange} placeholder="Nombre del doctor" />
@@ -222,9 +240,9 @@ export default function CaregiverAppointmentsScreen() {
               
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 20 }}>
                 <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={handleSubmit(onSubmit)} disabled={isSubmitting}>
-                  <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
+                  <Text style={styles.addBtnTextModern}>{editingAppointment ? 'Guardar cambios' : 'Guardar'}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
+                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditingAppointment(null); }}>
                   <Text style={styles.addBtnTextModern}>Cancelar</Text>
                 </TouchableOpacity>
               </View>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Alert, Dimensions } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTreatments } from '../../store/useTreatments';
 import { useCaregiver } from '../../store/useCaregiver';
@@ -8,7 +8,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher';
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import DateSelector from '../../components/DateSelector';
-import OptionSelector from '../../components/OptionSelector';
+import COLORS from '../../constants/colors';
+import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
+
+const { width, height } = Dimensions.get('window');
+const isTablet = width > 768;
+const isLandscape = width > height;
 
 // Función para traducir frecuencias al español
 const translateFrequency = (frequency: string): string => {
@@ -30,83 +35,144 @@ const translateFrequency = (frequency: string): string => {
 };
 
 export default function CaregiverTreatmentsScreen() {
-  const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment } = useTreatments();
+  const { treatments, loading, error, getTreatments, createTreatment, updateTreatment, deleteTreatment, getTreatmentMedications, addMedicationToTreatment, updateTreatmentMedication, deleteTreatmentMedication } = useTreatments();
   const { selectedPatientId } = useCaregiver();
   const { isOnline } = useOffline();
 
   const [modalVisible, setModalVisible] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
-  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
-  const [frequency, setFrequency] = useState('daily');
-  const [notes, setNotes] = useState('');
+  const [editingTreatment, setEditingTreatment] = useState<any>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    startDate: undefined as Date | undefined,
+    endDate: undefined as Date | undefined,
+    frequency: 'daily',
+    notes: ''
+  });
+
+  // Lista de medicamentos (para crear/editar)
+  const [medications, setMedications] = useState<Array<{ id?: string; name: string; dosage: string; frequency: string; type: string }>>([]);
+  const [originalMedications, setOriginalMedications] = useState<Array<{ id: string; name: string; dosage: string; frequency: string; type: string }>>([]);
 
   useEffect(() => {
     if (selectedPatientId) getTreatments(selectedPatientId).catch(() => {});
   }, [selectedPatientId]);
 
-  const openCreate = () => {
-    setEditing(null);
-    setName('');
-    setDescription('');
-    setStartDate(undefined);
-    setEndDate(undefined);
-    setFrequency('');
-    setNotes('');
+    const openCreateModal = () => {
+    setEditingTreatment(null);
+    setFormData({
+      name: '',
+      description: '',
+      startDate: undefined,
+      endDate: undefined,
+      frequency: 'daily',
+      notes: ''
+    });
+    setMedications([]);
+    setOriginalMedications([]);
     setModalVisible(true);
   };
   
-  const openEdit = async (t: any) => {
-    setEditing(t);
-    setName(t.name || t.title || '');
-    setDescription(t.description || '');
-    setStartDate(t.startDate ? new Date(t.startDate) : undefined);
-    setEndDate(t.endDate ? new Date(t.endDate) : undefined);
-    setFrequency(t.frequency || '');
-    setNotes(t.notes || '');
+  const openEditModal = async (treatment: any) => {
+    setEditingTreatment(treatment);
+    setFormData({
+      name: treatment.name || treatment.title || '',
+      description: treatment.description || '',
+      startDate: treatment.startDate ? new Date(treatment.startDate) : undefined,
+      endDate: treatment.endDate ? new Date(treatment.endDate) : undefined,
+      frequency: treatment.frequency || 'daily',
+      notes: treatment.notes || ''
+    });
+    
+    // Cargar medicamentos actuales del tratamiento
+    try {
+      const meds = await getTreatmentMedications(treatment.id);
+      const mapped = (meds || []).map((m: any) => ({ id: m.id, name: m.name || '', dosage: m.dosage || '', frequency: m.frequency || '', type: m.type || '' }));
+      setMedications(mapped);
+      setOriginalMedications(mapped as any);
+    } catch (e) {
+      console.error('[CUIDADOR-TRATAMIENTOS] Error cargando medicamentos:', e);
+      setMedications([]);
+      setOriginalMedications([]);
+    }
     
     setModalVisible(true);
   };
 
-  const onSave = async () => {
+  const handleSubmit = async () => {
     try {
-      if (!name.trim()) {
-        Alert.alert('Faltan datos', 'Título es obligatorio');
+      if (!formData.name.trim()) {
+        Alert.alert('Faltan datos', 'Nombre es obligatorio');
         return;
       }
+
       // Validaciones de negocio previas al request
-      if (endDate && startDate && endDate <= startDate) {
+      if (formData.endDate && formData.startDate && formData.endDate <= formData.startDate) {
         Alert.alert('Error', 'La fecha de fin debe ser posterior a la fecha de inicio');
         return;
       }
-      // Mapear frecuencia a valores válidos del backend
-      const freqMap: Record<string, string> = {
-        daily: 'DAILY', semanal: 'WEEKLY', weekly: 'WEEKLY', mensual: 'MONTHLY', monthly: 'MONTHLY', as_needed: 'AS_NEEDED'
+
+      const treatmentData = {
+        name: formData.name.trim(),
+        description: formData.description.trim(),
+        startDate: (formData.startDate || new Date()).toISOString(),
+        endDate: formData.endDate ? formData.endDate.toISOString() : undefined,
+        frequency: formData.frequency,
+        notes: formData.notes.trim(),
+        patientProfileId: selectedPatientId
       };
-      const mappedFrequency = freqMap[(frequency || '').toLowerCase()] || 'DAILY';
-      if (editing) {
-        await updateTreatment(editing.id, {
-          name: name.trim(),
-          description: description.trim(),
-          startDate: startDate ? startDate.toISOString() : undefined,
-          endDate: endDate ? endDate.toISOString() : undefined,
-          frequency: mappedFrequency,
-          notes: notes || undefined,
-        });
+
+      if (editingTreatment) {
+        // Actualizar tratamiento existente
+        await updateTreatment(editingTreatment.id, treatmentData);
+
+        // Manejar medicamentos para edición
+        const currentById = new Map(medications.filter(m => m.id).map(m => [m.id!, m]));
+        const byIdOriginal = new Map(originalMedications.map(m => [m.id, m]));
+
+        const adds = medications.filter(m => !m.id && m.name?.trim());
+        const updates = medications.filter(m => m.id && (() => {
+          const orig = byIdOriginal.get(m.id!);
+          if (!orig) return false;
+          return orig.name !== m.name || orig.dosage !== m.dosage || orig.frequency !== m.frequency || (orig as any).type !== m.type;
+        })());
+        const deletions = [...byIdOriginal.keys()].filter(id => !currentById.has(id));
+
+        try {
+          await Promise.all([
+            ...adds.map(m => addMedicationToTreatment(editingTreatment.id, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
+            ...updates.map(m => updateTreatmentMedication(editingTreatment.id, m.id!, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
+            ...deletions.map(id => deleteTreatmentMedication(editingTreatment.id, id))
+          ]);
+        } catch (syncErr: any) {
+          console.error('[CUIDADOR-TRATAMIENTOS] Error sincronizando medicamentos:', syncErr);
+        }
       } else {
+        // Crear nuevo tratamiento
+        // Preparar medicamentos para creación (solo los válidos no vacíos)
+        const medsToCreate = medications
+          .filter(m => m.name?.trim())
+          .map(m => ({ name: m.name.trim(), dosage: (m.dosage || '').trim(), frequency: (m.frequency || '').trim(), type: (m.type || '').trim() }));
+
         await createTreatment({
-          name: name.trim(),
-          description: description.trim(),
-          startDate: startDate ? startDate.toISOString() : undefined,
-          endDate: endDate ? endDate.toISOString() : undefined,
-          frequency: mappedFrequency,
-          notes: notes || undefined,
+          ...treatmentData,
+          medications: medsToCreate
         });
       }
+
+      // Resetear formulario
+      setFormData({
+        name: '',
+        description: '',
+        startDate: undefined,
+        endDate: undefined,
+        frequency: 'daily',
+        notes: ''
+      });
+      setMedications([]);
+      setOriginalMedications([]);
       setModalVisible(false);
-      setEditing(null);
+      setEditingTreatment(null);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo guardar el tratamiento');
     }
@@ -117,6 +183,17 @@ export default function CaregiverTreatmentsScreen() {
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Eliminar', style: 'destructive', onPress: async () => { await deleteTreatment(id); } },
     ]);
+  };
+
+  // Helpers UI medicamentos
+  const addMedicationRow = () => {
+    setMedications(prev => [...prev, { name: '', dosage: '', frequency: '', type: '' }]);
+  };
+  const updateMedicationField = (index: number, field: 'name' | 'dosage' | 'frequency' | 'type', value: string) => {
+    setMedications(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+  };
+  const removeMedicationRow = (index: number) => {
+    setMedications(prev => prev.filter((_, i) => i !== index));
   };
 
   if (!selectedPatientId) {
@@ -154,7 +231,7 @@ export default function CaregiverTreatmentsScreen() {
       <SelectedPatientBanner onChange={() => {}} />
       <View style={styles.headerRow}>
         <Text style={styles.headerTitle}>Tratamientos</Text>
-        <TouchableOpacity style={[styles.addBtnModern, !isOnline && { opacity: 0.5 }]} onPress={openCreate} activeOpacity={0.85} disabled={!isOnline}>
+        <TouchableOpacity style={[styles.addBtnModern, !isOnline && { opacity: 0.5 }]} onPress={openCreateModal} activeOpacity={0.85} disabled={!isOnline}>
           <Ionicons name="add-circle" size={28} color="#ffffff" />
           <Text style={styles.addBtnTextModern}>Nuevo</Text>
         </TouchableOpacity>
@@ -178,7 +255,7 @@ export default function CaregiverTreatmentsScreen() {
                 <Text style={styles.cardTitleModern}>{t.title || t.name || 'Sin título'}</Text>
               </View>
               <View style={{ flexDirection: 'row' }}>
-                <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEdit(t)} disabled={!isOnline}>
+                <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEditModal(t)} disabled={!isOnline}>
                   <Ionicons name="create-outline" size={20} color="#2563eb" />
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && onDelete(t.id)} disabled={!isOnline}>
@@ -221,47 +298,224 @@ export default function CaregiverTreatmentsScreen() {
         ))
       )}
 
-      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => { setModalVisible(false); setEditing(null); }}>
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => { setModalVisible(false); setEditingTreatment(null); }}>
         <View style={styles.modalOverlayModern}>
-          <View style={styles.modalContentModern}>
-            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={true}>
-              <Text style={styles.headerTitle}>{editing ? 'Editar tratamiento' : 'Agregar tratamiento'}</Text>
-              <Text style={styles.inputLabel}>Nombre *</Text>
-              <TextInput style={styles.inputModern} value={name} onChangeText={setName} placeholder="Nombre del tratamiento" />
-              <Text style={styles.inputLabel}>Descripción</Text>
-              <TextInput style={[styles.inputModern, { height: 64 }]} value={description} onChangeText={setDescription} placeholder="Descripción" multiline />
-              <Text style={styles.inputLabel}>Fecha de inicio</Text>
-              <DateSelector value={startDate} onDateChange={setStartDate} label="" placeholder="Seleccionar fecha de inicio" />
-              <Text style={styles.inputLabel}>Fecha de fin</Text>
-              <DateSelector value={endDate} onDateChange={setEndDate} label="" placeholder="Seleccionar fecha de fin (opcional)" minDate={startDate} />
-              <OptionSelector
-                value={frequency}
-                onValueChange={setFrequency}
-                label="Frecuencia"
-                options={[
-                  { value: 'daily', label: 'Diario', icon: 'daily' },
-                  { value: 'weekly', label: 'Semanal', icon: 'weekly' },
-                  { value: 'monthly', label: 'Mensual', icon: 'monthly' },
-                  { value: 'as_needed', label: 'Según necesidad', icon: 'custom' }
-                ]}
-                placeholder="Selecciona la frecuencia"
-                required={true}
-              />
-              <Text style={styles.inputLabel}>Notas</Text>
-              <TextInput style={[styles.inputModern, { height: 64 }]} value={notes} onChangeText={setNotes} placeholder="Notas adicionales" multiline />
+          <View style={[
+            styles.modalContentModern,
+            isTablet && styles.modalContentTablet,
+            isLandscape && styles.modalContentLandscape
+          ]}>
+            <ScrollView 
+              showsVerticalScrollIndicator={true}
+              indicatorStyle="black"
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+            >
+              <Text style={[
+                styles.modalTitle,
+                isTablet && styles.modalTitleTablet,
+                isLandscape && styles.modalTitleLandscape
+              ]}>{editingTreatment ? 'Editar Tratamiento' : 'Agregar Tratamiento'}</Text>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Nombre *</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input,
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="Nombre del tratamiento"
+                    placeholderTextColor={COLORS.text.secondary}
+                    value={formData.name}
+                    onChangeText={(text) => setFormData({ ...formData, name: text })}
+                  />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Descripción</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input, 
+                      { height: isTablet ? 80 : 60 },
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="Descripción del tratamiento"
+                    placeholderTextColor={COLORS.text.secondary}
+                    value={formData.description}
+                    onChangeText={(text) => setFormData({ ...formData, description: text })}
+                    multiline
+                  />
+                </View>
+                
+                {/* Lista de medicamentos */}
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Medicamentos</Text>
+
+                  {medications.length === 0 ? (
+                    <Text style={[GLOBAL_STYLES.caption, { marginBottom: 8 }]}>No hay medicamentos. Agrega uno con el botón +</Text>
+                  ) : null}
+
+                  {medications.map((med, idx) => (
+                    <View key={med.id || idx} style={{ marginBottom: 8 }}>
+                      <View style={[GLOBAL_STYLES.row, { gap: 8 }]}>
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Nombre"
+                          placeholderTextColor={COLORS.text.secondary}
+                          value={med.name}
+                          onChangeText={(t) => updateMedicationField(idx, 'name', t)}
+                        />
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Dosis (ej. 10mg)"
+                          placeholderTextColor={COLORS.text.secondary}
+                          value={med.dosage}
+                          onChangeText={(t) => updateMedicationField(idx, 'dosage', t)}
+                        />
+                      </View>
+                      <View style={[GLOBAL_STYLES.row, { gap: 8, marginTop: 6 }]}>
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Frecuencia (ej. cada 12 horas)"
+                          placeholderTextColor={COLORS.text.secondary}
+                          value={med.frequency}
+                          onChangeText={(t) => updateMedicationField(idx, 'frequency', t)}
+                        />
+                        <TextInput
+                          style={[GLOBAL_STYLES.input, { flex: 1 }, isTablet && styles.inputTablet]}
+                          placeholder="Tipo (ej. pastilla)"
+                          placeholderTextColor={COLORS.text.secondary}
+                          value={med.type}
+                          onChangeText={(t) => updateMedicationField(idx, 'type', t)}
+                        />
+                      </View>
+                      <View style={[GLOBAL_STYLES.row, { justifyContent: 'flex-end', marginTop: 6 }]}>
+                        <TouchableOpacity
+                          onPress={() => removeMedicationRow(idx)}
+                          style={[MEDICAL_STYLES.actionButton, { backgroundColor: COLORS.error }]}>
+                          <Ionicons name="remove-circle-outline" size={20} color={COLORS.text.inverse} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    onPress={addMedicationRow}
+                    style={[GLOBAL_STYLES.buttonSecondary, { alignSelf: 'flex-start', marginTop: 8 }]}>
+                    <Text style={GLOBAL_STYLES.buttonTextSecondary}>+ Agregar medicamento</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <DateSelector
+                    value={formData.startDate}
+                    onDateChange={(date) => setFormData({ ...formData, startDate: date })}
+                    label="Fecha de inicio"
+                    placeholder="Seleccionar fecha de inicio"
+                    required={false}
+                    minDate={undefined}
+                  />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <DateSelector
+                    value={formData.endDate}
+                    onDateChange={(date) => setFormData({ ...formData, endDate: date })}
+                    label="Fecha de fin"
+                    placeholder="Seleccionar fecha de fin (opcional)"
+                    required={false}
+                    minDate={formData.startDate}
+                  />
+                </View>
+                
+                <View style={[
+                  { marginBottom: 10 },
+                  isTablet && styles.inputGroupTablet
+                ]}>
+                  <Text style={[
+                    GLOBAL_STYLES.inputLabel,
+                    isTablet && styles.inputLabelTablet
+                  ]}>Notas</Text>
+                  <TextInput
+                    style={[
+                      GLOBAL_STYLES.input, 
+                      { height: isTablet ? 80 : 60 },
+                      isTablet && styles.inputTablet
+                    ]}
+                    placeholder="Notas adicionales"
+                    value={formData.notes}
+                    onChangeText={(text) => setFormData({ ...formData, notes: text })}
+                    multiline
+                  />
+                </View>
+              </ScrollView>
               
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 20 }}>
-                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={onSave}>
-                  <Text style={styles.addBtnTextModern}>{editing ? 'Guardar cambios' : 'Guardar'}</Text>
+              <View style={[
+                GLOBAL_STYLES.rowSpaced,
+                isTablet && styles.modalActionsTablet,
+                isLandscape && styles.modalActionsLandscape
+              ]}>
+                <TouchableOpacity
+                  style={[
+                  GLOBAL_STYLES.buttonPrimary, 
+                  { flex: 1, marginRight: 8 },
+                  styles.modalButton,
+                    isTablet && styles.modalButtonTablet
+                  ]}
+                  onPress={handleSubmit}
+                >
+                  <Text style={[
+                  GLOBAL_STYLES.buttonText,
+                  styles.modalButtonText,
+                    isTablet && styles.modalButtonTextTablet
+                  ]}>
+                    {editingTreatment ? 'Guardar cambios' : 'Guardar'}
+                  </Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#64748b', marginLeft: 8 }]} onPress={() => { setModalVisible(false); setEditing(null); }}>
-                  <Text style={styles.addBtnTextModern}>Cancelar</Text>
+                <TouchableOpacity
+                  style={[
+                  GLOBAL_STYLES.buttonSecondary, 
+                  { flex: 1, marginLeft: 8 },
+                  styles.modalButton,
+                    isTablet && styles.modalButtonTablet
+                  ]}
+                  onPress={() => { setModalVisible(false); setEditingTreatment(null); }}
+                >
+                  <Text style={[
+                  GLOBAL_STYLES.buttonTextSecondary,
+                  styles.modalButtonText,
+                    isTablet && styles.modalButtonTextTablet
+                  ]}>Cancelar</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
     </ScrollView>
   );
 }
@@ -412,6 +666,101 @@ const styles = StyleSheet.create({
   },
   modalScrollView: {
     maxHeight: '100%',
+  },
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+  },
+  modalButton: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
+  // Estilos responsive para tablets
+  containerTablet: {
+    marginTop: 10,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+  },
+  containerLandscape: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  headerRowTablet: {
+    marginBottom: 24,
+  },
+  headerRowLandscape: {
+    marginBottom: 20,
+  },
+  headerTitleTablet: {
+    fontSize: 28,
+  },
+  headerTitleLandscape: {
+    fontSize: 24,
+  },
+  modalContentTablet: {
+    width: '90%',
+    maxHeight: '85%',
+    padding: 32,
+  },
+  modalContentLandscape: {
+    width: '95%',
+    maxHeight: '90%',
+    padding: 24,
+  },
+  modalTitleTablet: {
+    fontSize: 24,
+    marginBottom: 24,
+  },
+  modalTitleLandscape: {
+    fontSize: 22,
+    marginBottom: 20,
+  },
+  modalActionsTablet: {
+    paddingTop: 24,
+    gap: 16,
+  },
+  modalActionsLandscape: {
+    paddingTop: 20,
+    gap: 12,
+  },
+  modalButtonTablet: {
+    paddingVertical: 16,
+    borderRadius: 16,
+  },
+  modalButtonTextTablet: {
+    fontSize: 18,
+  },
+  inputGroupTablet: {
+    marginBottom: 16,
+  },
+  inputLabelTablet: {
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  inputTablet: {
+    fontSize: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
   },
   inputModern: {
     borderWidth: 1,
