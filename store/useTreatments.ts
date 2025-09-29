@@ -817,7 +817,24 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         treatmentId,
       })
     });
-    if (!res.ok) throw new Error('No se pudo actualizar el medicamento');
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error(`[updateTreatmentMedication] Error ${res.status}:`, errorText);
+      console.error(`[updateTreatmentMedication] Request data:`, {
+        endpoint,
+        medicationId,
+        treatmentId,
+        patientIdForServer,
+        data: {
+          name: nameU,
+          dosage: dosageU,
+          frequency: frequencyU,
+          type: typeU
+        }
+      });
+      throw new Error(`No se pudo actualizar el medicamento: ${res.status} - ${errorText}`);
+    }
     const updated = await res.json();
     await localDB.saveTreatmentMedication({
       id: medicationId,

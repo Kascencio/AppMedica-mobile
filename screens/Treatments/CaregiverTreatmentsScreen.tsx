@@ -188,6 +188,12 @@ export default function CaregiverTreatmentsScreen() {
           ]);
         } catch (syncErr: any) {
           console.error('[CUIDADOR-TRATAMIENTOS] Error sincronizando medicamentos:', syncErr);
+          // Mostrar alerta informativa pero no bloquear el guardado del tratamiento
+          Alert.alert(
+            'Advertencia', 
+            'El tratamiento se guardó correctamente, pero algunos medicamentos no se pudieron sincronizar. Se reintentará automáticamente cuando haya conexión.',
+            [{ text: 'Entendido' }]
+          );
         }
       } else {
         // Crear nuevo tratamiento
@@ -215,7 +221,11 @@ export default function CaregiverTreatmentsScreen() {
       setOriginalMedications([]);
       setModalVisible(false);
       setEditingTreatment(null);
+      
+      // Mostrar mensaje de éxito
+      Alert.alert('Éxito', editingTreatment ? 'Tratamiento actualizado correctamente' : 'Tratamiento creado correctamente');
     } catch (e: any) {
+      console.error('[CUIDADOR-TRATAMIENTOS] Error general:', e);
       Alert.alert('Error', e.message || 'No se pudo guardar el tratamiento');
     }
   };
