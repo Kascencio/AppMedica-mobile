@@ -128,8 +128,17 @@ export default function CaregiverTreatmentsScreen() {
     
     // Cargar medicamentos actuales del tratamiento
     try {
+      console.log('[CUIDADOR-TRATAMIENTOS] Cargando medicamentos para tratamiento:', treatment.id);
       const meds = await getTreatmentMedications(treatment.id);
-      const mapped = (meds || []).map((m: any) => ({ id: m.id, name: m.name || '', dosage: m.dosage || '', frequency: m.frequency || '', type: m.type || '' }));
+      console.log('[CUIDADOR-TRATAMIENTOS] Medicamentos obtenidos del servidor:', meds);
+      const mapped = (meds || []).map((m: any) => ({ 
+        id: m.id, 
+        name: m.name || '', 
+        dosage: m.dosage || '', 
+        frequency: m.frequency || 'daily', 
+        type: m.type || 'oral' 
+      }));
+      console.log('[CUIDADOR-TRATAMIENTOS] Medicamentos mapeados para UI:', mapped);
       setMedications(mapped);
       setOriginalMedications(mapped as any);
     } catch (e) {
@@ -199,19 +208,28 @@ export default function CaregiverTreatmentsScreen() {
           });
 
           await Promise.all([
-            ...validAdds.map(m => addMedicationToTreatment(editingTreatment.id, { 
-              name: m.name.trim(), 
-              dosage: m.dosage.trim(), 
-              frequency: m.frequency.trim(), 
-              type: m.type.trim() 
-            })),
-            ...validUpdates.map(m => updateTreatmentMedication(editingTreatment.id, m.id!, { 
-              name: m.name.trim(), 
-              dosage: m.dosage.trim(), 
-              frequency: m.frequency.trim(), 
-              type: m.type.trim() 
-            })),
-            ...deletions.map(id => deleteTreatmentMedication(editingTreatment.id, id))
+            ...validAdds.map(m => {
+              console.log('[CUIDADOR-TRATAMIENTOS] Agregando medicamento:', { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() });
+              return addMedicationToTreatment(editingTreatment.id, { 
+                name: m.name.trim(), 
+                dosage: m.dosage.trim(), 
+                frequency: m.frequency.trim(), 
+                type: m.type.trim() 
+              });
+            }),
+            ...validUpdates.map(m => {
+              console.log('[CUIDADOR-TRATAMIENTOS] Actualizando medicamento:', { id: m.id, name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() });
+              return updateTreatmentMedication(editingTreatment.id, m.id!, { 
+                name: m.name.trim(), 
+                dosage: m.dosage.trim(), 
+                frequency: m.frequency.trim(), 
+                type: m.type.trim() 
+              });
+            }),
+            ...deletions.map(id => {
+              console.log('[CUIDADOR-TRATAMIENTOS] Eliminando medicamento:', id);
+              return deleteTreatmentMedication(editingTreatment.id, id);
+            })
           ]);
         } catch (syncErr: any) {
           console.error('[CUIDADOR-TRATAMIENTOS] Error sincronizando medicamentos:', syncErr);
@@ -233,8 +251,15 @@ export default function CaregiverTreatmentsScreen() {
         // Crear nuevo tratamiento
         // Preparar medicamentos para creación (solo los válidos no vacíos)
         const medsToCreate = medications
-          .filter(m => m.name?.trim())
-          .map(m => ({ name: m.name.trim(), dosage: (m.dosage || '').trim(), frequency: (m.frequency || '').trim(), type: (m.type || '').trim() }));
+          .filter(m => m.name?.trim() && m.dosage?.trim() && m.frequency?.trim() && m.type?.trim())
+          .map(m => ({ 
+            name: m.name.trim(), 
+            dosage: m.dosage.trim(), 
+            frequency: m.frequency.trim(), 
+            type: m.type.trim() 
+          }));
+        
+        console.log('[CUIDADOR-TRATAMIENTOS] Medicamentos válidos para crear:', medsToCreate);
 
         await createTreatment({
           ...treatmentData,
@@ -273,10 +298,20 @@ export default function CaregiverTreatmentsScreen() {
 
   // Helpers UI medicamentos
   const addMedicationRow = () => {
-    setMedications(prev => [...prev, { name: '', dosage: '', frequency: '', type: '' }]);
+    console.log('[CUIDADOR-TRATAMIENTOS] Agregando nueva fila de medicamento');
+    setMedications(prev => {
+      const newMedications = [...prev, { name: '', dosage: '', frequency: 'daily', type: 'oral' }];
+      console.log('[CUIDADOR-TRATAMIENTOS] Medicamentos después de agregar fila:', newMedications);
+      return newMedications;
+    });
   };
   const updateMedicationField = (index: number, field: 'name' | 'dosage' | 'frequency' | 'type', value: string) => {
-    setMedications(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+    console.log(`[CUIDADOR-TRATAMIENTOS] Actualizando medicamento ${index}, campo ${field} con valor:`, value);
+    setMedications(prev => {
+      const updated = prev.map((m, i) => i === index ? { ...m, [field]: value } : m);
+      console.log(`[CUIDADOR-TRATAMIENTOS] Medicamentos después de actualizar:`, updated);
+      return updated;
+    });
   };
   const removeMedicationRow = (index: number) => {
     setMedications(prev => prev.filter((_, i) => i !== index));
@@ -481,7 +516,7 @@ export default function CaregiverTreatmentsScreen() {
                       <View style={[GLOBAL_STYLES.row, { gap: 8, marginTop: 6 }]}>
                         <View style={[styles.pickerContainer, { flex: 1 }]}>
                           <Picker
-                            selectedValue={med.frequency || ''}
+                            selectedValue={med.frequency || 'daily'}
                             onValueChange={(value) => updateMedicationField(idx, 'frequency', value)}
                             mode={Platform.OS === 'android' ? 'dropdown' : undefined}
                             dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}
@@ -494,7 +529,7 @@ export default function CaregiverTreatmentsScreen() {
                         </View>
                         <View style={[styles.pickerContainer, { flex: 1 }]}>
                           <Picker
-                            selectedValue={med.type || ''}
+                            selectedValue={med.type || 'oral'}
                             onValueChange={(value) => updateMedicationField(idx, 'type', value)}
                             mode={Platform.OS === 'android' ? 'dropdown' : undefined}
                             dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}

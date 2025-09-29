@@ -283,6 +283,8 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           ...data, 
           patientProfileId: numericPatientId // Usar el ID numérico si está disponible
         };
+        
+        console.log('[useAppointments] Datos enviados al servidor:', bodyData);
         const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BASE);
         
         console.log('[useAppointments] Enviando petición a:', endpoint);
@@ -312,7 +314,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             title: responseData.title || responseData.doctorName || 'Sin título',
             // Asegurar que dateTime esté presente
             dateTime: responseData.dateTime || responseData.date || responseData.scheduledFor,
-            // Specialty: si el servidor no lo envía, persistir el que venía en el formulario
+            // Specialty: usar el valor del servidor si está disponible, sino el del formulario
             specialty: (responseData as any).specialty ?? (data as any).specialty ?? null,
             // Preservar doctorName si existe
             doctorName: responseData.doctorName || responseData.title,
@@ -406,7 +408,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       // Si estamos online, intentar sincronizar
       if (token) {
         try {
-          // Enviar objeto completo esperado por el backend, incluyendo patientProfileId
+          // Enviar objeto completo incluyendo specialty (ya implementado en el backend)
           const payload = {
             title: newAppointment.title,
             dateTime: newAppointment.dateTime,
@@ -415,6 +417,8 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             description: newAppointment.description,
             patientProfileId: numericPatientId,
           };
+          
+          console.log('[useAppointments] Datos enviados en UPDATE:', payload);
           const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BY_ID, { id });
           const res = await fetch(endpoint, {
             method: 'PUT',
@@ -432,18 +436,18 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
               ...(serverAppointment || {}),
               // Preservar/asegurar campos
               id,
-              title: (serverAppointment?.title ?? newAppointment.title) || 'Sin título',
+              title: serverAppointment?.title || newAppointment.title,
               dateTime: serverAppointment?.dateTime || newAppointment.dateTime,
-              location: serverAppointment?.location ?? newAppointment.location ?? null,
-              specialty: serverAppointment?.specialty ?? newAppointment.specialty ?? null,
-              description: serverAppointment?.description ?? newAppointment.description ?? null,
-              doctorName: serverAppointment?.doctorName ?? newAppointment.title,
-              patientProfileId: String(serverAppointment?.patientProfileId || numericPatientId),
-              createdAt: serverAppointment?.createdAt || newAppointment.createdAt || new Date().toISOString(),
-              updatedAt: serverAppointment?.updatedAt || new Date().toISOString(),
+              location: serverAppointment?.location || newAppointment.location,
+              // Specialty: usar el valor del servidor si está disponible, sino el local
+              specialty: serverAppointment?.specialty ?? newAppointment.specialty,
+              description: serverAppointment?.description || newAppointment.description,
+              patientProfileId: String(serverAppointment?.patientProfileId || patientId),
               isOffline: false,
               syncStatus: 'synced',
-            } as LocalAppointment;
+              createdAt: serverAppointment?.createdAt || newAppointment.createdAt,
+              updatedAt: serverAppointment?.updatedAt || new Date().toISOString()
+            };
             await localDB.saveAppointment(mergedForLocal);
             // Actualizar estado en memoria con lo más fresco
             const refreshedAppointments = get().appointments.map(apt =>

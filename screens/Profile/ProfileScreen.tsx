@@ -54,6 +54,21 @@ const formatLocalDateFromYMD = (ymd: string): string => {
   return date ? date.toLocaleDateString('es-ES') : '';
 };
 
+// Convertir fecha ISO a formato YYYY-MM-DD
+const convertISODateToYMD = (isoDate: string): string => {
+  if (!isoDate) return '';
+  try {
+    const date = new Date(isoDate);
+    if (isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  } catch {
+    return '';
+  }
+};
+
 export default function ProfileScreen() {
   console.log('[ProfileScreen] Componente montándose/re-renderizando...');
   
@@ -241,10 +256,12 @@ export default function ProfileScreen() {
 
     console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
     console.log('[ProfileScreen] bloodType del perfil:', profile.bloodType);
+    console.log('[ProfileScreen] birthDate original:', profile.birthDate || profile.dateOfBirth);
+    console.log('[ProfileScreen] birthDate convertido:', convertISODateToYMD(profile.birthDate || profile.dateOfBirth || ''));
 
     const newForm = {
       name: profile.name || '',
-      birthDate: profile.birthDate || profile.dateOfBirth || '',
+      birthDate: convertISODateToYMD(profile.birthDate || profile.dateOfBirth || ''),
       gender: profile.gender || '',
       weight: profile.weight?.toString() || '',
       height: profile.height?.toString() || '',

@@ -170,12 +170,21 @@ export default function TreatmentsScreen() {
     
     // Cargar medicamentos actuales del tratamiento
     try {
+      console.log('[TRATAMIENTOS] Cargando medicamentos para tratamiento:', treatment.id);
       const meds = await getTreatmentMedications(treatment.id);
-      const mapped = (meds || []).map((m: any) => ({ id: m.id, name: m.name || '', dosage: m.dosage || '', frequency: m.frequency || '', type: m.type || '' }));
+      console.log('[TRATAMIENTOS] Medicamentos obtenidos del servidor:', meds);
+      const mapped = (meds || []).map((m: any) => ({ 
+        id: m.id, 
+        name: m.name || '', 
+        dosage: m.dosage || '', 
+        frequency: m.frequency || 'daily', 
+        type: m.type || 'oral' 
+      }));
+      console.log('[TRATAMIENTOS] Medicamentos mapeados para UI:', mapped);
       setMedications(mapped);
       setOriginalMedications(mapped as any);
     } catch (e) {
-      console.log('[TRATAMIENTOS] No se pudieron cargar medicamentos:', (e as any)?.message);
+      console.error('[TRATAMIENTOS] Error cargando medicamentos:', e);
       setMedications([]);
       setOriginalMedications([]);
     }
@@ -224,12 +233,26 @@ export default function TreatmentsScreen() {
         const deletions = [...byIdOriginal.keys()].filter(id => !currentById.has(id));
 
         try {
+          console.log('[TRATAMIENTOS] Medicamentos a agregar:', adds);
+          console.log('[TRATAMIENTOS] Medicamentos a actualizar:', updates);
+          console.log('[TRATAMIENTOS] Medicamentos a eliminar:', deletions);
+          
           await Promise.all([
-            ...adds.map(m => addMedicationToTreatment(editingTreatment.id, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
-            ...updates.map(m => updateTreatmentMedication(editingTreatment.id, m.id!, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() })),
-            ...deletions.map(id => deleteTreatmentMedication(editingTreatment.id, id))
+            ...adds.map(m => {
+              console.log('[TRATAMIENTOS] Agregando medicamento:', { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() });
+              return addMedicationToTreatment(editingTreatment.id, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() });
+            }),
+            ...updates.map(m => {
+              console.log('[TRATAMIENTOS] Actualizando medicamento:', { id: m.id, name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() });
+              return updateTreatmentMedication(editingTreatment.id, m.id!, { name: m.name.trim(), dosage: m.dosage.trim(), frequency: m.frequency.trim(), type: m.type.trim() });
+            }),
+            ...deletions.map(id => {
+              console.log('[TRATAMIENTOS] Eliminando medicamento:', id);
+              return deleteTreatmentMedication(editingTreatment.id, id);
+            })
           ]);
         } catch (syncErr: any) {
+          console.error('[TRATAMIENTOS] Error sincronizando medicamentos:', syncErr);
           console.log('[TreatmentsScreen] Aviso: algunos medicamentos quedaron pendientes de sincronización:', syncErr?.message || syncErr);
           // Ya se guardaron localmente como pendientes y se verán en el editor; evitamos alerta bloqueante.
         }
@@ -238,8 +261,15 @@ export default function TreatmentsScreen() {
       } else {
         // Preparar medicamentos para creación (solo los válidos no vacíos)
         const medsToCreate = medications
-          .filter(m => m.name?.trim())
-          .map(m => ({ name: m.name.trim(), dosage: (m.dosage || '').trim(), frequency: (m.frequency || '').trim(), type: (m.type || '').trim() }));
+          .filter(m => m.name?.trim() && m.dosage?.trim() && m.frequency?.trim() && m.type?.trim())
+          .map(m => ({ 
+            name: m.name.trim(), 
+            dosage: m.dosage.trim(), 
+            frequency: m.frequency.trim(), 
+            type: m.type.trim() 
+          }));
+        
+        console.log('[TRATAMIENTOS] Medicamentos válidos para crear:', medsToCreate);
 
         await createTreatment({
           ...treatmentData,
@@ -308,10 +338,20 @@ export default function TreatmentsScreen() {
 
   // Helpers UI medicamentos
   const addMedicationRow = () => {
-    setMedications(prev => [...prev, { name: '', dosage: '', frequency: '', type: '' }]);
+    console.log('[TRATAMIENTOS] Agregando nueva fila de medicamento');
+    setMedications(prev => {
+      const newMedications = [...prev, { name: '', dosage: '', frequency: 'daily', type: 'oral' }];
+      console.log('[TRATAMIENTOS] Medicamentos después de agregar fila:', newMedications);
+      return newMedications;
+    });
   };
   const updateMedicationField = (index: number, field: 'name' | 'dosage' | 'frequency' | 'type', value: string) => {
-    setMedications(prev => prev.map((m, i) => i === index ? { ...m, [field]: value } : m));
+    console.log(`[TRATAMIENTOS] Actualizando medicamento ${index}, campo ${field} con valor:`, value);
+    setMedications(prev => {
+      const updated = prev.map((m, i) => i === index ? { ...m, [field]: value } : m);
+      console.log(`[TRATAMIENTOS] Medicamentos después de actualizar:`, updated);
+      return updated;
+    });
   };
   const removeMedicationRow = (index: number) => {
     setMedications(prev => prev.filter((_, i) => i !== index));
@@ -718,7 +758,7 @@ export default function TreatmentsScreen() {
                       <View style={[GLOBAL_STYLES.row, { gap: 8, marginTop: 6 }]}>
                         <View style={[styles.pickerContainer, { flex: 1 }]}>
                           <Picker
-                            selectedValue={med.frequency || ''}
+                            selectedValue={med.frequency || 'daily'}
                             onValueChange={(value) => updateMedicationField(idx, 'frequency', value)}
                             mode={Platform.OS === 'android' ? 'dropdown' : undefined}
                             dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}
@@ -731,7 +771,7 @@ export default function TreatmentsScreen() {
                         </View>
                         <View style={[styles.pickerContainer, { flex: 1 }]}>
                           <Picker
-                            selectedValue={med.type || ''}
+                            selectedValue={med.type || 'oral'}
                             onValueChange={(value) => updateMedicationField(idx, 'type', value)}
                             mode={Platform.OS === 'android' ? 'dropdown' : undefined}
                             dropdownIconColor={Platform.OS === 'android' ? COLORS.text.secondary : undefined}
