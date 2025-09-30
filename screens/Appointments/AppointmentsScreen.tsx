@@ -158,23 +158,59 @@ export default function AppointmentsScreen() {
   };
 
   const openEditModal = async (appt: any) => {
+    console.log('[AppointmentsScreen] Abriendo modal de edición para cita:', appt);
+    
     setEditingAppointment(appt);
-    setValue('doctorName', appt.title);
+    
+    // Cargar datos básicos de la cita
+    setValue('doctorName', appt.title || '');
     setValue('specialty', (appt as any).specialty || '');
-    setValue('location', appt.location);
-    if (appt.dateTime) {
-      setValue('date', new Date(appt.dateTime));
-    }
-    setValue('time', appt.dateTime ? new Date(appt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
+    setValue('location', appt.location || '');
     setValue('notes', appt.description || '');
+    
+    // Manejar fecha y hora con validación robusta
+    if (appt.dateTime) {
+      try {
+        const appointmentDate = new Date(appt.dateTime);
+        if (!isNaN(appointmentDate.getTime())) {
+          setValue('date', appointmentDate);
+          setSelectedDate(appointmentDate);
+          
+          // Formatear hora correctamente
+          const timeString = appointmentDate.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: false 
+          });
+          setValue('time', timeString);
+          console.log('[AppointmentsScreen] Fecha y hora cargadas:', appointmentDate.toISOString(), timeString);
+        } else {
+          console.warn('[AppointmentsScreen] Fecha inválida:', appt.dateTime);
+          setValue('date', new Date());
+          setValue('time', '09:00');
+        }
+      } catch (error) {
+        console.error('[AppointmentsScreen] Error parseando fecha:', appt.dateTime, error);
+        setValue('date', new Date());
+        setValue('time', '09:00');
+      }
+    } else {
+      console.warn('[AppointmentsScreen] No hay fecha/hora en la cita');
+      setValue('date', new Date());
+      setValue('time', '09:00');
+    }
     
     // Cargar alarmas existentes para la cita
     try {
+      console.log('[AppointmentsScreen] Cargando alarmas existentes para cita:', appt.id);
       const existingAlarms = await getExistingAlarmsForElement('appointment', appt.id);
+      console.log('[AppointmentsScreen] Alarmas encontradas:', existingAlarms);
+      
       setSelectedTimes(existingAlarms.selectedTimes);
       setFrequencyType(existingAlarms.frequencyType);
       setDaysOfWeek(existingAlarms.daysOfWeek);
       setEveryXHours(existingAlarms.everyXHours);
+      
       // Fallback: si no hay alarmas detectadas, usar recordatorio por defecto 60 min antes
       if (!existingAlarms.selectedTimes || existingAlarms.selectedTimes.length === 0) {
         if (appt.dateTime) {
@@ -184,10 +220,11 @@ export default function AppointmentsScreen() {
           setFrequencyType('daily');
           setDaysOfWeek([]);
           setEveryXHours('8');
+          console.log('[AppointmentsScreen] Usando recordatorio por defecto:', reminder.toISOString());
         }
       }
     } catch (error) {
-      console.error('[CITAS] Error cargando alarmas existentes:', error);
+      console.error('[AppointmentsScreen] Error cargando alarmas existentes:', error);
       // Resetear a valores por defecto/fallback desde la hora de la cita
       if (appt.dateTime) {
         const d = new Date(appt.dateTime);
@@ -205,6 +242,7 @@ export default function AppointmentsScreen() {
     }
     
     setModalVisible(true);
+    console.log('[AppointmentsScreen] Modal de edición abierto');
   };
   const openCreateModal = () => {
     setEditingAppointment(null);

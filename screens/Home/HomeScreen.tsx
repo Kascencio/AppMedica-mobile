@@ -288,33 +288,105 @@ export default function HomeScreen() {
   };
 
   const getNextAppointment = (): any => {
-    if (!appointments || appointments.length === 0) return null;
+    if (!appointments || appointments.length === 0) {
+      console.log('[HomeScreen] No hay citas disponibles');
+      return null;
+    }
+    
     const now = new Date();
+    console.log('[HomeScreen] Buscando próximas citas desde:', now.toISOString());
+    
+    // Filtrar citas futuras válidas
     const futureAppointments = appointments.filter((apt: any) => {
-      if (!apt.dateTime) return false;
-      const aptDate = new Date(apt.dateTime);
-      return aptDate > now;
+      if (!apt.dateTime) {
+        console.warn('[HomeScreen] Cita sin fecha:', apt);
+        return false;
+      }
+      
+      try {
+        const aptDate = new Date(apt.dateTime);
+        if (isNaN(aptDate.getTime())) {
+          console.warn('[HomeScreen] Fecha inválida en cita:', apt.dateTime);
+          return false;
+        }
+        
+        const isValid = aptDate > now;
+        console.log(`[HomeScreen] Cita ${apt.title || 'Sin título'}: ${aptDate.toISOString()} - ${isValid ? 'VÁLIDA' : 'PASADA'}`);
+        return isValid;
+      } catch (error) {
+        console.error('[HomeScreen] Error procesando fecha de cita:', apt.dateTime, error);
+        return false;
+      }
     });
     
-    if (futureAppointments.length === 0) return null;
+    if (futureAppointments.length === 0) {
+      console.log('[HomeScreen] No hay citas futuras');
+      return null;
+    }
     
-    return futureAppointments.sort((a, b) => {
-      const dateA = new Date(a.dateTime);
-      const dateB = new Date(b.dateTime);
-      return dateA.getTime() - dateB.getTime();
-    })[0];
+    // Ordenar por fecha y hora (más próxima primero)
+    const sortedAppointments = futureAppointments.sort((a, b) => {
+      try {
+        const dateA = new Date(a.dateTime);
+        const dateB = new Date(b.dateTime);
+        return dateA.getTime() - dateB.getTime();
+      } catch (error) {
+        console.error('[HomeScreen] Error ordenando citas:', error);
+        return 0;
+      }
+    });
+    
+    const nextAppointment = sortedAppointments[0];
+    console.log('[HomeScreen] Próxima cita seleccionada:', {
+      title: nextAppointment.title,
+      dateTime: nextAppointment.dateTime,
+      doctor: nextAppointment.doctorName,
+      location: nextAppointment.location
+    });
+    
+    return nextAppointment;
   };
 
   const formatAppointmentDateTime = (appointment: any) => {
-    if (!appointment?.dateTime) return '--';
-    const date = new Date(appointment.dateTime);
-    return date.toLocaleDateString('es-ES', { 
-      weekday: 'short', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    if (!appointment?.dateTime) return 'Sin fecha programada';
+    
+    try {
+      const date = new Date(appointment.dateTime);
+      if (isNaN(date.getTime())) {
+        console.warn('[HomeScreen] Fecha inválida en cita:', appointment.dateTime);
+        return 'Fecha inválida';
+      }
+      
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const isTomorrow = date.toDateString() === new Date(now.getTime() + 24 * 60 * 60 * 1000).toDateString();
+      
+      // Formatear fecha
+      let dateStr = '';
+      if (isToday) {
+        dateStr = 'Hoy';
+      } else if (isTomorrow) {
+        dateStr = 'Mañana';
+      } else {
+        dateStr = date.toLocaleDateString('es-ES', { 
+          weekday: 'short', 
+          month: 'short', 
+          day: 'numeric'
+        });
+      }
+      
+      // Formatear hora en formato AM/PM
+      const timeStr = date.toLocaleTimeString('es-ES', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+      
+      return `${dateStr} • ${timeStr}`;
+    } catch (error) {
+      console.error('[HomeScreen] Error formateando fecha de cita:', error);
+      return 'Error en fecha';
+    }
   };
 
   const getTodayTimeline = () => {
@@ -495,17 +567,31 @@ export default function HomeScreen() {
           <View style={styles.nextApptCard}>
             <View style={styles.nextApptHeader}>
               <Ionicons name="calendar" size={20} color={COLORS.medical.appointment} />
-              <Text style={styles.nextApptTitle}>Siguiente cita</Text>
+              <Text style={styles.nextApptTitle}>Próxima cita</Text>
             </View>
             <View style={styles.nextApptContent}>
               <Text style={styles.nextApptDateTime}>
                 {formatAppointmentDateTime(getNextAppointment())}
               </Text>
-              <Text style={styles.nextApptDoctor}>{getNextAppointment()?.doctorName}</Text>
-              <Text style={styles.nextApptLocation}>{getNextAppointment()?.location}</Text>
+              <Text style={styles.nextApptDoctor}>
+                {getNextAppointment()?.title || getNextAppointment()?.doctorName || 'Sin doctor asignado'}
+              </Text>
+              {getNextAppointment()?.location && (
+                <Text style={styles.nextApptLocation}>
+                  📍 {getNextAppointment().location}
+                </Text>
+              )}
+              {getNextAppointment()?.specialty && (
+                <Text style={styles.nextApptSpecialty}>
+                  🏥 {MEDICAL_SPECIALTIES.find(s => s.value === getNextAppointment().specialty)?.label || getNextAppointment().specialty}
+                </Text>
+              )}
             </View>
-            <TouchableOpacity style={styles.viewApptBtn}>
-              <Text style={styles.viewApptText}>Ver detalles</Text>
+            <TouchableOpacity 
+              style={styles.viewApptBtn}
+              onPress={() => (navigation as any).navigate('Appointments')}
+            >
+              <Text style={styles.viewApptText}>Ver todas las citas</Text>
               <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
@@ -842,6 +928,13 @@ const styles = StyleSheet.create({
   nextApptLocation: {
     fontSize: 16,
     color: COLORS.text.secondary,
+    marginTop: 4,
+  },
+  nextApptSpecialty: {
+    fontSize: 14,
+    color: COLORS.text.tertiary,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   viewAppointmentBtn: {
     flexDirection: 'row',

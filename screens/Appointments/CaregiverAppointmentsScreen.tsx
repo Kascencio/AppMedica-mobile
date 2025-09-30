@@ -91,17 +91,50 @@ export default function CaregiverAppointmentsScreen() {
   };
   
   const openEditModal = async (apt: any) => {
+    console.log('[CaregiverAppointmentsScreen] Abriendo modal de edición para cita:', apt);
+    
     setEditingAppointment(apt);
+    
+    // Cargar datos básicos de la cita
     setValue('doctorName', apt.title || '');
     setValue('specialty', apt.specialty || '');
     setValue('location', apt.location || '');
-    const d = apt.dateTime ? new Date(apt.dateTime) : undefined;
-    setValue('date', d);
-    setSelectedDate(d);
-    setValue('time', apt.dateTime ? new Date(apt.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '');
     setValue('notes', apt.description || '');
     
+    // Manejar fecha y hora con validación robusta
+    if (apt.dateTime) {
+      try {
+        const appointmentDate = new Date(apt.dateTime);
+        if (!isNaN(appointmentDate.getTime())) {
+          setValue('date', appointmentDate);
+          setSelectedDate(appointmentDate);
+          
+          // Formatear hora correctamente
+          const timeString = appointmentDate.toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: false 
+          });
+          setValue('time', timeString);
+          console.log('[CaregiverAppointmentsScreen] Fecha y hora cargadas:', appointmentDate.toISOString(), timeString);
+        } else {
+          console.warn('[CaregiverAppointmentsScreen] Fecha inválida:', apt.dateTime);
+          setValue('date', new Date());
+          setValue('time', '09:00');
+        }
+      } catch (error) {
+        console.error('[CaregiverAppointmentsScreen] Error parseando fecha:', apt.dateTime, error);
+        setValue('date', new Date());
+        setValue('time', '09:00');
+      }
+    } else {
+      console.warn('[CaregiverAppointmentsScreen] No hay fecha/hora en la cita');
+      setValue('date', new Date());
+      setValue('time', '09:00');
+    }
+    
     setModalVisible(true);
+    console.log('[CaregiverAppointmentsScreen] Modal de edición abierto');
   };
 
   const onSubmit = async (data: AppointmentForm) => {

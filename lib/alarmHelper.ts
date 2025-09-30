@@ -5,13 +5,20 @@ import { alarmSchedulerEngine } from './alarmSchedulerEngine';
  * Helper para obtener alarmas existentes de un elemento específico
  */
 export async function getExistingAlarmsForElement(type: string, elementId: string) {
+  console.log(`[alarmHelper] Obteniendo alarmas existentes para ${type}:${elementId}`);
+  
   try {
     // 1) Intentar primero desde el motor en memoria (más fidedigno tras programar)
     const fromEngine = getExistingAlarmsFromEngine(type, elementId);
     const hasEngineData = fromEngine.selectedTimes.length > 0 || fromEngine.daysOfWeek.length > 0 || (fromEngine.everyXHours && fromEngine.everyXHours !== '8');
-    if (hasEngineData) return fromEngine;
+    
+    if (hasEngineData) {
+      console.log(`[alarmHelper] Alarmas encontradas en motor:`, fromEngine);
+      return fromEngine;
+    }
 
     // 2) Fallback: consultar notificaciones programadas del sistema
+    console.log(`[alarmHelper] Consultando notificaciones programadas del sistema...`);
     const scheduledNotifications = await getScheduledNotifications();
     
     const elementAlarms = scheduledNotifications.filter(notification => {
@@ -24,6 +31,8 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
          data?.id === elementId)
       );
     });
+
+    console.log(`[alarmHelper] Notificaciones encontradas para ${type}:${elementId}:`, elementAlarms.length);
 
     const alarmConfig = {
       selectedTimes: [] as Date[],
@@ -38,14 +47,24 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
 
       // Expo Notifications no siempre expone el trigger date; inferir desde datos guardados
       if (data?.scheduledFor) {
-        const d = new Date(data.scheduledFor);
-        if (!isNaN(d.getTime())) {
-          alarmConfig.selectedTimes.push(d);
+        try {
+          const d = new Date(data.scheduledFor);
+          if (!isNaN(d.getTime())) {
+            alarmConfig.selectedTimes.push(d);
+            console.log(`[alarmHelper] Agregada hora desde scheduledFor:`, d.toISOString());
+          }
+        } catch (error) {
+          console.warn(`[alarmHelper] Error parseando scheduledFor:`, data.scheduledFor, error);
         }
       } else if (trigger?.date) {
-        const d = new Date(trigger.date);
-        if (!isNaN(d.getTime())) {
-          alarmConfig.selectedTimes.push(d);
+        try {
+          const d = new Date(trigger.date);
+          if (!isNaN(d.getTime())) {
+            alarmConfig.selectedTimes.push(d);
+            console.log(`[alarmHelper] Agregada hora desde trigger.date:`, d.toISOString());
+          }
+        } catch (error) {
+          console.warn(`[alarmHelper] Error parseando trigger.date:`, trigger.date, error);
         }
       }
 
@@ -77,6 +96,7 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
       });
     }
 
+    console.log(`[alarmHelper] Configuración final de alarmas:`, alarmConfig);
     return alarmConfig;
   } catch (error) {
     console.error('[alarmHelper] Error obteniendo alarmas existentes:', error);
