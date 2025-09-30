@@ -93,6 +93,11 @@ export const useMedications = create<MedicationsState>((set, get) => ({
             for (const medication of medications) {
               const localMedication: LocalMedication = {
                 ...medication,
+                // Asegurar que el campo 'time' esté en formato correcto (HH:MM)
+                time: medication.time ? 
+                  (medication.time.includes(':') ? medication.time : 
+                   new Date(`2000-01-01T${medication.time}`).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false })) : 
+                  undefined,
                 isOffline: false,
                 syncStatus: 'synced',
                 updatedAt: medication.updatedAt || medication.createdAt || new Date().toISOString()

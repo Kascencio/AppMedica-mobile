@@ -280,6 +280,9 @@ export default function AppointmentsScreen() {
       reset();
       setModalVisible(false);
       setEditingAppointment(null);
+      
+      // Recargar la lista de citas para mostrar los cambios
+      await getAppointments();
     } catch (e: any) {
       setFormError(e.message || 'Error al guardar');
     }

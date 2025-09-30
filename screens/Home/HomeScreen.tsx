@@ -230,21 +230,60 @@ export default function HomeScreen() {
     const withTime = todayMedications.filter(m => !!m.time);
     const source = withTime.length > 0 ? withTime : todayMedications;
     return source.sort((a, b) => {
-      const timeA = a.time ? new Date(`2000-01-01 ${a.time}`) : new Date(8640000000000000);
-      const timeB = b.time ? new Date(`2000-01-01 ${b.time}`) : new Date(8640000000000000);
-      return timeA.getTime() - timeB.getTime();
+      // Función helper para obtener timestamp de hora
+      const getTimeStamp = (med: any) => {
+        if (!med.time) return 8640000000000000; // Máximo timestamp si no hay hora
+        
+        try {
+          // Si ya está en formato HH:MM, usarlo directamente
+          if (med.time.includes(':') && !med.time.includes('T')) {
+            return new Date(`2000-01-01T${med.time}`).getTime();
+          }
+          // Si está en formato ISO o timestamp, parsearlo
+          const timeStr = med.time.includes('T') ? med.time : `2000-01-01T${med.time}`;
+          return new Date(timeStr).getTime();
+        } catch (error) {
+          console.warn('[HomeScreen] Error parseando horario para ordenación:', med.time, error);
+          return 8640000000000000;
+        }
+      };
+      
+      return getTimeStamp(a) - getTimeStamp(b);
     })[0];
   };
 
   const getNextMedicationTime = () => {
     const nextMed = getNextMedication();
     if (!nextMed) return '--:--';
-    if (nextMed.time) return nextMed.time;
+    
+    // Si tiene campo 'time' directo, usarlo
+    if (nextMed.time) {
+      // Asegurar formato HH:MM
+      if (nextMed.time.includes(':')) {
+        return nextMed.time;
+      } else {
+        // Si viene en formato ISO o timestamp, convertirlo
+        try {
+          const timeStr = nextMed.time.includes('T') ? nextMed.time : `2000-01-01T${nextMed.time}`;
+          const d = new Date(timeStr);
+          return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+        } catch (error) {
+          console.warn('[HomeScreen] Error parseando horario:', nextMed.time, error);
+          return '--:--';
+        }
+      }
+    }
+    
     // Fallback: si no hay time, intentar formatear desde startDate
     if (nextMed.startDate) {
-      const d = new Date(nextMed.startDate);
-      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+      try {
+        const d = new Date(nextMed.startDate);
+        return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+      } catch (error) {
+        console.warn('[HomeScreen] Error parseando startDate:', nextMed.startDate, error);
+      }
     }
+    
     return '--:--';
   };
 
@@ -285,7 +324,32 @@ export default function HomeScreen() {
     if (medications && medications.length > 0) {
       medications.forEach(med => {
         if (med.startDate || med.time) {
-          const time = med.time || new Date(med.startDate as any).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+          let time = '--:--';
+          
+          // Priorizar campo 'time' si existe
+          if (med.time) {
+            if (med.time.includes(':')) {
+              time = med.time;
+            } else {
+              try {
+                const timeStr = med.time.includes('T') ? med.time : `2000-01-01T${med.time}`;
+                const d = new Date(timeStr);
+                time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+              } catch (error) {
+                console.warn('[HomeScreen] Error parseando horario en timeline:', med.time, error);
+                time = '--:--';
+              }
+            }
+          } else if (med.startDate) {
+            try {
+              const d = new Date(med.startDate);
+              time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+            } catch (error) {
+              console.warn('[HomeScreen] Error parseando startDate en timeline:', med.startDate, error);
+              time = '--:--';
+            }
+          }
+          
           timeline.push({
             time,
             title: med.name,

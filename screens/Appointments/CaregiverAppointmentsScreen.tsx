@@ -129,6 +129,11 @@ export default function CaregiverAppointmentsScreen() {
       setSelectedDate(undefined);
       setModalVisible(false);
       setEditingAppointment(null);
+      
+      // Recargar la lista de citas para mostrar los cambios
+      if (selectedPatientId) {
+        await getAppointments(selectedPatientId);
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message || 'No se pudo guardar la cita');
     }

@@ -449,11 +449,9 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
               updatedAt: serverAppointment?.updatedAt || new Date().toISOString()
             };
             await localDB.saveAppointment(mergedForLocal);
-            // Actualizar estado en memoria con lo más fresco
-            const refreshedAppointments = get().appointments.map(apt =>
-              apt.id === id ? { ...apt, ...mergedForLocal } as any : apt
-            );
-            set({ appointments: refreshedAppointments });
+            
+            // Recargar la lista completa para asegurar que se muestren los cambios
+            await get().getAppointments(patientId);
           } else {
             // Agregar a cola de sincronización
             await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...payload });
