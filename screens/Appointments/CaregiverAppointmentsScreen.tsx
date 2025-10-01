@@ -143,12 +143,18 @@ export default function CaregiverAppointmentsScreen() {
       const d = new Date(data.date);
       d.setHours(isNaN(h) ? 0 : h, isNaN(m) ? 0 : m, 0, 0);
       
+      const doctorName = data.doctorName.trim();
+      const specialty = data.specialty?.trim();
+      const location = data.location.trim();
+      const notes = data.notes?.trim();
+
       const appointmentData = {
-        title: data.doctorName.trim(),
-        specialty: data.specialty?.trim() || undefined,
-        location: data.location.trim(),
+        title: doctorName,
+        doctorName,
+        specialty: specialty ? specialty : null,
+        location,
         dateTime: d.toISOString(),
-        description: data.notes?.trim() || undefined,
+        description: notes || undefined,
         patientProfileId: selectedPatientId
       };
 
