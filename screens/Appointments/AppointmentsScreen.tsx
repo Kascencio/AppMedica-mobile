@@ -261,39 +261,42 @@ export default function AppointmentsScreen() {
       const [h, m] = data.time.split(':').map(Number);
       const date = new Date(data.date);
       date.setHours(h, m, 0, 0);
+
+      const doctorName = data.doctorName.trim();
+      const location = data.location.trim();
+      const notes = data.notes?.trim();
+      const specialty = data.specialty?.trim();
+
+      const payload = {
+        title: doctorName,
+        doctorName,
+        dateTime: date.toISOString(),
+        location,
+        specialty: specialty ? specialty : null,
+        description: notes || undefined,
+      } as const;
+
       if (editingAppointment) {
-        await updateAppointment(editingAppointment.id, {
-          title: data.doctorName,
-          dateTime: date.toISOString(),
-          location: data.location,
-          specialty: data.specialty,
-          description: data.notes,
-        });
+        await updateAppointment(editingAppointment.id, payload);
         apptId = editingAppointment.id;
         // Cancelar notificaciones anteriores usando el ID de la cita
         await cancelAppointmentAlarms(apptId);
       } else {
-        await createAppointment({
-          title: data.doctorName,
-          dateTime: date.toISOString(),
-          location: data.location,
-          specialty: data.specialty,
-          description: data.notes,
-        });
+        await createAppointment(payload);
         // Espera a que getAppointments actualice la lista
         await new Promise(res => setTimeout(res, 500));
         // Busca la nueva cita
-        const newAppt = appointments.find(a => a.title === data.doctorName && a.dateTime === date.toISOString());
+        const newAppt = appointments.find(a => a.title === doctorName && a.dateTime === date.toISOString());
         apptId = newAppt?.id;
       }
       // Programar alarmas para la cita usando el nuevo sistema
       if (apptId) {
         const appointment = {
           id: apptId,
-          title: data.doctorName,
+          title: doctorName,
           dateTime: date.toISOString(),
-          location: data.location,
-          description: data.notes,
+          location,
+          description: notes,
           patientProfileId: profile?.patientProfileId || profile?.id,
         };
 

@@ -12,8 +12,9 @@ interface Appointment {
   title: string;
   dateTime: string;
   location?: string;
-  specialty?: string;
+  specialty?: string | null;
   description?: string;
+  doctorName?: string;
   patientProfileId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -279,8 +280,17 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       try {
         console.log('[useAppointments] Intentando sincronizar con servidor...');
         
-        const bodyData = { 
-          ...data, 
+        const trimmedTitle = data.title?.trim() || data.doctorName?.trim();
+        const rawSpecialty = (data as any).specialty;
+        const trimmedSpecialty = typeof rawSpecialty === 'string' ? rawSpecialty.trim() : rawSpecialty;
+        const specialtyValue = trimmedSpecialty === '' ? null : trimmedSpecialty;
+        const bodyData = {
+          ...data,
+          title: trimmedTitle,
+          doctorName: data.doctorName?.trim() || trimmedTitle,
+          location: data.location?.trim(),
+          description: data.description?.trim(),
+          specialty: specialtyValue,
           patientProfileId: numericPatientId // Usar el ID numérico si está disponible
         };
         
@@ -311,13 +321,13 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           const localAppointment: LocalAppointment = {
             ...responseData,
             // Asegurar que title esté presente
-            title: responseData.title || responseData.doctorName || 'Sin título',
+            title: responseData.title || responseData.doctorName || trimmedTitle || 'Sin título',
             // Asegurar que dateTime esté presente
-            dateTime: responseData.dateTime || responseData.date || responseData.scheduledFor,
+            dateTime: responseData.dateTime || responseData.date || responseData.scheduledFor || (data.dateTime as string),
             // Specialty: usar el valor del servidor si está disponible, sino el del formulario
-            specialty: (responseData as any).specialty ?? (data as any).specialty ?? null,
+            specialty: (responseData as any).specialty ?? specialtyValue ?? null,
             // Preservar doctorName si existe
-            doctorName: responseData.doctorName || responseData.title,
+            doctorName: responseData.doctorName || responseData.title || trimmedTitle,
             // Asegurar que patientProfileId sea string
             patientProfileId: String(responseData.patientProfileId || patientId),
             isOffline: false,
@@ -383,9 +393,21 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         throw new Error('Cita no encontrada');
       }
       
+      const trimmedTitle = data.title?.trim() || data.doctorName?.trim();
+      const trimmedLocation = data.location?.trim();
+      const trimmedDescription = data.description?.trim();
+      const rawSpecialty = (data as any).specialty;
+      const trimmedSpecialty = typeof rawSpecialty === 'string' ? rawSpecialty.trim() : rawSpecialty;
+      const specialtyValue = trimmedSpecialty === '' ? null : trimmedSpecialty;
+
       const newAppointment = {
         ...existingAppointment,
         ...data,
+        title: trimmedTitle || existingAppointment.title,
+        doctorName: data.doctorName?.trim() || trimmedTitle || existingAppointment.doctorName || existingAppointment.title,
+        location: trimmedLocation ?? existingAppointment.location,
+        description: trimmedDescription ?? existingAppointment.description,
+        specialty: specialtyValue !== undefined ? specialtyValue : existingAppointment.specialty,
         updatedAt: new Date().toISOString()
       } as Appointment;
       
@@ -410,11 +432,12 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         try {
           // Enviar objeto completo incluyendo specialty (ya implementado en el backend)
           const payload = {
-            title: newAppointment.title,
+            title: newAppointment.title?.trim() || newAppointment.doctorName?.trim(),
+            doctorName: newAppointment.doctorName?.trim() || newAppointment.title?.trim(),
             dateTime: newAppointment.dateTime,
-            location: newAppointment.location,
+            location: newAppointment.location?.trim(),
             specialty: newAppointment.specialty,
-            description: newAppointment.description,
+            description: newAppointment.description?.trim(),
             patientProfileId: numericPatientId,
           };
           
@@ -437,6 +460,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
               // Preservar/asegurar campos
               id,
               title: serverAppointment?.title || newAppointment.title,
+              doctorName: serverAppointment?.doctorName || newAppointment.doctorName || newAppointment.title,
               dateTime: serverAppointment?.dateTime || newAppointment.dateTime,
               location: serverAppointment?.location || newAppointment.location,
               // Specialty: usar el valor del servidor si está disponible, sino el local
@@ -458,11 +482,12 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
           }
         } catch (syncError) {
           const fallbackPayload = {
-            title: newAppointment.title,
+            title: newAppointment.title?.trim() || newAppointment.doctorName?.trim(),
+            doctorName: newAppointment.doctorName?.trim() || newAppointment.title?.trim(),
             dateTime: newAppointment.dateTime,
-            location: newAppointment.location,
+            location: newAppointment.location?.trim(),
             specialty: newAppointment.specialty,
-            description: newAppointment.description,
+            description: newAppointment.description?.trim(),
             patientProfileId: numericPatientId,
           };
           await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...fallbackPayload });

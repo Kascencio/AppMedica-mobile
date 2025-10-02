@@ -24,7 +24,7 @@ export interface LocalAppointment {
   title: string;
   dateTime: string;
   location?: string;
-  specialty?: string;
+  specialty?: string | null;
   description?: string;
   doctorName?: string;
   patientProfileId: string;
