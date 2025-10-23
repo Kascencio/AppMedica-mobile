@@ -14,6 +14,7 @@ interface Appointment {
   location?: string;
   specialty?: string;
   description?: string;
+  doctorName?: string;
   patientProfileId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -62,6 +63,15 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
+      // Cargar inmediatamente datos locales para mostrar algo en la UI mientras se intenta
+      // sincronizar con el servidor (evita pantalla vacía al entrar)
+      try {
+        const localAppointmentsNow = await localDB.getAppointments(patientId);
+        set({ appointments: localAppointmentsNow });
+      } catch (localErr) {
+        console.log('[useAppointments] Error cargando citas locales iniciales:', localErr);
+      }
+
       // Intentar obtener desde servidor si estamos online
       if (isOnline && token) {
         try {
@@ -90,10 +100,35 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
             
             console.log('[useAppointments] Citas procesadas:', appointments.length);
             
-            // Guardar en base de datos local, preservando specialty si ya existía localmente
+            // Guardar en base de datos local, pero preservar ediciones locales pendientes
             const existingLocal = await localDB.getAppointments(String(patientId));
+            const mappedAppointments: LocalAppointment[] = [];
+
             for (const appointment of appointments) {
               const previous = existingLocal.find(a => a.id === appointment.id);
+
+              // Parsear timestamps para compararlos
+              const serverUpdated = appointment.updatedAt ? new Date(appointment.updatedAt).getTime() : 0;
+              const localUpdated = previous?.updatedAt ? new Date(previous.updatedAt).getTime() : 0;
+
+              // Si existe una versión local pendiente y es más reciente que la versión del servidor,
+              // respetar la versión local (no sobrescribir). Esto evita perder ediciones no sincronizadas.
+              if (previous?.isOffline && localUpdated > serverUpdated) {
+                console.log('[useAppointments] Preservando edición local pendiente para cita:', previous.id);
+                // Asegurar campos mínimos y conservar el estado pendiente
+                const keepLocal: LocalAppointment = {
+                  ...previous,
+                  isOffline: true,
+                  syncStatus: previous.syncStatus || 'pending',
+                  createdAt: previous.createdAt || new Date().toISOString(),
+                  updatedAt: previous.updatedAt || new Date().toISOString(),
+                };
+                await localDB.saveAppointment(keepLocal);
+                mappedAppointments.push(keepLocal);
+                continue;
+              }
+
+              // En caso contrario, guardar la versión del servidor (o hacer merge preferente al servidor)
               const localAppointment: LocalAppointment = {
                 ...appointment,
                 // Asegurar que title esté presente
@@ -113,31 +148,23 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
                 updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString()
               } as LocalAppointment;
               await localDB.saveAppointment(localAppointment);
+              mappedAppointments.push(localAppointment);
             }
-            
-            // Combinar con citas offline
+
+            // Poda: eliminar citas locales que ya no existen en servidor y no están pendientes
             const offlineAppointments = await localDB.getAppointments(patientId);
-            const offlineOnly = offlineAppointments.filter(apt => apt.isOffline);
-            
-            // Mapear las citas del servidor para que tengan el formato correcto
-            const mappedAppointments = appointments.map((appointment: any) => {
-              const previous = (existingLocal || []).find(a => a.id === appointment.id);
-              return {
-                ...appointment,
-                title: appointment.title || appointment.doctorName || 'Sin título',
-                dateTime: appointment.dateTime || appointment.date || appointment.scheduledFor,
-                specialty: appointment.specialty ?? previous?.specialty,
-                doctorName: appointment.doctorName || appointment.title,
-                // Asegurar que patientProfileId sea string
-                patientProfileId: String(appointment.patientProfileId || patientId),
-                // Asegurar que createdAt y updatedAt estén presentes
-                createdAt: appointment.createdAt || new Date().toISOString(),
-                updatedAt: appointment.updatedAt || appointment.createdAt || new Date().toISOString(),
-              };
-            });
-            
-            const allAppointments = [...mappedAppointments, ...offlineOnly];
-            
+            const serverIds = new Set(mappedAppointments.map(a => a.id));
+            for (const local of offlineAppointments) {
+              const isPending = local.isOffline && (local.syncStatus === 'pending' || local.syncStatus === 'failed');
+              if (!isPending && !serverIds.has(local.id)) {
+                console.log('[useAppointments] Podando cita local inexistente en servidor:', local.id);
+                try { await localDB.deleteAppointment(local.id); } catch (pruneErr) { console.log('[useAppointments] Error podando cita local:', pruneErr); }
+              }
+            }
+            const afterPrune = await localDB.getAppointments(patientId);
+            const pendingOnly = afterPrune.filter(apt => apt.isOffline && !serverIds.has(apt.id));
+            const allAppointments = [...mappedAppointments, ...pendingOnly];
+
             set({ appointments: allAppointments });
             return;
           } else if (res.status === 404) {
@@ -394,6 +421,7 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
         ...newAppointment,
         patientProfileId: patientId,
         createdAt: newAppointment.createdAt || new Date().toISOString(),
+        updatedAt: newAppointment.updatedAt || new Date().toISOString(),
         isOffline: !isOnline,
         syncStatus: isOnline ? 'synced' : 'pending'
       };
@@ -405,68 +433,106 @@ export const useAppointments = create<AppointmentsState>((set, get) => ({
       );
       set({ appointments: updatedAppointments });
       
-      // Si estamos online, intentar sincronizar
-      if (token) {
-        try {
-          // Enviar objeto completo incluyendo specialty (ya implementado en el backend)
-          const payload = {
-            title: newAppointment.title,
-            dateTime: newAppointment.dateTime,
-            location: newAppointment.location,
-            specialty: newAppointment.specialty,
-            description: newAppointment.description,
-            patientProfileId: numericPatientId,
-          };
-          
-          console.log('[useAppointments] Datos enviados en UPDATE:', payload);
-          const endpoint = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BY_ID, { id });
-          const res = await fetch(endpoint, {
-            method: 'PUT',
-            headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-            body: JSON.stringify(payload),
-          });
-          
-          if (res.ok) {
-            // Actualizar con respuesta del servidor si devuelve datos
-            let serverAppointment: any = null;
-            try {
-              serverAppointment = await res.json();
-            } catch {}
+      // Si estamos online, intentar sincronizar. Si no hay token, encolamos la operación para reintentar
+      if (!isOnline) {
+        // Ya guardamos localmente con syncStatus pending, en este caso solo informamos
+        console.log('[useAppointments] Modo offline - actualización guardada localmente y marcada como pendiente');
+        return;
+      }
+
+      // Helper para marcar pendiente y encolar
+      const markPendingAndQueue = async (queuePayload: any) => {
+        const pendingLocal: LocalAppointment = {
+          ...localAppointment,
+            isOffline: true,
+            syncStatus: 'pending',
+            updatedAt: new Date().toISOString(),
+        };
+        await localDB.saveAppointment(pendingLocal);
+        const stateUpdated = currentAppointments.map(apt => apt.id === id ? { ...newAppointment, isOffline: true, syncStatus: 'pending' } : apt);
+        set({ appointments: stateUpdated as Appointment[] });
+        await syncService.addToSyncQueue('UPDATE', 'appointments', queuePayload);
+      };
+
+      // Si no hay token de autenticación, marcar local como pendiente y encolar la operación
+      if (!token) {
+        console.log('[useAppointments] No hay token de autenticación - marcando local como pendiente y encolando UPDATE para appointments');
+        await markPendingAndQueue({
+          id,
+          title: newAppointment.title,
+          dateTime: newAppointment.dateTime,
+          location: newAppointment.location,
+          specialty: newAppointment.specialty,
+          description: newAppointment.description,
+          patientProfileId: numericPatientId,
+        });
+        return;
+      }
+
+      try {
+        // Enviar objeto completo incluyendo specialty (ya implementado en el backend)
+        const payload = {
+          title: newAppointment.title,
+          dateTime: newAppointment.dateTime,
+          location: newAppointment.location,
+          specialty: newAppointment.specialty,
+          description: newAppointment.description,
+          patientProfileId: numericPatientId,
+        };
+
+        console.log('[useAppointments] Enviando UPDATE a servidor:', payload);
+  // Añadir patientProfileId como query param (paridad con DELETE y posible requisito backend)
+  const endpointBase = buildApiUrl(API_CONFIG.ENDPOINTS.APPOINTMENTS.BY_ID, { id });
+  const endpoint = `${endpointBase}?patientProfileId=${numericPatientId}`;
+        const res = await fetch(endpoint, {
+          method: 'PUT',
+          headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+
+  if (res.ok) {
+          // Actualizar con respuesta del servidor si devuelve datos
+          let serverAppointment: any = null;
+          try {
+            serverAppointment = await res.json();
+          } catch (e) {
+            // Si el servidor responde 204 No Content, seguimos con los datos locales
+            console.log('[useAppointments] UPDATE OK pero sin cuerpo (204/empty)');
+          }
             const mergedForLocal: LocalAppointment = {
               ...(serverAppointment || {}),
-              // Preservar/asegurar campos
               id,
               title: serverAppointment?.title || newAppointment.title,
               dateTime: serverAppointment?.dateTime || newAppointment.dateTime,
               location: serverAppointment?.location || newAppointment.location,
-              // Specialty: usar el valor del servidor si está disponible, sino el local
               specialty: serverAppointment?.specialty ?? newAppointment.specialty,
               description: serverAppointment?.description || newAppointment.description,
               patientProfileId: String(serverAppointment?.patientProfileId || patientId),
               isOffline: false,
               syncStatus: 'synced',
-              createdAt: serverAppointment?.createdAt || newAppointment.createdAt,
-              updatedAt: serverAppointment?.updatedAt || new Date().toISOString()
+              createdAt: serverAppointment?.createdAt || newAppointment.createdAt || new Date().toISOString(),
+              updatedAt: serverAppointment?.updatedAt || newAppointment.updatedAt || new Date().toISOString()
             };
-            await localDB.saveAppointment(mergedForLocal);
-            
-            // Recargar la lista completa para asegurar que se muestren los cambios
-            await get().getAppointments(patientId);
-          } else {
-            // Agregar a cola de sincronización
-            await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...payload });
-          }
-        } catch (syncError) {
-          const fallbackPayload = {
-            title: newAppointment.title,
-            dateTime: newAppointment.dateTime,
-            location: newAppointment.location,
-            specialty: newAppointment.specialty,
-            description: newAppointment.description,
-            patientProfileId: numericPatientId,
-          };
-          await syncService.addToSyncQueue('UPDATE', 'appointments', { id, ...fallbackPayload });
+          await localDB.saveAppointment(mergedForLocal);
+
+          // Recargar la lista completa para asegurar que se muestren los cambios
+          await get().getAppointments(patientId);
+        } else {
+          // Si la petición falla, marcar local como pendiente y agregar a cola de sincronización para reintentos
+          console.warn('[useAppointments] UPDATE falló en servidor, marcando local como pendiente y encolando para retry:', res.status, res.statusText);
+          await markPendingAndQueue({ id, ...payload });
         }
+      } catch (syncError) {
+        console.error('[useAppointments] Error enviando UPDATE al servidor, marcando local como pendiente y encolando:', syncError);
+        await markPendingAndQueue({
+          id,
+          title: newAppointment.title,
+          dateTime: newAppointment.dateTime,
+          location: newAppointment.location,
+          specialty: newAppointment.specialty,
+          description: newAppointment.description,
+          patientProfileId: numericPatientId,
+        });
       }
     } catch (err: any) {
       set({ error: err.message });

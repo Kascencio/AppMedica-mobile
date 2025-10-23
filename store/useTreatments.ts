@@ -92,6 +92,22 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
+
+      // Precarga local inmediata para evitar pantalla vacía
+      try {
+        const localInitial = await localDB.getTreatments(String(patientId));
+        const enrichedInitial = await Promise.all(localInitial.map(async (t) => {
+          try {
+            const meds = await localDB.getTreatmentMedications(String(patientId), String(t.id));
+            return { ...t, medications: meds } as any;
+          } catch {
+            return t as any;
+          }
+        }));
+        set({ treatments: enrichedInitial });
+      } catch (e) {
+        console.log('[useTreatments] Error precargando tratamientos locales:', e);
+      }
       
       // Intentar obtener desde servidor si estamos online
       if (isOnline && token) {
@@ -119,22 +135,54 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
             
             console.log('[useTreatments] Tratamientos procesados:', treatments.length);
             
-            // Guardar en base de datos local
+            // Merge preservando ediciones locales pendientes (como citas/meds)
+            const existingLocal = await localDB.getTreatments(String(patientId));
+            const mapped: LocalTreatment[] = [];
             for (const treatment of treatments) {
+              const previous = existingLocal.find(t => t.id === (treatment as any).id);
+              const serverUpdated = (treatment as any).updatedAt ? new Date((treatment as any).updatedAt).getTime() : 0;
+              const localUpdated = previous?.updatedAt ? new Date(previous.updatedAt).getTime() : 0;
+
+              if (previous?.isOffline && localUpdated > serverUpdated) {
+                console.log('[useTreatments] Preservando edición local pendiente para tratamiento:', previous.id);
+                const keepLocal: LocalTreatment = {
+                  ...previous,
+                  isOffline: true,
+                  syncStatus: previous.syncStatus || 'pending',
+                  createdAt: previous.createdAt || new Date().toISOString(),
+                  updatedAt: previous.updatedAt || new Date().toISOString(),
+                };
+                await localDB.saveTreatment(keepLocal);
+                mapped.push(keepLocal);
+                continue;
+              }
+
               const localTreatment: LocalTreatment = {
-                ...treatment,
+                ...(treatment as any),
                 title: (treatment as any).title || (treatment as any).name || 'Sin nombre',
+                patientProfileId: String((treatment as any).patientProfileId || patientId),
                 isOffline: false,
                 syncStatus: 'synced',
-                updatedAt: treatment.updatedAt || treatment.createdAt || new Date().toISOString()
+                createdAt: (treatment as any).createdAt || new Date().toISOString(),
+                updatedAt: (treatment as any).updatedAt || (treatment as any).createdAt || new Date().toISOString()
               };
               await localDB.saveTreatment(localTreatment);
+              mapped.push(localTreatment);
             }
 
-            // Combinar con tratamientos offline
-            const offlineTreatments = await localDB.getTreatments(patientId);
-            const offlineOnly = offlineTreatments.filter(treat => treat.isOffline);
-            const baseTreatments = [...treatments, ...offlineOnly];
+            // Poda: eliminar locales que ya no existen en servidor y no están pendientes
+            const allLocalAfter = await localDB.getTreatments(String(patientId));
+            const serverIds = new Set(mapped.map(m => m.id));
+            for (const local of allLocalAfter) {
+              const isPending = local.isOffline && (local.syncStatus === 'pending' || local.syncStatus === 'failed');
+              if (!isPending && !serverIds.has(local.id)) {
+                console.log('[useTreatments] Podando tratamiento local inexistente en servidor:', local.id);
+                try { await localDB.deleteTreatment(local.id); } catch (pruneErr) { console.log('[useTreatments] Error podando tratamiento local:', pruneErr); }
+              }
+            }
+            const afterPrune = await localDB.getTreatments(String(patientId));
+            const pendingOnly = afterPrune.filter(t => t.isOffline && !serverIds.has(t.id));
+            const baseTreatments = [...mapped, ...pendingOnly];
 
             // Enriquecer con medicamentos locales por tratamiento (para UI)
             const enriched = await Promise.all(baseTreatments.map(async (t: any) => {
@@ -223,8 +271,8 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       }
       
       console.log('[useTreatments] IDs disponibles:', {
-        patientProfileId: profile.patientProfileId,
-        id: profile.id,
+        patientProfileId: profile?.patientProfileId,
+        id: profile?.id,
         selectedPatientId: patientId
       });
       
@@ -362,6 +410,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       const role = (profile?.role || 'PATIENT').toUpperCase();
       const caregiverSelectedId = useCaregiver.getState().selectedPatientId;
       const patientId = role === 'CAREGIVER' ? caregiverSelectedId : (profile?.patientProfileId || profile?.id);
+      const numericPatientId = (profile as any)?.patientProfileIdNumber || patientId;
       const isOnline = await syncService.isOnline();
       const token = useAuth.getState().userToken;
       
@@ -391,8 +440,9 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         ...newTreatment,
         patientProfileId: String(patientId),
         createdAt: newTreatment.createdAt || new Date().toISOString(),
-        isOffline: !isOnline,
-        syncStatus: isOnline ? 'synced' : 'pending'
+        updatedAt: newTreatment.updatedAt || new Date().toISOString(),
+        isOffline: !isOnline || !token,
+        syncStatus: (isOnline && token) ? 'synced' : 'pending'
       };
       await localDB.saveTreatment(localTreatment);
       
@@ -402,30 +452,68 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       );
       set({ treatments: updatedTreatments });
       
-      // Si estamos online, intentar sincronizar
-      if (token) {
-        try {
-          const res = await fetch(buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${id}`), {
-            method: 'PUT',
-            headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ ...data, patientProfileId: patientId }),
-          });
-          
-          if (res.ok) {
-            // Marcar como sincronizado
-            const syncedTreatment: LocalTreatment = {
-              ...localTreatment,
-              isOffline: false,
-              syncStatus: 'synced'
-            };
-            await localDB.saveTreatment(syncedTreatment);
-          } else {
-            // Agregar a cola de sincronización
-            await syncService.addToSyncQueue('UPDATE', 'treatments', { id, ...data });
-          }
-        } catch (syncError) {
-          await syncService.addToSyncQueue('UPDATE', 'treatments', { id, ...data });
+      // Helper para marcar pendiente y encolar
+      const markPendingAndQueue = async (queuePayload: any) => {
+        const pendingLocal: LocalTreatment = {
+          ...localTreatment,
+          isOffline: true,
+          syncStatus: 'pending',
+          updatedAt: new Date().toISOString(),
+        };
+        await localDB.saveTreatment(pendingLocal);
+        set({ treatments: get().treatments.map(t => t.id === id ? { ...newTreatment, isOffline: true, syncStatus: 'pending' } : t) });
+        await syncService.addToSyncQueue('UPDATE', 'treatments', queuePayload);
+      };
+
+      if (!token) {
+        console.log('[useTreatments] No hay token - encolando UPDATE de tratamiento');
+        await markPendingAndQueue({ id, ...data, patientProfileId: numericPatientId });
+        return;
+      }
+
+      try {
+        const payload = {
+          title: (newTreatment as any).title,
+          description: (newTreatment as any).description,
+          startDate: (newTreatment as any).startDate,
+          endDate: (newTreatment as any).endDate,
+          progress: (newTreatment as any).progress,
+          patientProfileId: numericPatientId,
+        };
+        console.log('[useTreatments] Enviando UPDATE a servidor:', payload);
+        const endpointBase = buildApiUrl(`${API_CONFIG.ENDPOINTS.TREATMENTS.BASE}/${id}`);
+        const endpoint = `${endpointBase}?patientProfileId=${numericPatientId}`;
+        const res = await fetch(endpoint, {
+          method: 'PUT',
+          headers: { ...API_CONFIG.DEFAULT_HEADERS, Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          let serverTreatment: any = null;
+          try { serverTreatment = await res.json(); } catch { console.log('[useTreatments] UPDATE OK sin cuerpo'); }
+          const merged: LocalTreatment = {
+            ...(serverTreatment || {}),
+            id,
+            title: serverTreatment?.title || newTreatment.title,
+            description: serverTreatment?.description ?? newTreatment.description,
+            startDate: serverTreatment?.startDate || newTreatment.startDate,
+            endDate: serverTreatment?.endDate || newTreatment.endDate,
+            progress: serverTreatment?.progress || newTreatment.progress,
+            patientProfileId: String(serverTreatment?.patientProfileId || patientId),
+            isOffline: false,
+            syncStatus: 'synced',
+            createdAt: serverTreatment?.createdAt || newTreatment.createdAt || new Date().toISOString(),
+            updatedAt: serverTreatment?.updatedAt || newTreatment.updatedAt || new Date().toISOString(),
+          };
+          await localDB.saveTreatment(merged);
+          await get().getTreatments(patientId);
+        } else {
+          console.warn('[useTreatments] UPDATE falló en servidor, encolando. Status:', res.status);
+          await markPendingAndQueue({ id, ...payload });
         }
+      } catch (syncErr) {
+        console.error('[useTreatments] Error enviando UPDATE tratamiento, encolando:', syncErr);
+        await markPendingAndQueue({ id, ...data, patientProfileId: numericPatientId });
       }
     } catch (err: any) {
       set({ error: err.message });
@@ -503,6 +591,19 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       };
 
       const scheduledIds = await alarmSchedulerEngine.scheduleAlarmsFromConfig(config);
+      try {
+        // Persistir configuración completa para rehidratación local
+        await localDB.saveTreatmentAlarmConfig({
+          elementId: treatment.id,
+          type: 'treatment',
+          frequencyType: (alarmConfig as any).frequencyType || (config.frequency === 'weekly' ? 'daysOfWeek' : config.frequency === 'interval' ? 'everyXHours' : 'daily'),
+          times: [(alarmConfig.time || config.time) as string],
+          daysOfWeek: alarmConfig.daysOfWeek || [],
+          everyXHours: alarmConfig.intervalHours,
+        });
+      } catch (persistErr) {
+        console.warn('[useTreatments] No se pudo persistir configuración de alarmas:', persistErr);
+      }
       console.log(`[useTreatments] ${scheduledIds.length} alarmas programadas para ${treatment.title}`);
       return scheduledIds;
     } catch (error) {
@@ -514,7 +615,7 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
   cancelTreatmentAlarms: async (treatmentId) => {
     try {
       console.log('[useTreatments] Cancelando alarmas para tratamiento:', treatmentId);
-      const cancelledCount = await alarmSchedulerEngine.cancelAlarmsForElement('treatment', treatmentId);
+  const cancelledCount = await alarmSchedulerEngine.cancelAlarmsForElement('treatment' as any, treatmentId);
       console.log(`[useTreatments] ${cancelledCount} alarmas canceladas para tratamiento ${treatmentId}`);
       return cancelledCount;
     } catch (error) {
@@ -547,6 +648,18 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
       };
 
       const scheduledIds = await alarmSchedulerEngine.rescheduleAlarmsForElement(config);
+      try {
+        await localDB.saveTreatmentAlarmConfig({
+          elementId: treatment.id,
+          type: 'treatment',
+          frequencyType: (alarmConfig as any).frequencyType || (config.frequency === 'weekly' ? 'daysOfWeek' : config.frequency === 'interval' ? 'everyXHours' : 'daily'),
+          times: [(alarmConfig.time || config.time) as string],
+          daysOfWeek: alarmConfig.daysOfWeek || [],
+          everyXHours: alarmConfig.intervalHours,
+        });
+      } catch (persistErr) {
+        console.warn('[useTreatments] No se pudo persistir configuración de alarmas (reschedule):', persistErr);
+      }
       console.log(`[useTreatments] ${scheduledIds.length} alarmas reprogramadas para ${treatment.title}`);
       return scheduledIds;
     } catch (error) {
@@ -605,17 +718,42 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
         syncStatus: 'synced'
       } as any);
     }
-    // Incluir medicamentos locales pendientes (no sincronizados) para que aparezcan en el editor
-    const localPending = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
-    // Unir por id, priorizando los del servidor cuando hay duplicados
-    const byId: Record<string, any> = {};
-    for (const m of localPending as any[]) {
-      byId[m.id] = m;
+    // Incluir medicamentos locales (incluyendo pendientes) para que aparezcan en el editor
+    const localAll = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
+
+    // Estrategia de fusión anti-duplicados:
+    // 1. Indexar por nombre + dosage + type normalizados para detectar si un temp/offline coincide con uno del servidor
+    // 2. Priorizar registro del servidor (synced) sobre temporal/pending
+    // 3. Mantener temporales solo si NO hay equivalente del servidor
+    const normalizeKey = (m: any) => `${(m.name||'').trim().toLowerCase()}|${(m.dosage||'').trim().toLowerCase()}|${(m.type||'').trim().toLowerCase()}`;
+    const merged: Record<string, any> = {};
+    const chosenIds = new Set<string>();
+
+    // Primero server (prioridad)
+    for (const s of medsFromServer as any[]) {
+      merged[normalizeKey(s)] = s;
+      chosenIds.add(s.id);
     }
-    for (const m of medsFromServer as any[]) {
-      byId[m.id] = m;
+    // Luego locales (añadir solo si no hay match semántico)
+    for (const loc of localAll as any[]) {
+      const key = normalizeKey(loc);
+      if (!merged[key]) {
+        merged[key] = loc;
+        chosenIds.add(loc.id);
+      } else {
+        // Si existe en merged pero el existente es temporal y este es synced (o viceversa), decidir mejor
+        const existing = merged[key];
+        const existingIsTemp = String(existing.id||'').startsWith('temp_') || existing.syncStatus === 'pending';
+        const currentIsTemp = String(loc.id||'').startsWith('temp_') || loc.syncStatus === 'pending';
+        if (existingIsTemp && !currentIsTemp) {
+          merged[key] = loc; // reemplazar por versión sincronizada
+        }
+      }
     }
-    return Object.values(byId) as any[];
+    const result = Object.values(merged);
+    // Log opcional para depurar duplicados
+    console.log('[useTreatments] Medicamentos fusionados (sin duplicados):', result.map((m:any)=>({id:m.id,name:m.name,syncStatus:m.syncStatus})));
+    return result as any[];
   },
 
   addMedicationToTreatment: async (treatmentId, medication, patientIdOverride) => {
@@ -628,9 +766,16 @@ export const useTreatments = create<TreatmentsState>((set, get) => ({
     const token = useAuth.getState().userToken;
     const isOnline = await syncService.isOnline();
     if (!isOnline || !token) {
-      // Guardado offline: crear ID temporal y encolar
+      // Prevenir duplicado local: verificar si ya existe uno igual (name+dosage+type) pendiente
+      const existingLocals = await localDB.getTreatmentMedications(String(patientId), String(treatmentId));
+      const keyMatch = (m:any) => `${(m.name||'').trim().toLowerCase()}|${(m.dosage||'').trim().toLowerCase()}|${(m.type||'').trim().toLowerCase()}`;
+      const newKey = keyMatch(medication);
+      const duplicate = (existingLocals as any[]).find(m => keyMatch(m) === newKey);
+      if (duplicate) {
+        console.log('[useTreatments] Evitando creación duplicada offline de medicamento. Reusando id:', duplicate.id);
+        return { id: duplicate.id, ...medication } as any;
+      }
       const tempId = `temp_med_${Date.now()}_${Math.random()}`;
-      // Guardar en base local de treatment_medications como pendiente
       await localDB.saveTreatmentMedication({
         id: tempId,
         treatmentId,

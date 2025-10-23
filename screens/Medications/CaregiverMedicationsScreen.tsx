@@ -2,13 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, TextInput, Alert } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm, Controller } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-// Sin DateTimePicker: usaremos DateSelector como en paciente
-import { useMedications } from '../../store/useMedications';
-// Eliminado: programación de notificaciones/alarms en cuidador
 import { validateMedication } from '../../lib/medicationValidator';
-// Eliminado: useCurrentUser no necesario en cuidador
 import DateSelector from '../../components/DateSelector';
 import OptionSelector from '../../components/OptionSelector';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,78 +11,57 @@ import CaregiverPatientSwitcher from '../../components/CaregiverPatientSwitcher'
 import SelectedPatientBanner from '../../components/SelectedPatientBanner';
 import { useOffline } from '../../store/useOffline';
 import AlarmScheduler from '../../components/AlarmScheduler';
-import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
+import { getExistingAlarmsForElement, cancelAlarmsForElement } from '../../lib/alarmHelper';
+import { useMedications } from '../../store/useMedications';
+
+const typeDisplayMap: Record<string, string> = {
+  ORAL: 'Oral',
+  INJECTION: 'Inyectable',
+  TOPICAL: 'Tópico',
+  INHALATION: 'Inhalación',
+  SUBLINGUAL: 'Sublingual',
+};
+
+const frequencyDisplayMap: Record<string, string> = {
+  DAILY: 'Diario',
+  WEEKLY: 'Semanal',
+  MONTHLY: 'Mensual',
+  AS_NEEDED: 'Según necesidad',
+  INTERVAL: 'Personalizado', // Mapeado desde INTERVAL y CUSTOM
+  CUSTOM: 'Personalizado',
+};
+
+// Define el tipo para el formulario de medicamentos
+interface MedicationForm {
+  name: string;
+  dosage: string;
+  type: string;
+  frequency: string;
+  startDate?: Date;
+  endDate?: Date;
+  notes?: string;
+}
 
 export default function CaregiverMedicationsScreen({ navigation }: any) {
   const { medications, loading, error, getMedications, createMedication, updateMedication, deleteMedication } = useMedications();
   const { selectedPatientId, patients } = useCaregiver();
   const { isOnline } = useOffline();
   const selectedPatient = patients.find((p) => p.id === selectedPatientId) || null;
-  const [modalVisible, setModalVisible] = React.useState(false);
-  const [editingMed, setEditingMed] = React.useState<any>(null);
-  // Sin pickers nativos, usamos DateSelector
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingMed, setEditingMed] = useState<any>(null);
+  
   // Estado de alarmas para el modal
   const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
   const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
   const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
-  const [everyXHours, setEveryXHours] = useState('8');
+  const [everyXHours, setEveryXHours] = useState<string>('8');
 
-  // En cuidador no se requiere completar perfil; solo seleccionar paciente
-
-  const getNextDoseEta = (med: any) => {
-    try {
-      const now = new Date();
-      let candidate: Date | null = null;
-      if (med.time) {
-        const [hh, mm] = String(med.time).split(':').map((n: string) => parseInt(n, 10));
-        const base = new Date();
-        base.setHours(isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0, 0);
-        candidate = base;
-      } else if (med.startDate) {
-        candidate = new Date(med.startDate);
-      }
-      if (!candidate) return '';
-      if (candidate.getTime() <= now.getTime()) {
-        candidate.setDate(candidate.getDate() + 1);
-      }
-      const diffMs = candidate.getTime() - now.getTime();
-      const totalMin = Math.max(0, Math.round(diffMs / 60000));
-      const hours = Math.floor(totalMin / 60);
-      const minutes = totalMin % 60;
-      if (hours <= 0) return `Próxima dosis en ${minutes} min`;
-      if (minutes === 0) return `Próxima dosis en ${hours} h`;
-      return `Próxima dosis en ${hours} h ${minutes} min`;
-    } catch { return ''; }
-  };
-
-  const medicationSchema = z.object({
-    name: z.string().min(1, 'Obligatorio'),
-    dosage: z.string().min(1, 'Obligatorio'),
-    type: z.string().optional(),
-    frequency: z.string().optional(),
-    startDate: z.date().refine((date) => date !== undefined, {
-      message: 'Selecciona una fecha'
-    }),
-    endDate: z.date().optional(),
-    notes: z.string().optional(),
-  });
-  type MedicationForm = z.infer<typeof medicationSchema>;
-
-  const {
-    control,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<MedicationForm>({
-    resolver: zodResolver(medicationSchema),
+  const { control, handleSubmit, setValue, reset, formState: { errors, isSubmitting } } = useForm<MedicationForm>({
     defaultValues: {
       name: '',
       dosage: '',
-      type: '',
-      frequency: '',
-      startDate: undefined,
-      endDate: undefined,
+      type: 'ORAL',
+      frequency: 'DAILY',
       notes: '',
     },
   });
@@ -99,19 +72,29 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         console.log('[MEDICAMENTOS] Error:', e.message || e);
       });
     }
-  }, [selectedPatientId]);
+  }, [selectedPatientId, getMedications]);
 
-  // Handlers gestionados por DateSelector
-
-  // NUEVO: Función para agregar hora
-  const addTime = (date: Date) => {
-    setSelectedTimes((prev) => [...prev, date]);
-    setShowTimePicker(false);
+  const handleDelete = async (id: string) => {
+    Alert.alert(
+      'Confirmar eliminación',
+      '¿Estás seguro de que quieres eliminar este medicamento?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await cancelAlarmsForElement('medication', id);
+              await deleteMedication(id);
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'No se pudo eliminar el medicamento.');
+            }
+          },
+        },
+      ]
+    );
   };
-  const removeTime = (idx: number) => {
-    setSelectedTimes((prev) => prev.filter((_, i) => i !== idx));
-  };
-  // Eliminado: toggleDay para configuraciones de recordatorio
 
   const openEditModal = async (med: any) => {
     setEditingMed(med);
@@ -130,10 +113,16 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
     // Cargar alarmas existentes programadas para este medicamento
     try {
       const existingAlarms = await getExistingAlarmsForElement('medication', med.id);
-      setSelectedTimes(existingAlarms.selectedTimes);
-      setFrequencyType(existingAlarms.frequencyType);
-      setDaysOfWeek(existingAlarms.daysOfWeek);
-      setEveryXHours(existingAlarms.everyXHours);
+      const timesAsDates = (existingAlarms.selectedTimes || []).map(t => new Date(t));
+      setSelectedTimes(timesAsDates);
+      const freqType = existingAlarms.frequencyType;
+      if (freqType === 'daily' || freqType === 'daysOfWeek' || freqType === 'everyXHours') {
+        setFrequencyType(freqType);
+      } else {
+        setFrequencyType('daily');
+      }
+      setDaysOfWeek(existingAlarms.daysOfWeek || []);
+      setEveryXHours(existingAlarms.everyXHours || '8');
     } catch (error) {
       console.error('[CUIDADOR-MEDICAMENTOS] Error cargando alarmas existentes:', error);
       setSelectedTimes([]);
@@ -146,63 +135,30 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
     setEditingMed(null);
     setModalVisible(true);
     reset();
+    // Reset alarm state for new medication
+    setSelectedTimes([]);
+    setFrequencyType('daily');
+    setDaysOfWeek([]);
+    setEveryXHours('8');
   };
-  const scheduleMedNotification = async (med: any) => {
-    if (!med.startDate) return;
-    const date = new Date(med.startDate);
-    // Programar notificación diaria a la hora de startDate
-    const id = await scheduleNotification({
-      title: `Toma tu medicamento: ${med.name}`,
-      body: `Dosis: ${med.dosage}`,
-      data: { 
-        type: 'MEDICATION',
-        kind: 'MED',
-        medId: med.id,
-        medicationId: med.id,
-        medicationName: med.name,
-        dosage: med.dosage,
-        instructions: med.notes,
-        scheduledFor: date.toISOString(),
-        time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-      },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: date.getHours(),
-        minute: date.getMinutes(),
-      },
-    });
-    notificationIdsRef.current[med.id] = id;
-  };
-  const cancelMedNotification = async (medId: string) => {
-    // Buscar todas las notificaciones relacionadas con este medicamento
-    const keysToDelete: string[] = [];
-    
-    for (const [key, notificationId] of Object.entries(notificationIdsRef.current)) {
-      if (key.includes(medId) || key.startsWith(`med_${medId}`)) {
-        await cancelNotification(notificationId);
-        keysToDelete.push(key);
-      }
-    }
-    
-    // Eliminar las claves del objeto
-    keysToDelete.forEach(key => {
-      delete notificationIdsRef.current[key];
-    });
-    
-    console.log(`[CaregiverMedicationsScreen] Canceladas ${keysToDelete.length} notificaciones para medicamento ${medId}`);
-  };
-  // Modifica onSubmit para programar notificaciones según la configuración
+
   const onSubmit = async (data: MedicationForm) => {
     try {
-      // Validar datos usando el validador (sin alarmas)
-      // Mapear frecuencia y tipo a valores válidos del backend antes de validar
-      const freqMap: Record<string, string> = {
-        daily: 'DAILY', diario: 'DAILY',
-        weekly: 'WEEKLY', semanal: 'WEEKLY',
-        monthly: 'MONTHLY', mensual: 'MONTHLY',
-        as_needed: 'AS_NEEDED', asneeded: 'AS_NEEDED', prn: 'AS_NEEDED', segun_necesidad: 'AS_NEEDED',
-        interval: 'INTERVAL', custom: 'INTERVAL', personalizado: 'INTERVAL'
+      const alarmConfig = {
+        selectedTimes,
+        frequencyType,
+        daysOfWeek,
+        everyXHours,
       };
+
+      // Determine frequency from alarm config
+      let calculatedFrequency = 'DAILY'; // Default
+      if (frequencyType === 'daysOfWeek' && daysOfWeek.length > 0 && daysOfWeek.length < 7) {
+        calculatedFrequency = 'WEEKLY';
+      } else if (frequencyType === 'everyXHours') {
+        calculatedFrequency = 'INTERVAL';
+      }
+      
       const typeMap: Record<string, string> = {
         oral: 'ORAL',
         inyectable: 'INJECTION', injectable: 'INJECTION', injection: 'INJECTION',
@@ -210,54 +166,43 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         inhalacion: 'INHALATION', inhalation: 'INHALATION',
         sublingual: 'SUBLINGUAL'
       };
-      const mappedFrequency = data.frequency
-        ? (freqMap[(data.frequency || '').toLowerCase()] || (['DAILY','WEEKLY','MONTHLY','AS_NEEDED','INTERVAL','CUSTOM'].includes((data.frequency || '').toUpperCase()) ? (data.frequency as string).toUpperCase() : 'DAILY'))
-        : 'DAILY';
       const mappedType = data.type
         ? (typeMap[(data.type || '').toLowerCase()] || (['ORAL','INJECTION','TOPICAL','INHALATION','SUBLINGUAL'].includes((data.type || '').toUpperCase()) ? (data.type as string).toUpperCase() : 'ORAL'))
         : 'ORAL';
 
-      const validation = validateMedication({ ...data, frequency: mappedFrequency, type: mappedType });
+      const validation = validateMedication({ ...data, frequency: calculatedFrequency, type: mappedType });
       if (!validation.isValid) {
         Alert.alert('Error de validación', validation.errors.join('\n'));
         return;
       }
       
-      let medId = editingMed?.id;
+      const medicationData: Partial<any> = {
+        name: data.name,
+        dosage: data.dosage,
+        type: mappedType,
+        frequency: calculatedFrequency,
+        startDate: data.startDate?.toISOString(),
+        endDate: data.endDate?.toISOString(),
+        notes: data.notes,
+        alarm_config: alarmConfig,
+        // Ensure time is correctly formatted from the first selected time
+        time: selectedTimes.length > 0 
+          ? new Date(selectedTimes[0]).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+          : undefined,
+      };
+
       if (editingMed) {
-        await updateMedication(editingMed.id, {
-          name: data.name,
-          dosage: data.dosage,
-          type: mappedType,
-          frequency: mappedFrequency,
-          startDate: data.startDate?.toISOString(),
-          endDate: data.endDate?.toISOString(),
-          notes: data.notes,
-        });
-        medId = editingMed.id;
-        // Cancelar notificaciones anteriores
-        await cancelMedNotification(medId);
+        await updateMedication(editingMed.id, medicationData);
       } else {
-        await createMedication({
-          name: data.name,
-          dosage: data.dosage,
-          type: mappedType,
-          frequency: mappedFrequency,
-          startDate: data.startDate?.toISOString(),
-          endDate: data.endDate?.toISOString(),
-          notes: data.notes,
-        });
-        // Espera a que getMedications actualice la lista
-        await new Promise(res => setTimeout(res, 500));
-        // Busca el nuevo medicamento
-        const newMed = medications.find(m => m.name === data.name && m.startDate === data.startDate?.toISOString());
-        medId = newMed?.id;
+        await createMedication(medicationData);
       }
-      // Sin programación de alarmas en cuidador
+      
       reset();
       setModalVisible(false);
       setEditingMed(null);
-    } catch (e) {}
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'No se pudo guardar el medicamento.');
+    }
   };
 
   // Modifica onDelete para cancelar notificaciones
@@ -269,7 +214,7 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Eliminar', style: 'destructive', onPress: async () => {
             await deleteMedication(id);
-            await cancelMedNotification(id);
+            await cancelAlarmsForElement('medication', id);
           }
         },
       ]
@@ -348,8 +293,9 @@ export default function CaregiverMedicationsScreen({ navigation }: any) {
               </View>
             </View>
             <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Dosis:</Text><Text style={styles.cardValueModern}>{med.dosage}</Text></View>
-            <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Tipo:</Text><Text style={styles.cardValueModern}>{med.type}</Text></View>
-          <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Hora:</Text><Text style={styles.cardValueModern}>{med.time ? med.time : (med.startDate ? new Date(med.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—')}</Text></View>
+            <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Tipo:</Text><Text style={styles.cardValueModern}>{typeDisplayMap[med.type] || med.type}</Text></View>
+            <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Frecuencia:</Text><Text style={styles.cardValueModern}>{frequencyDisplayMap[med.frequency] || med.frequency}</Text></View>
+            <View style={styles.cardRowModern}><Text style={styles.cardLabelModern}>Hora:</Text><Text style={styles.cardValueModern}>{med.time ? med.time : (med.startDate ? new Date(med.startDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '—')}</Text></View>
             <View style={[styles.cardRowModern, { alignItems: 'center', marginTop: 6 }] }>
               <Ionicons name="time" size={16} color="#64748b" style={{ marginRight: 4 }} />
               <Text style={styles.cardLabelModern}>Inicio:</Text>

@@ -4,15 +4,15 @@ import { Platform } from 'react-native';
 // Tipos para la base de datos
 export interface LocalMedication {
   id: string;
+  patientProfileId: string;
   name: string;
   dosage: string;
-  type?: string;
-  frequency?: string;
+  type: string;
+  frequency: string;
+  time?: string;
+  notes?: string;
   startDate?: string;
   endDate?: string;
-  notes?: string;
-  time?: string;
-  patientProfileId: string;
   createdAt: string;
   updatedAt: string;
   isOffline: boolean;
@@ -137,33 +137,50 @@ class LocalDatabase {
   async init(): Promise<void> {
     // Si ya está inicializada, retornar inmediatamente
     if (this.db) {
+      console.log('[LocalDatabase] init() llamado pero ya inicializada, retornando...');
       return;
     }
 
     // Si ya está inicializándose, esperar a que termine
     if (this.isInitializing && this.initPromise) {
+      console.log('[LocalDatabase] init() llamado pero ya está inicializándose, esperando...');
       return this.initPromise;
     }
 
     // Iniciar proceso de inicialización
+    console.log('[LocalDatabase] 🚀 INICIANDO proceso de inicialización...');
     this.isInitializing = true;
     this.initPromise = this._init();
     
     try {
       await this.initPromise;
+      console.log('[LocalDatabase] ✅ init() completado exitosamente');
+    } catch (error) {
+      console.error('[LocalDatabase] ❌ init() falló con error:', error);
+      throw error;
     } finally {
       this.isInitializing = false;
+      console.log('[LocalDatabase] isInitializing=false');
     }
   }
 
   private async _init(): Promise<void> {
     try {
+      console.log('[LocalDatabase] _init() - Paso 1: Abriendo base de datos SQLite...');
       this.db = await SQLite.openDatabaseAsync('recuerdamed.db');
+      console.log('[LocalDatabase] _init() - Paso 1: ✅ Base de datos abierta');
+      
+      console.log('[LocalDatabase] _init() - Paso 2: Creando tablas...');
       await this.createTables();
+      console.log('[LocalDatabase] _init() - Paso 2: ✅ Tablas creadas');
+      
+      console.log('[LocalDatabase] _init() - Paso 3: Ejecutando migraciones...');
       await this.runMigrations();
-      console.log('[LocalDatabase] Base de datos inicializada correctamente');
+      console.log('[LocalDatabase] _init() - Paso 3: ✅ Migraciones completadas');
+      
+      console.log('[LocalDatabase] ✅✅✅ Base de datos inicializada correctamente');
     } catch (error) {
-      console.error('[LocalDatabase] Error inicializando base de datos:', error);
+      console.error('[LocalDatabase] ❌❌❌ Error en _init():', error);
       this.db = null;
       throw error;
     }
@@ -252,6 +269,36 @@ class LocalDatabase {
       );
     `;
 
+    const createTreatmentAlarmConfigsTable = `
+      CREATE TABLE IF NOT EXISTS treatment_alarm_configs (
+        id TEXT PRIMARY KEY,
+        elementId TEXT NOT NULL,
+        type TEXT NOT NULL,
+        frequencyType TEXT,
+        timesJson TEXT,
+        daysOfWeekJson TEXT,
+        everyXHours INTEGER,
+        updatedAt TEXT
+      );
+    `;
+
+      // Tabla de snoozes de alarmas (posposiciones puntuales)
+      const createSnoozesTable = `
+        CREATE TABLE IF NOT EXISTS snoozes (
+          id TEXT PRIMARY KEY,
+          elementType TEXT NOT NULL,
+          elementId TEXT NOT NULL,
+          originalScheduledAt TEXT NOT NULL,
+          newScheduledAt TEXT NOT NULL,
+          attempts INTEGER DEFAULT 1,
+          status TEXT DEFAULT 'scheduled', -- scheduled | fired | cancelled | expired
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL
+        );
+      `;
+      await this.db.execAsync(createSnoozesTable);
+      await this.db.execAsync('CREATE INDEX IF NOT EXISTS idx_snoozes_element ON snoozes(elementType, elementId);');
+
     const createNotesTable = `
       CREATE TABLE IF NOT EXISTS notes (
         id TEXT PRIMARY KEY,
@@ -331,6 +378,7 @@ class LocalDatabase {
     await this.db.execAsync(createAppointmentsTable);
     await this.db.execAsync(createTreatmentsTable);
     await this.db.execAsync(createTreatmentMedicationsTable);
+  await this.db.execAsync(createTreatmentAlarmConfigsTable);
     await this.db.execAsync(createNotesTable);
     await this.db.execAsync(createIntakeEventsTable);
     await this.db.execAsync(createProfilesTable);
@@ -341,26 +389,44 @@ class LocalDatabase {
     if (!this.db) throw new Error('Base de datos no inicializada');
     
     try {
-      // Importar y ejecutar migraciones
+      console.log('[LocalDatabase] runMigrations() - Importando migraciones...');
+      
+      // Ejecutar cada migración con timeout para evitar bloqueos
+      const runWithTimeout = async (name: string, fn: () => Promise<void>, timeoutMs: number = 10000) => {
+        console.log(`[LocalDatabase] Ejecutando migración: ${name}...`);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`Timeout en migración ${name}`)), timeoutMs)
+        );
+        try {
+          await Promise.race([fn(), timeoutPromise]);
+          console.log(`[LocalDatabase] ✅ Migración ${name} completada`);
+        } catch (error) {
+          console.error(`[LocalDatabase] ❌ Error en migración ${name}:`, error);
+          throw error;
+        }
+      };
+      
+      // Importar y ejecutar migraciones con timeout
       const { addDoctorNameToAppointments } = await import('./migrations/add_doctor_name_to_appointments');
-      await addDoctorNameToAppointments(this.db);
+      await runWithTimeout('addDoctorNameToAppointments', () => addDoctorNameToAppointments(this.db!));
+      
       const { addSpecialtyToAppointments } = await import('./migrations/add_specialty_to_appointments');
-      await addSpecialtyToAppointments(this.db);
+      await runWithTimeout('addSpecialtyToAppointments', () => addSpecialtyToAppointments(this.db!));
       
       // Ejecutar migración para corregir createdAt en perfiles
       const { fixProfilesCreatedAt } = await import('./migrations/fix_profiles_created_at');
-      await fixProfilesCreatedAt(this);
+      await runWithTimeout('fixProfilesCreatedAt', () => fixProfilesCreatedAt(this));
       
       // Ejecutar migración para corregir createdAt en intake_events
       const { fixIntakeEventsCreatedAt } = await import('./migrations/fix_intake_events_created_at');
-      await fixIntakeEventsCreatedAt(this);
+      await runWithTimeout('fixIntakeEventsCreatedAt', () => fixIntakeEventsCreatedAt(this));
       
-      console.log('[LocalDatabase] Migraciones ejecutadas correctamente');
+      console.log('[LocalDatabase] ✅ Todas las migraciones ejecutadas correctamente');
     } catch (error) {
-      console.error('[LocalDatabase] Error ejecutando migraciones:', error);
+      console.error('[LocalDatabase] ❌ Error ejecutando migraciones:', error);
       // No lanzar error para evitar que la app falle
       // En su lugar, registrar el error y continuar
-      console.warn('[LocalDatabase] Continuando sin migraciones debido a error');
+      console.warn('[LocalDatabase] ⚠️ Continuando sin migraciones debido a error');
     }
   }
 
@@ -534,6 +600,165 @@ class LocalDatabase {
   async deleteTreatmentMedication(id: string): Promise<void> {
     await this.ensureInitialized();
     await this.db!.runAsync('DELETE FROM treatment_medications WHERE id = ?', [id]);
+  }
+
+  // =============================
+  // Configuración persistente de alarmas de tratamientos
+  // =============================
+  async saveTreatmentAlarmConfig(config: {
+    elementId: string;
+    type: string; // 'treatment'
+    frequencyType: 'daily' | 'daysOfWeek' | 'everyXHours';
+    times: string[]; // HH:mm
+    daysOfWeek: number[];
+    everyXHours?: number;
+    updatedAt?: string;
+  }): Promise<void> {
+    await this.ensureInitialized();
+    const id = `${config.type}_${config.elementId}`;
+    const query = `
+      INSERT OR REPLACE INTO treatment_alarm_configs
+      (id, elementId, type, frequencyType, timesJson, daysOfWeekJson, everyXHours, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    await this.db!.runAsync(query, [
+      id,
+      config.elementId,
+      config.type,
+      config.frequencyType,
+      JSON.stringify(config.times || []),
+      JSON.stringify(config.daysOfWeek || []),
+      config.everyXHours ?? null,
+      config.updatedAt || new Date().toISOString()
+    ]);
+  }
+
+  async getTreatmentAlarmConfig(elementId: string, type: string = 'treatment'): Promise<{
+    frequencyType: 'daily' | 'daysOfWeek' | 'everyXHours';
+    times: string[];
+    daysOfWeek: number[];
+    everyXHours?: number;
+    updatedAt?: string;
+  } | null> {
+    await this.ensureInitialized();
+    const id = `${type}_${elementId}`;
+    const row = await this.db!.getFirstAsync('SELECT * FROM treatment_alarm_configs WHERE id = ?', [id]);
+    if (!row) return null;
+    type TreatmentAlarmConfigRow = {
+      id: string;
+      elementId: string;
+      type: string;
+      frequencyType: string;
+      timesJson: string;
+      daysOfWeekJson: string;
+      everyXHours: number | null;
+      updatedAt: string;
+    };
+    const r = row as TreatmentAlarmConfigRow;
+    return {
+      frequencyType: (r.frequencyType as any) || 'daily',
+      times: (() => { try { return JSON.parse(r.timesJson || '[]'); } catch { return []; } })(),
+      daysOfWeek: (() => { try { return JSON.parse(r.daysOfWeekJson || '[]'); } catch { return []; } })(),
+      everyXHours: r.everyXHours || undefined,
+      updatedAt: r.updatedAt,
+    };
+  }
+
+  async deleteTreatmentAlarmConfig(elementId: string, type: string = 'treatment'): Promise<void> {
+    await this.ensureInitialized();
+    const id = `${type}_${elementId}`;
+    await this.db!.runAsync('DELETE FROM treatment_alarm_configs WHERE id = ?', [id]);
+  }
+
+    // =============================
+    // Snoozes (posponer una ocurrencia)
+    // =============================
+    async saveSnoozeRecord(record: {
+      id: string;
+      elementType: string;
+      elementId: string;
+      originalScheduledAt: string;
+      newScheduledAt: string;
+      attempts: number;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    }): Promise<void> {
+      await this.ensureInitialized();
+      const q = `INSERT OR REPLACE INTO snoozes (id, elementType, elementId, originalScheduledAt, newScheduledAt, attempts, status, createdAt, updatedAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      await this.db!.runAsync(q, [
+        record.id,
+        record.elementType,
+        record.elementId,
+        record.originalScheduledAt,
+        record.newScheduledAt,
+        record.attempts,
+        record.status,
+        record.createdAt,
+        record.updatedAt
+      ]);
+    }
+
+    async getSnoozesForElement(elementType: string, elementId: string): Promise<any[]> {
+      await this.ensureInitialized();
+      return await this.db!.getAllAsync('SELECT * FROM snoozes WHERE elementType = ? AND elementId = ? AND status = "scheduled"', [elementType, elementId]);
+    }
+
+    async updateSnoozeStatus(id: string, status: string): Promise<void> {
+      await this.ensureInitialized();
+      await this.db!.runAsync('UPDATE snoozes SET status = ?, updatedAt = ? WHERE id = ?', [status, new Date().toISOString(), id]);
+    }
+
+    async expireOldSnoozes(): Promise<number> {
+      await this.ensureInitialized();
+      const nowIso = new Date().toISOString();
+      // Marcar como expired las snoozes que ya pasaron y no se marcaron fired
+      await this.db!.runAsync('UPDATE snoozes SET status = "expired", updatedAt = ? WHERE newScheduledAt < ? AND status = "scheduled"', [nowIso, nowIso]);
+      const rows = await this.db!.getAllAsync('SELECT * FROM snoozes WHERE status = "expired"');
+      return rows.length;
+    }
+
+  // Limpieza de duplicados históricos en treatment_medications
+  async cleanupDuplicateTreatmentMedications(): Promise<{ removed: number; kept: number }> {
+    await this.ensureInitialized();
+    const rows: any[] = await this.db!.getAllAsync('SELECT * FROM treatment_medications');
+    const seen = new Map<string, any>();
+    const toDelete: string[] = [];
+    for (const r of rows) {
+      const key = `${(r.name||'').trim().toLowerCase()}|${(r.dosage||'').trim().toLowerCase()}|${(r.type||'').trim().toLowerCase()}|${r.treatmentId}|${r.patientProfileId}`;
+      if (!seen.has(key)) {
+        seen.set(key, r);
+      } else {
+        const existing = seen.get(key);
+        const existingIsTemp = String(existing.id||'').startsWith('temp_') || existing.syncStatus === 'pending';
+        const currentIsTemp = String(r.id||'').startsWith('temp_') || r.syncStatus === 'pending';
+        // Mantener el que no sea temporal; si ambos temporales, mantener el más reciente (mayor updatedAt)
+        if (existingIsTemp && !currentIsTemp) {
+          // Reemplazar en mapa y eliminar el anterior
+            toDelete.push(existing.id);
+            seen.set(key, r);
+        } else if (!existingIsTemp && currentIsTemp) {
+          toDelete.push(r.id);
+        } else {
+          // Ambos mismo tipo (ambos temp o ambos synced) -> mantener el más nuevo
+          const exDate = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+          const curDate = new Date(r.updatedAt || r.createdAt || 0).getTime();
+          if (curDate > exDate) {
+            toDelete.push(existing.id);
+            seen.set(key, r);
+          } else {
+            toDelete.push(r.id);
+          }
+        }
+      }
+    }
+    for (const id of toDelete) {
+      try {
+        await this.db!.runAsync('DELETE FROM treatment_medications WHERE id = ?', [id]);
+      } catch {}
+    }
+    return { removed: toDelete.length, kept: seen.size };
   }
 
   // Métodos para notes

@@ -44,26 +44,42 @@ const BLOOD_TYPES = ['A+','A-','B+','B-','AB+','AB-','O+','O-'] as const;
 // Utilidades de fecha (evitar desfase por zona horaria con 'YYYY-MM-DD')
 const parseLocalDateFromYMD = (ymd: string): Date | null => {
   if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
-  const [y, m, d] = ymd.split('-').map((v) => parseInt(v, 10));
-  // new Date(y, m-1, d) crea fecha en hora local sin desfase
-  return new Date(y, m - 1, d);
+  // Interpreta la fecha como UTC para evitar que el motor de JS la mueva
+  const date = new Date(`${ymd}T00:00:00Z`);
+  // Crea una nueva fecha en la zona local usando los componentes UTC
+  return new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 };
 
 const formatLocalDateFromYMD = (ymd: string): string => {
   const date = parseLocalDateFromYMD(ymd);
-  return date ? date.toLocaleDateString('es-ES') : '';
+  return date ? date.toLocaleDateString('es-ES', { timeZone: 'UTC' }) : '';
 };
 
-// Convertir fecha ISO a formato YYYY-MM-DD
-const convertISODateToYMD = (isoDate: string): string => {
-  if (!isoDate) return '';
+// Convertir fecha ISO o local a formato YYYY-MM-DD sin corrimiento de zona horaria
+const convertDateToYMD = (dateInput: string | Date): string => {
+  if (!dateInput) return '';
   try {
-    const date = new Date(isoDate);
+    const date = new Date(dateInput);
     if (isNaN(date.getTime())) return '';
+    
+    // Usar los componentes de la fecha tal como están, sin conversión de zona horaria
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+
+    // Para fechas ISO que vienen en UTC, new Date() las convierte a local.
+    // Si la fecha es '2025-10-05T00:00:00.000Z' y estamos en GMT-3,
+    // date.getFullYear() será 2025, pero date.getDate() será 4.
+    // Necesitamos usar los métodos UTC para obtener la fecha "correcta".
+    const isoDate = new Date(dateInput);
+    const utcYear = isoDate.getUTCFullYear();
+    const utcMonth = isoDate.getUTCMonth() + 1;
+    const utcDay = isoDate.getUTCDate();
+
+    // Si la fecha es una cadena YYYY-MM-DD, los componentes locales y UTC son los mismos.
+    // Si es una cadena ISO completa, los componentes UTC son los que queremos.
+    // La forma más segura es siempre usar UTC.
+    return `${utcYear}-${String(utcMonth).padStart(2, '0')}-${String(utcDay).padStart(2, '0')}`;
   } catch {
     return '';
   }
@@ -257,11 +273,11 @@ export default function ProfileScreen() {
     console.log('[ProfileScreen] Sincronizando formulario con perfil:', profile);
     console.log('[ProfileScreen] bloodType del perfil:', profile.bloodType);
     console.log('[ProfileScreen] birthDate original:', profile.birthDate || profile.dateOfBirth);
-    console.log('[ProfileScreen] birthDate convertido:', convertISODateToYMD(profile.birthDate || profile.dateOfBirth || ''));
+    console.log('[ProfileScreen] birthDate convertido:', convertDateToYMD(profile.birthDate || profile.dateOfBirth || ''));
 
     const newForm = {
       name: profile.name || '',
-      birthDate: convertISODateToYMD(profile.birthDate || profile.dateOfBirth || ''),
+      birthDate: convertDateToYMD(profile.birthDate || profile.dateOfBirth || ''),
       gender: profile.gender || '',
       weight: profile.weight?.toString() || '',
       height: profile.height?.toString() || '',

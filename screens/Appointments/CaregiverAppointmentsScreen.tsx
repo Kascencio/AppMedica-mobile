@@ -14,6 +14,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
+import { MEDICAL_SPECIALTIES } from '../../constants/medicalSpecialties';
+import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width > 768;
@@ -30,38 +32,6 @@ const appointmentSchema = z.object({
 
 type AppointmentForm = z.infer<typeof appointmentSchema>;
 
-// Opciones de especialidades médicas
-const MEDICAL_SPECIALTIES = [
-  { value: '', label: 'Seleccionar especialidad' },
-  { value: 'Cardiology', label: 'Cardiología' },
-  { value: 'Dermatology', label: 'Dermatología' },
-  { value: 'Endocrinology', label: 'Endocrinología' },
-  { value: 'Gastroenterology', label: 'Gastroenterología' },
-  { value: 'General Medicine', label: 'Medicina General' },
-  { value: 'Gynecology', label: 'Ginecología' },
-  { value: 'Hematology', label: 'Hematología' },
-  { value: 'Infectious Diseases', label: 'Enfermedades Infecciosas' },
-  { value: 'Internal Medicine', label: 'Medicina Interna' },
-  { value: 'Nephrology', label: 'Nefrología' },
-  { value: 'Neurology', label: 'Neurología' },
-  { value: 'Oncology', label: 'Oncología' },
-  { value: 'Ophthalmology', label: 'Oftalmología' },
-  { value: 'Orthopedics', label: 'Ortopedia' },
-  { value: 'Otolaryngology', label: 'Otorrinolaringología' },
-  { value: 'Pediatrics', label: 'Pediatría' },
-  { value: 'Pulmonology', label: 'Neumología' },
-  { value: 'Psychiatry', label: 'Psiquiatría' },
-  { value: 'Radiology', label: 'Radiología' },
-  { value: 'Rheumatology', label: 'Reumatología' },
-  { value: 'Urology', label: 'Urología' },
-  { value: 'Emergency Medicine', label: 'Medicina de Emergencias' },
-  { value: 'Family Medicine', label: 'Medicina Familiar' },
-  { value: 'Physical Therapy', label: 'Fisioterapia' },
-  { value: 'Nutrition', label: 'Nutrición' },
-  { value: 'Psychology', label: 'Psicología' },
-  { value: 'Dentistry', label: 'Odontología' },
-  { value: 'Other', label: 'Otra especialidad' }
-];
 
 export default function CaregiverAppointmentsScreen() {
   const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment } = useAppointments();
@@ -73,6 +43,11 @@ export default function CaregiverAppointmentsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  // Estado de alarmas (para mostrar en edición)
+  const [selectedTimes, setSelectedTimes] = useState<Date[]>([]);
+  const [frequencyType, setFrequencyType] = useState<'daily' | 'daysOfWeek' | 'everyXHours'>('daily');
+  const [daysOfWeek, setDaysOfWeek] = useState<number[]>([]);
+  const [everyXHours, setEveryXHours] = useState('8');
 
   const { control, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<AppointmentForm>({
     resolver: zodResolver(appointmentSchema),
@@ -149,7 +124,7 @@ export default function CaregiverAppointmentsScreen() {
         location: data.location.trim(),
         dateTime: d.toISOString(),
         description: data.notes?.trim() || undefined,
-        patientProfileId: selectedPatientId
+        patientProfileId: selectedPatientId || undefined
       };
 
       if (editingAppointment) {
@@ -236,6 +211,7 @@ export default function CaregiverAppointmentsScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <MaterialCommunityIcons name="stethoscope" size={22} color="#34d399" style={{ marginRight: 10 }} />
                 <Text style={styles.cardTitleModern}>{a.title || 'Sin título'}</Text>
+                {/* Badge 'Pendiente' removido según solicitud */}
               </View>
               <View style={{ flexDirection: 'row' }}>
                 <TouchableOpacity style={[styles.iconBtnModern, !isOnline && { opacity: 0.5 }]} onPress={() => isOnline && openEditModal(a)} disabled={!isOnline}>
@@ -329,6 +305,16 @@ export default function CaregiverAppointmentsScreen() {
               <Controller control={control} name="notes" render={({ field: { onChange, value } }) => (
                 <TextInput style={[styles.inputModern, { height: 64 }]} value={value || ''} onChangeText={onChange} placeholder="Notas" multiline />
               )} />
+              {selectedTimes.length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={styles.inputLabel}>Alarmas programadas:</Text>
+                  {selectedTimes.map((t, idx) => (
+                    <Text key={idx} style={{ color: '#2563eb', fontSize: 14 }}>
+                      • {t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                    </Text>
+                  ))}
+                </View>
+              )}
               
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 20 }}>
                 <TouchableOpacity style={[styles.addBtnModern, { backgroundColor: '#2563eb' }]} onPress={handleSubmit(onSubmit)} disabled={isSubmitting}>
@@ -422,11 +408,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
+    flexWrap: 'nowrap', // Asegura que no haya saltos de línea
   },
   cardTitleModern: {
     fontWeight: 'bold',
     color: '#2563eb',
     fontSize: 18,
+    flexShrink: 1, // Permite que el título se encoja si es necesario
   },
   iconBtnModern: {
     marginHorizontal: 2,

@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { useKeepAwake } from 'expo-keep-awake';
 import { unifiedAlarmService } from '../../lib/unifiedAlarmService';
+import { alarmSyncService } from '../../lib/alarmSyncService';
 // import { scheduleSnooze10 } from '../../lib/notifications'; // Función eliminada
 import { COLORS } from '../../constants/colors';
 // importa tus stores reales:
@@ -133,8 +134,21 @@ export default function AlarmScreen(props: any) {
       // detener efectos (vibración/sonido) usando el servicio unificado
       unifiedAlarmService.stopAlarm();
 
+      // Buscar backendAlarmId si está disponible en los datos de la alarma
+      const backendAlarmId = params?.backendAlarmId || params?.data?.backendAlarmId;
+
       if (action === 'SNOOZE') {
-        // Programar alarma pospuesta usando el servicio unificado
+        // 1. Posponer en backend si hay ID disponible
+        if (backendAlarmId) {
+          try {
+            await alarmSyncService.snoozeAlarm(backendAlarmId);
+            console.log('[AlarmScreen] Alarma pospuesta en backend');
+          } catch (backendError) {
+            console.warn('[AlarmScreen] Error posponiendo alarma en backend:', backendError);
+          }
+        }
+        
+        // 2. Programar alarma pospuesta local usando el servicio unificado
         const snoozeDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
         await unifiedAlarmService.scheduleAlarm({
           id: `snooze_${params.refId}_${Date.now()}`,
@@ -148,13 +162,24 @@ export default function AlarmScreen(props: any) {
             dosage: params.dosage,
             scheduledFor: snoozeDate.toISOString(),
             patientProfileId: profile?.patientProfileId || profile?.id,
-            isSnooze: true
+            isSnooze: true,
+            backendAlarmId: backendAlarmId // Preservar ID para futuras acciones
           },
           triggerDate: snoozeDate
         });
         showToast('Alarma pospuesta 10 min');
       } else {
-        // registra evento en tu store/backend
+        // 1. Marcar como completada en backend si hay ID disponible
+        if (backendAlarmId && action === 'TAKEN') {
+          try {
+            await alarmSyncService.dismissAlarm(backendAlarmId);
+            console.log('[AlarmScreen] Alarma marcada como completada en backend');
+          } catch (backendError) {
+            console.warn('[AlarmScreen] Error completando alarma en backend:', backendError);
+          }
+        }
+        
+        // 2. Registrar evento en tu store/backend local
         await registerEvent({
           kind: params.kind,
           refId: params.refId,

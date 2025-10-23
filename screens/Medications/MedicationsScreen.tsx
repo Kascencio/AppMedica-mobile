@@ -146,28 +146,45 @@ export default function MedicationsScreen() {
     setValue('name', med.name);
     setValue('dosage', med.dosage);
     
-    // Mapear type del servidor al formato del formulario
+    // Mapear type del servidor al formato del formulario (puede venir en mayúsculas o en español)
     const typeMapping: { [key: string]: string } = {
+      // Mayúsculas inglés → Español
       'ORAL': 'Oral',
       'INJECTABLE': 'Inyectable', 
       'TOPICAL': 'Tópico',
       'INHALATION': 'Inhalación',
-      'SUBLINGUAL': 'Sublingual'
+      'SUBLINGUAL': 'Sublingual',
+      // Minúsculas inglés → Español
+      'oral': 'Oral',
+      'injectable': 'Inyectable',
+      'topical': 'Tópico',
+      'inhalation': 'Inhalación',
+      'sublingual': 'Sublingual',
+      // Legacy values → Español
+      'Pills': 'Oral',
+      'Injection': 'Inyectable',
+      'Cream': 'Tópico',
+      'Inhaler': 'Inhalación'
     };
     setValue('type', typeMapping[med.type] || med.type || 'Oral');
     
     // Mapear frequency del servidor al formato del formulario
     const frequencyMapping: { [key: string]: string } = {
+      // Mayúsculas → minúsculas
       'DAILY': 'daily',
       'WEEKLY': 'weekly',
       'MONTHLY': 'monthly',
       'AS_NEEDED': 'as_needed',
       'INTERVAL': 'custom',
-      'CUSTOM': 'custom'
+      'CUSTOM': 'custom',
+      // Por si vienen en minúsculas (ya están correctas, pero las incluimos por consistencia)
+      'daily': 'daily',
+      'weekly': 'weekly',
+      'monthly': 'monthly',
+      'as_needed': 'as_needed',
+      'custom': 'custom'
     };
-    setValue('frequency', frequencyMapping[med.frequency] || med.frequency || 'daily');
-    
-    if (med.startDate) {
+    setValue('frequency', frequencyMapping[med.frequency] || med.frequency || 'daily');    if (med.startDate) {
       setValue('startDate', new Date(med.startDate));
     }
     if (med.endDate) {
@@ -178,8 +195,29 @@ export default function MedicationsScreen() {
     // Cargar alarmas existentes programadas para este medicamento
     try {
       const existingAlarms = await getExistingAlarmsForElement('medication', med.id);
-      setSelectedTimes(existingAlarms.selectedTimes);
-      setFrequencyType(existingAlarms.frequencyType);
+      // Normalizar tiempos (pueden venir como string[]) a Date[]
+      const normalizedTimes: Date[] = (existingAlarms.selectedTimes || []).map((t: any) => {
+        if (t instanceof Date) return t;
+        if (typeof t === 'string') {
+          // Interpretar como HH:MM si coincide, sino como fecha completa
+          if (/^\d{2}:\d{2}$/.test(t)) {
+            const [hh, mm] = t.split(':').map(n => parseInt(n, 10));
+            const d = new Date();
+            d.setHours(isNaN(hh) ? 0 : hh, isNaN(mm) ? 0 : mm, 0, 0);
+            return d;
+          }
+          const d = new Date(t);
+          return isNaN(d.getTime()) ? new Date() : d;
+        }
+        return new Date();
+      });
+      setSelectedTimes(normalizedTimes);
+      // Mapear frequencyType genérico a nuestro estado interno
+      const ftRaw = existingAlarms.frequencyType;
+      let mappedFt: 'daily' | 'daysOfWeek' | 'everyXHours' = 'daily';
+      if (ftRaw === 'daysOfWeek' || ftRaw === 'weekly') mappedFt = 'daysOfWeek';
+      else if (ftRaw === 'everyXHours' || ftRaw === 'interval') mappedFt = 'everyXHours';
+      setFrequencyType(mappedFt);
       setDaysOfWeek(existingAlarms.daysOfWeek);
       setEveryXHours(existingAlarms.everyXHours);
     } catch (error) {
@@ -204,13 +242,30 @@ export default function MedicationsScreen() {
   // onSubmit para programar notificaciones según la configuración
   const onSubmit = async (data: MedicationForm) => {
     try {
+      // Mapear type al formato esperado por el servidor (mayúsculas inglés)
+      const typeToServerMapping: { [key: string]: string } = {
+        'Oral': 'ORAL',
+        'Inyectable': 'INJECTABLE',
+        'Tópico': 'TOPICAL',
+        'Inhalación': 'INHALATION',
+        'Sublingual': 'SUBLINGUAL'
+      };
+      const serverType = typeToServerMapping[data.type || 'Oral'] || data.type || 'ORAL';
+
       // Mapear frequency del formulario a valores soportados por el backend/validador
       const mappedFrequency = (data.frequency === 'custom'
         ? (frequencyType === 'everyXHours' ? 'INTERVAL' : frequencyType === 'daysOfWeek' ? 'WEEKLY' : 'DAILY')
         : data.frequency || 'daily');
+      
+      // Convertir frequency a mayúsculas para el servidor
+      const serverFrequency = mappedFrequency.toUpperCase();
 
-      // Validar datos usando el validador
-      const validation = validateMedication({ ...data, frequency: mappedFrequency });
+      // Validar datos usando el validador (con valores mapeados)
+      const validation = validateMedication({ 
+        ...data, 
+        type: serverType,
+        frequency: serverFrequency 
+      });
       if (!validation.isValid) {
         Alert.alert('Error de validación', validation.errors.join('\n'));
         return;
@@ -221,8 +276,8 @@ export default function MedicationsScreen() {
         await updateMedication(editingMed.id, {
           name: data.name,
           dosage: data.dosage,
-          type: data.type,
-          frequency: mappedFrequency,
+          type: serverType,
+          frequency: serverFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
@@ -236,8 +291,8 @@ export default function MedicationsScreen() {
         await createMedication({
           name: data.name,
           dosage: data.dosage,
-          type: data.type,
-          frequency: mappedFrequency,
+          type: serverType,
+          frequency: serverFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
@@ -256,14 +311,14 @@ export default function MedicationsScreen() {
           id: medId,
           name: data.name,
           dosage: data.dosage,
-          type: data.type,
-          frequency: mappedFrequency,
+          type: serverType,
+          frequency: serverFrequency,
           startDate: data.startDate?.toISOString(),
           endDate: data.endDate?.toISOString(),
           notes: data.notes,
           time: selectedTimes.length > 0 ? selectedTimes[0].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : '09:00',
-          patientProfileId: profile?.patientProfileId || profile?.id,
-        };
+          patientProfileId: (profile?.patientProfileId || profile?.id || '').toString(),
+        } as any; // Cast para cumplir con la interfaz Medication
 
         const alarmConfig = {
           frequency: (frequencyType === 'daily' ? 'daily' : frequencyType === 'daysOfWeek' ? 'weekly' : 'interval') as 'daily' | 'weekly' | 'interval',
@@ -274,10 +329,10 @@ export default function MedicationsScreen() {
         try {
           if (editingMed) {
             // Reprogramar alarmas existentes
-            await rescheduleMedicationAlarms(medication, alarmConfig);
+            await rescheduleMedicationAlarms(medication, alarmConfig, selectedTimes);
           } else {
             // Programar nuevas alarmas
-            await scheduleMedicationAlarms(medication, alarmConfig);
+            await scheduleMedicationAlarms(medication, alarmConfig, selectedTimes);
           }
           console.log('[MedicationsScreen] Alarmas programadas exitosamente');
         } catch (alarmError) {
@@ -427,7 +482,32 @@ export default function MedicationsScreen() {
             {med.frequency ? (
               <View style={GLOBAL_STYLES.rowSpaced}>
                 <Text style={GLOBAL_STYLES.bodyText}>Frecuencia:</Text>
-                <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', color: COLORS.text.primary }]}>{med.frequency}</Text>
+                <Text style={[GLOBAL_STYLES.bodyText, { fontWeight: '600', color: COLORS.text.primary }]}>
+                  {(() => {
+                    const f = (med.frequency || '').toUpperCase();
+                    switch (f) {
+                      case 'DAILY':
+                      case 'DIARIO':
+                        return 'Diario';
+                      case 'WEEKLY':
+                      case 'SEMANAL':
+                        return 'Semanal';
+                      case 'MONTHLY':
+                      case 'MENSUAL':
+                        return 'Mensual';
+                      case 'AS_NEEDED':
+                      case 'AS NEEDED':
+                      case 'PRN':
+                        return 'Según necesidad';
+                      case 'INTERVAL':
+                        return 'Por intervalo';
+                      case 'CUSTOM':
+                        return 'Personalizada';
+                      default:
+                        return med.frequency;
+                    }
+                  })()}
+                </Text>
               </View>
             ) : null}
             <View style={[GLOBAL_STYLES.row, { marginTop: 8 }]}>

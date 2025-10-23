@@ -5,6 +5,7 @@ import AuthStack from './navigation/AuthStack';
 import AppTabs from './navigation/AppTabs';
 import { useAuth } from './store/useAuth';
 import { ActivityIndicator, View, Modal, Linking, Button, Alert, Text } from 'react-native';
+
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { useNavigationContainerRef } from '@react-navigation/native';
@@ -21,6 +22,7 @@ import { DatabaseInitializer } from './components/DatabaseInitializer';
 import { unifiedAlarmService } from './lib/unifiedAlarmService';
 import { enhancedAutoOpenService } from './lib/enhancedAutoOpenService';
 import { overlayPermissionService } from './lib/overlayPermissionService';
+import { alarmAppInitializer } from './lib/alarmAppInitializer';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { registerBackgroundAlarmTask, ALARM_BACKGROUND_FETCH_TASK } from './lib/alarmTask';
@@ -322,6 +324,20 @@ export default function App() {
       const loadProfileOnce = async () => {
         try {
           await fetchProfileCorrectFlow();
+          
+          // Inicializar sistema de alarmas sincronizado después de obtener perfil
+          console.log('[App] Inicializando sistema de alarmas sincronizado...');
+          try {
+            const alarmInitSuccess = await alarmAppInitializer.initialize();
+            if (alarmInitSuccess) {
+              console.log('[App] ✅ Sistema de alarmas sincronizado inicializado correctamente');
+            } else {
+              console.warn('[App] ⚠️ Sistema de alarmas sincronizado falló en inicialización');
+            }
+          } catch (alarmError) {
+            console.error('[App] ❌ Error inicializando alarmas sincronizadas:', alarmError);
+          }
+          
           // Si es cuidador, refrescar permisos y pacientes para que el gate cambie al entrar
           const p = useCurrentUser.getState().profile;
           if (p?.role === 'CAREGIVER') {

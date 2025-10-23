@@ -1,5 +1,5 @@
 import { getScheduledNotifications } from './notifications';
-import { alarmSchedulerEngine } from './alarmSchedulerEngine';
+import { alarmSchedulerEngine, AlarmConfig } from './alarmSchedulerEngine';
 
 /**
  * Helper para obtener alarmas existentes de un elemento específico
@@ -98,11 +98,12 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
 
     console.log(`[alarmHelper] Configuración final de alarmas:`, alarmConfig);
     return alarmConfig;
+
   } catch (error) {
-    console.error('[alarmHelper] Error obteniendo alarmas existentes:', error);
+    console.error(`[alarmHelper] Error fatal obteniendo alarmas para ${type}:${elementId}:`, error);
     return {
       selectedTimes: [],
-      frequencyType: 'daily' as 'daily' | 'daysOfWeek' | 'everyXHours',
+      frequencyType: 'daily',
       daysOfWeek: [],
       everyXHours: '8'
     };
@@ -110,77 +111,118 @@ export async function getExistingAlarmsForElement(type: string, elementId: strin
 }
 
 /**
- * Helper para obtener alarmas existentes usando el motor de alarmas
+ * Helper para programar un conjunto de alarmas para un elemento.
+ * Esta función ahora actúa como un adaptador para el nuevo `alarmSchedulerEngine`.
  */
-export function getExistingAlarmsFromEngine(type: string, elementId: string) {
+export async function scheduleAlarmsForElement(
+  type: 'medication' | 'appointment' | 'treatment',
+  elementId: string,
+  // La configuración de la UI (más simple)
+  uiAlarmConfig: {
+    selectedTimes: string[];
+    frequencyType: 'daily' | 'daysOfWeek' | 'everyXHours';
+    daysOfWeek?: number[];
+    everyXHours?: string;
+  },
+  // Datos para la notificación y la configuración del motor
+  elementData: { name: string; [key: string]: any }
+) {
+  console.log(`[alarmHelper] Adaptando y programando alarmas para ${type}:${elementId}`, { uiAlarmConfig, elementData });
+
   try {
-    const alarms = alarmSchedulerEngine.getAlarmsForElement(type, elementId);
-    
-    const alarmConfig = {
-      selectedTimes: [] as Date[],
-      frequencyType: 'daily' as 'daily' | 'daysOfWeek' | 'everyXHours',
-      daysOfWeek: [] as number[],
-      everyXHours: '8'
-    };
+    // El nuevo motor programa una alarma por cada 'time'. Debemos iterar.
+    const allScheduledIds: string[] = [];
 
-    // Procesar cada alarma
-  for (const alarm of alarms) {
-      // Usar la fecha real programada por el motor
-      if ((alarm as any).scheduledDate) {
-        alarmConfig.selectedTimes.push(new Date((alarm as any).scheduledDate));
-      } else if ((alarm as any).scheduledFor) {
-        alarmConfig.selectedTimes.push(new Date((alarm as any).scheduledFor));
+    for (const time of uiAlarmConfig.selectedTimes) {
+      // 1. Mapear uiAlarmConfig.frequencyType a lo que el motor espera
+      let frequencyForEngine: 'daily' | 'weekly' | 'interval';
+      switch (uiAlarmConfig.frequencyType) {
+        case 'daysOfWeek':
+          frequencyForEngine = 'weekly';
+          break;
+        case 'everyXHours':
+          frequencyForEngine = 'interval';
+          break;
+        default:
+          frequencyForEngine = 'daily';
       }
-      
-      // El motor usa 'frequency'; algunos flujos podrían usar 'frequencyType'
-      const cfg: any = (alarm as any).config || {};
-      if (cfg.frequency) {
-        const f = String(cfg.frequency);
-        alarmConfig.frequencyType = f === 'weekly' ? 'daysOfWeek' : (f === 'interval' ? 'everyXHours' : 'daily');
-      } else if (cfg.frequencyType) {
-        const f = String(cfg.frequencyType);
-        alarmConfig.frequencyType = f === 'weekly' ? 'daysOfWeek' : (f === 'interval' ? 'everyXHours' : 'daily');
-      }
-      if (Array.isArray(cfg.daysOfWeek)) {
-        alarmConfig.daysOfWeek = cfg.daysOfWeek;
-      }
-      if (cfg.intervalHours != null) {
-        alarmConfig.everyXHours = String(cfg.intervalHours);
-      }
+
+      // 2. Construir el objeto AlarmConfig que el motor entiende
+      const engineConfig: AlarmConfig = {
+        id: elementId,
+        type: type,
+        name: elementData.name,
+        time: time, // Una alarma por cada hora seleccionada
+        frequency: frequencyForEngine,
+        daysOfWeek: uiAlarmConfig.daysOfWeek,
+        intervalHours: uiAlarmConfig.everyXHours ? parseInt(uiAlarmConfig.everyXHours, 10) : undefined,
+        data: elementData, // Pasar todos los datos del elemento
+      };
+
+      // 3. Llamar al método correcto del motor
+      // Usamos reschedule para asegurarnos de que las viejas se limpien y se pongan las nuevas.
+      const scheduledIds = await alarmSchedulerEngine.rescheduleAlarmsForElement(engineConfig);
+      allScheduledIds.push(...scheduledIds);
     }
 
-    // Eliminar duplicados de selectedTimes
-    // Eliminar duplicados exactos
-    alarmConfig.selectedTimes = alarmConfig.selectedTimes.filter((time, index, self) => 
-      index === self.findIndex(t => t.getTime() === time.getTime())
-    );
+    console.log(`[alarmHelper] Total de alarmas programadas para ${type}:${elementId}: ${allScheduledIds.length}`, allScheduledIds);
+    return allScheduledIds;
 
-    // Normalizar a plantillas de hora (evitar múltiples días duplicados)
-    if (alarmConfig.selectedTimes.length > 0) {
-      const byTime: Record<string, Date> = {};
-      for (const d of alarmConfig.selectedTimes) {
-        const hh = String(d.getHours()).padStart(2, '0');
-        const mm = String(d.getMinutes()).padStart(2, '0');
-        const key = `${hh}:${mm}`;
-        if (!byTime[key]) byTime[key] = d;
-      }
-      const today = new Date();
-      alarmConfig.selectedTimes = Object.keys(byTime).sort().map((key) => {
-        const [hh, mm] = key.split(':').map(n => parseInt(n, 10));
-        const base = new Date(today);
-        base.setHours(hh, mm, 0, 0);
-        return base;
-      });
-    }
-
-    return alarmConfig;
   } catch (error) {
-    console.error('[alarmHelper] Error obteniendo alarmas del motor:', error);
+    console.error(`[alarmHelper] Error programando alarmas para ${type}:${elementId}:`, error);
+    return [];
+  }
+}
+
+
+/**
+ * Helper para cancelar todas las alarmas de un elemento
+ */
+export async function cancelAlarmsForElement(
+  type: 'medication' | 'appointment' | 'treatment',
+  elementId: string
+) {
+  console.log(`[alarmHelper] Cancelando todas las alarmas para ${type}:${elementId}`);
+  try {
+    // Llama al método correcto del motor
+    const cancelledCount = await alarmSchedulerEngine.cancelAlarmsForElement(type, elementId);
+    console.log(`[alarmHelper] ${cancelledCount} alarmas canceladas para ${type}:${elementId}`);
+    return cancelledCount;
+  } catch (error) {
+    console.error(`[alarmHelper] Error cancelando alarmas para ${type}:${elementId}:`, error);
+    return 0;
+  }
+}
+
+/**
+ * Obtiene la configuración de alarma desde el motor en memoria.
+ * Esto es útil para obtener la configuración más reciente sin consultar al sistema.
+ */
+function getExistingAlarmsFromEngine(type: string, elementId: string) {
+  // El nuevo motor no tiene un 'getInMemoryState' simple, sino que devuelve las alarmas programadas.
+  const alarms = alarmSchedulerEngine.getAlarmsForElement(type, elementId);
+  
+  if (alarms.length > 0) {
+    // Agregamos todas las horas y tomamos la configuración de la primera alarma como base
+    const firstAlarmConfig = alarms[0].config;
+    const allTimes = [...new Set(alarms.map(a => a.config.time))];
+
+    let frequencyType: 'daily' | 'daysOfWeek' | 'everyXHours' = 'daily';
+    if (firstAlarmConfig.frequency === 'weekly') frequencyType = 'daysOfWeek';
+    if (firstAlarmConfig.frequency === 'interval') frequencyType = 'everyXHours';
+
     return {
-      selectedTimes: [],
-      frequencyType: 'daily' as 'daily' | 'daysOfWeek' | 'everyXHours',
-      daysOfWeek: [],
-      everyXHours: '8'
+      selectedTimes: allTimes,
+      frequencyType: frequencyType,
+      daysOfWeek: firstAlarmConfig.daysOfWeek || [],
+      everyXHours: firstAlarmConfig.intervalHours?.toString() || '8',
     };
   }
+  
+  return {
+    selectedTimes: [],
+    frequencyType: 'daily' as 'daily' | 'daysOfWeek' | 'everyXHours',
+    daysOfWeek: [],
+    everyXHours: '8'
+  };
 }

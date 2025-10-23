@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Image, Alert } from 'react-native';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Image, Alert, AppState, AppStateStatus } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMedications } from '../../store/useMedications';
 import { useAppointments } from '../../store/useAppointments';
@@ -8,11 +8,13 @@ import { useCurrentUser } from '../../store/useCurrentUser';
 import { useIntakeEvents } from '../../store/useIntakeEvents';
 import OfflineIndicator from '../../components/OfflineIndicator';
 import logo from '../../assets/logo.png';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 // Módulo de pruebas de alarmas removido
 import COLORS from '../../constants/colors';
-import { scheduleSnoozeMedication } from '../../lib/notifications';
+// (scheduleSnoozeMedication removido: no exportado actualmente)
+import { MEDICAL_SPECIALTIES } from '../../constants/medicalSpecialties';
 import { useOffline } from '../../store/useOffline';
+import { snoozeService } from '../../lib/snoozeService';
 import { ProfileAvatar } from '../../components/OptimizedImage';
 
 const HEALTH_TIPS = [
@@ -44,16 +46,69 @@ export default function HomeScreen() {
   const { appointments, getAppointments } = useAppointments();
   const { logout } = useAuth();
   const { profile, fetchProfileCorrectFlow, loading, error } = useCurrentUser();
+  const [initialLoading, setInitialLoading] = useState(true);
   const { events: intakeEvents, registerEvent, getEvents } = useIntakeEvents();
   const navigation = useNavigation();
   const { isOnline } = useOffline();
+  // Estados para refrescar próxima toma sin necesidad de navegar
+  const [clock, setClock] = useState(Date.now());
+  const [medsVersion, setMedsVersion] = useState(0);
+  const [appointmentsVersion, setAppointmentsVersion] = useState(0);
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
-  React.useEffect(() => {
+  // Tick cada 30s para recalcular próxima toma / cita si se cruza la hora exacta
+  useEffect(() => {
+    const id = setInterval(() => setClock(Date.now()), 30000); // 30s
+    return () => clearInterval(id);
+  }, []);
+
+  // Suscripción a cambios en la lista de medicamentos (Zustand subscribe)
+  useEffect(() => {
+    const storeAny: any = useMedications;
+    const unsub = storeAny.subscribe?.((state: any) => state.medications, () => {
+      setMedsVersion(v => v + 1);
+    });
+    return () => { try { unsub && unsub(); } catch {} };
+  }, []);
+
+  // Suscripción a cambios en citas
+  useEffect(() => {
+    const storeAny: any = useAppointments;
+    const unsub = storeAny.subscribe?.((state: any) => state.appointments, () => {
+      setAppointmentsVersion(v => v + 1);
+    });
+    return () => { try { unsub && unsub(); } catch {} };
+  }, []);
+
+  // Refresco instantáneo al volver al foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const prev = appStateRef.current;
+      if ((prev === 'inactive' || prev === 'background') && next === 'active') {
+        // Forzar recomputo inmediato (sin esperar al intervalo)
+        setClock(Date.now());
+        // Refrescar datos (no bloquear UI si falla)
+        Promise.all([
+          getMedications().catch(() => {}),
+          getAppointments().catch(() => {}),
+          getEvents().catch(() => {}),
+        ]).then(() => {
+          // Otra marca de tiempo por si hubo cambios durante fetch
+          setClock(Date.now());
+        });
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [getMedications, getAppointments, getEvents]);
+
+  // Carga del perfil si hay conectividad al montar
+  useEffect(() => {
     // Si no hay internet, evita llamadas de red y usa solo datos locales ya cargados
     (async () => {
       try {
-        const { checkConnectivity } = await import('../../lib/network');
-        const online = await checkConnectivity();
+  const { checkNetworkConnectivity } = await import('../../lib/network');
+  const online = await checkNetworkConnectivity();
         if (online) {
           fetchProfileCorrectFlow();
         }
@@ -64,25 +119,58 @@ export default function HomeScreen() {
   }, []);
 
   // Carga inicial: cuando el perfil esté disponible, cargar datos necesarios para Home
-  React.useEffect(() => {
+  useEffect(() => {
     const hasValidProfile = !!profile?.id || !!profile?.patientProfileId;
     if (!hasValidProfile) return;
 
     (async () => {
       try {
-        const { checkConnectivity } = await import('../../lib/network');
-        const online = await checkConnectivity();
+  const { checkNetworkConnectivity } = await import('../../lib/network');
+  const online = await checkNetworkConnectivity();
         if (online) {
+          setInitialLoading(true);
           await Promise.all([
             getMedications().catch(() => {}),
             getAppointments().catch(() => {}),
             getEvents().catch(() => {}),
           ]);
+          setInitialLoading(false);
+        } else {
+          // Si no hay internet, cargar locales asumidos ya precargados por los stores
+          setInitialLoading(false);
         }
         // Si no hay internet, no lanzar errores, la UI usará datos locales existentes
-      } catch {}
+      } catch (e) {
+        setInitialLoading(false);
+      }
     })();
   }, [profile?.id, profile?.patientProfileId]);
+
+  // Refrescar datos cuando la pantalla obtiene foco para asegurar que la UI muestre
+  // la información actual al entrar (evita estado vacío en la primera visualización)
+  useFocusEffect(
+    React.useCallback(() => {
+      let mounted = true;
+      (async () => {
+        try {
+          setInitialLoading(true);
+          await Promise.all([
+            getMedications().catch(() => {}),
+            getAppointments().catch(() => {}),
+            getEvents().catch(() => {}),
+          ]);
+        } catch (e) {
+          // Ignorar errores de red aquí; los stores ya manejan fallback a local
+        } finally {
+          if (mounted) setInitialLoading(false);
+        }
+      })();
+
+      return () => {
+        mounted = false;
+      };
+    }, [profile?.id, profile?.patientProfileId])
+  );
 
   // Funciones para acciones de medicamentos
   const handleTakeMedication = async () => {
@@ -130,26 +218,43 @@ export default function HomeScreen() {
     if (!nextMed) return;
 
     try {
-      // Crear evento de posponer
-      const adherenceEvent = {
+      // Encontrar hora original aproximada: usar nextMedicationTime ya calculado si existe
+      let originalDate = new Date();
+      if (nextMedicationTime) {
+        // nextMedicationTime viene como string HH:mm probablemente, intentar parsear
+        const hmMatch = nextMedicationTime.match(/(\d{1,2}):(\d{2})/);
+        if (hmMatch) {
+          const h = parseInt(hmMatch[1], 10);
+          const m = parseInt(hmMatch[2], 10);
+          const base = new Date();
+          base.setHours(h, m, 0, 0);
+          if (base < new Date()) {
+            // Si ya pasó hoy, asumir que la ocurrencia 'original' inmediata es la de hoy ya en curso
+            base.setMinutes(new Date().getMinutes());
+          }
+          originalDate = base;
+        }
+      }
+
+      // Persistir evento de adherencia con acción SNOOZE (para estadísticas)
+      await registerEvent({
         refId: nextMed.id,
         patientProfileId: profile?.patientProfileId || profile?.id,
-        scheduledFor: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // +10 minutos
-        action: 'SNOOZE' as const,
-        kind: 'MED' as const,
+        scheduledFor: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        action: 'SNOOZE',
+        kind: 'MED',
         notes: 'Pospuesto 10 minutos desde Home'
-      };
+      } as any);
 
-      // Usar el store de eventos de adherencia
-      await registerEvent(adherenceEvent);
-
-      // Programar notificación para 10 minutos
-      await scheduleSnoozeMedication({
-        id: nextMed.id,
-        name: nextMed.name,
-        dosage: nextMed.dosage,
-        snoozeMinutes: 10,
-        patientProfileId: profile?.patientProfileId || profile?.id,
+      // Programar snooze real
+      await snoozeService.snooze({
+        elementType: 'medication',
+        elementId: nextMed.id,
+        originalScheduledAt: originalDate,
+        offsetMinutes: 10,
+        title: `⏰ ${nextMed.name}`,
+        body: `Dosis ${nextMed.dosage} (pospuesta 10 min)` ,
+        data: { medicationId: nextMed.id }
       });
 
       // Mostrar confirmación
@@ -452,42 +557,59 @@ export default function HomeScreen() {
       });
     }
     
-    // Ordenar por hora
-    return timeline.sort((a, b) => {
-      const timeA = new Date(`2000-01-01 ${a.time}`);
-      const timeB = new Date(`2000-01-01 ${b.time}`);
-      return timeA.getTime() - timeB.getTime();
-    });
+    // Ordenar por hora (parsear HH:MM de forma robusta para evitar dependencias del parser de Date)
+    const parseTimeToMinutes = (time: string) => {
+      if (!time || typeof time !== 'string') return Number.MAX_SAFE_INTEGER;
+      // Buscar patrón HH:MM
+      const m = time.match(/(\d{1,2}):(\d{2})/);
+      if (m) {
+        const hh = parseInt(m[1], 10);
+        const mm = parseInt(m[2], 10);
+        if (!isNaN(hh) && !isNaN(mm)) return hh * 60 + mm;
+      }
+      // Intentar parseo con Date como fallback (por si viene formato con 'T' o similar)
+      try {
+        const d = new Date(time.includes('T') ? time : `2000-01-01T${time}`);
+        if (!isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes();
+      } catch {}
+      return Number.MAX_SAFE_INTEGER;
+    };
+
+    return timeline.sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time));
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Cargando perfil...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={48} color={COLORS.error} />
-        <Text style={styles.errorText}>Error: {error}</Text>
-        <TouchableOpacity onPress={fetchProfile} style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>Reintentar</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  // Nota: Se eliminan early returns para no alterar el orden de hooks (evita error de hooks)
 
   const adherence = getAdherence(intakeEvents);
   const healthTip = HEALTH_TIPS[new Date().getDate() % HEALTH_TIPS.length];
 
+  // Memoizar cálculos costosos para evitar recomputaciones en cada render
+  const nextMedication = useMemo(() => getNextMedication(), [medications, medsVersion, clock]);
+  const nextMedicationTime = useMemo(() => getNextMedicationTime(), [nextMedication, clock]);
+  const nextAppointment = useMemo(() => getNextAppointment(), [appointments, appointmentsVersion, clock]);
+  const todayTimeline = useMemo(() => getTodayTimeline(), [medications, appointments, medsVersion, appointmentsVersion, clock]);
+
   return (
     <View style={styles.container}>
+      {(loading || initialLoading) && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Cargando perfil...</Text>
+        </View>
+      )}
+      {(!loading && !initialLoading && error) && (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={48} color={COLORS.error} />
+          <Text style={styles.errorText}>Error: {error}</Text>
+          <TouchableOpacity onPress={fetchProfileCorrectFlow} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {(!loading && !initialLoading && !error) && (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header mejorado con logo de la app e info del paciente */}
+        {/* Banner debug removido para producción */}
         <View style={styles.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={styles.logoContainer}>
@@ -522,16 +644,16 @@ export default function HomeScreen() {
         </View>
 
         {/* Próxima toma con acciones */}
-        {getNextMedication() && (
+  {nextMedication && (
           <View style={styles.nextMedCard}>
             <View style={styles.nextMedHeader}>
               <Ionicons name="time" size={20} color={COLORS.primary} />
               <Text style={styles.nextMedTitle}>Próxima toma</Text>
             </View>
             <View style={styles.nextMedContent}>
-              <Text style={styles.nextMedTime}>{getNextMedicationTime()}</Text>
-              <Text style={styles.nextMedName}>{getNextMedication()?.name}</Text>
-              <Text style={styles.nextMedDosage}>{getNextMedication()?.dosage}</Text>
+              <Text style={styles.nextMedTime}>{nextMedicationTime}</Text>
+              <Text style={styles.nextMedName}>{nextMedication.name}</Text>
+              <Text style={styles.nextMedDosage}>{nextMedication.dosage}</Text>
             </View>
             <View style={styles.nextMedActions}>
               <TouchableOpacity 
@@ -563,7 +685,7 @@ export default function HomeScreen() {
         )}
 
         {/* Siguiente cita o CTA */}
-        {getNextAppointment() ? (
+  {nextAppointment ? (
           <View style={styles.nextApptCard}>
             <View style={styles.nextApptHeader}>
               <Ionicons name="calendar" size={20} color={COLORS.medical.appointment} />
@@ -571,19 +693,19 @@ export default function HomeScreen() {
             </View>
             <View style={styles.nextApptContent}>
               <Text style={styles.nextApptDateTime}>
-                {formatAppointmentDateTime(getNextAppointment())}
+                {formatAppointmentDateTime(nextAppointment)}
               </Text>
               <Text style={styles.nextApptDoctor}>
-                {getNextAppointment()?.title || getNextAppointment()?.doctorName || 'Sin doctor asignado'}
+                {nextAppointment.doctorName || nextAppointment.title || 'Sin doctor asignado'}
               </Text>
-              {getNextAppointment()?.location && (
+              {nextAppointment.location && (
                 <Text style={styles.nextApptLocation}>
-                  📍 {getNextAppointment().location}
+                  📍 {nextAppointment.location}
                 </Text>
               )}
-              {getNextAppointment()?.specialty && (
+              {nextAppointment.specialty && (
                 <Text style={styles.nextApptSpecialty}>
-                  🏥 {MEDICAL_SPECIALTIES.find(s => s.value === getNextAppointment().specialty)?.label || getNextAppointment().specialty}
+                  🏥 {(() => { const spec = nextAppointment.specialty; const match = MEDICAL_SPECIALTIES.find(s => s.value === spec); return match?.label || spec; })()}
                 </Text>
               )}
             </View>
@@ -632,10 +754,10 @@ export default function HomeScreen() {
         </View>
 
         {/* Timeline de hoy con estados */}
-        {getTodayTimeline().length > 0 && (
+  {todayTimeline.length > 0 && (
           <View style={styles.timelineSection}>
             <Text style={styles.sectionTitle}>Timeline de hoy</Text>
-            {getTodayTimeline().map((event, idx) => (
+            {todayTimeline.map((event, idx) => (
               <View key={idx} style={styles.timelineItem}>
                 <View style={styles.timelineTime}>
                   <Text style={styles.timelineTimeText}>{event.time}</Text>
@@ -671,6 +793,7 @@ export default function HomeScreen() {
         </View>
         {/* Módulo de pruebas de alarmas removido */}
       </ScrollView>
+      )}
     </View>
   );
 }

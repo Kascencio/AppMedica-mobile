@@ -208,22 +208,46 @@ export default function TreatmentsScreen() {
       notes: treatment.notes || ''
     });
     
-    // Cargar alarmas existentes para el tratamiento
+    // Cargar alarmas existentes para el tratamiento (prioridad: persistencia local -> motor -> sistema)
     try {
-      let existingAlarms = await getExistingAlarmsForElement('treatment', treatment.id);
-      // Fallback al motor de alarmas en memoria si no se encuentra nada
-      if (!existingAlarms || existingAlarms.selectedTimes.length === 0) {
-        const engine = require('../../lib/alarmHelper');
-        const engineAlarms = engine.getExistingAlarmsFromEngine('treatment', treatment.id);
-        if (engineAlarms) existingAlarms = engineAlarms;
+      const { localDB } = require('../../data/db');
+      let loaded = false;
+      try {
+        const persisted = await localDB.getTreatmentAlarmConfig(treatment.id, 'treatment');
+        if (persisted) {
+          console.log('[TRATAMIENTOS] Configuración de alarmas persistida encontrada:', persisted);
+          // Reconstruir selectedTimes desde times[] (HH:mm) en el día actual
+          const today = new Date();
+          const times: Date[] = (persisted.times || []).map((t: string) => {
+            const [hh, mm] = t.split(':').map(n => parseInt(n, 10));
+            const d = new Date(today);
+            d.setHours(hh || 0, mm || 0, 0, 0);
+            return d;
+          });
+          setSelectedTimes(times);
+          setFrequencyType(persisted.frequencyType);
+          setDaysOfWeek(persisted.daysOfWeek || []);
+          setEveryXHours(persisted.everyXHours ? String(persisted.everyXHours) : '8');
+          loaded = true;
+        }
+      } catch (persistLoadErr) {
+        console.warn('[TRATAMIENTOS] No se pudo cargar configuración persistida de alarmas:', persistLoadErr);
       }
-      setSelectedTimes(existingAlarms.selectedTimes);
-      setFrequencyType(existingAlarms.frequencyType);
-      setDaysOfWeek(existingAlarms.daysOfWeek);
-      setEveryXHours(existingAlarms.everyXHours);
+
+      if (!loaded) {
+        let existingAlarms = await getExistingAlarmsForElement('treatment', treatment.id);
+        if (!existingAlarms || existingAlarms.selectedTimes.length === 0) {
+          const engine = require('../../lib/alarmHelper');
+          const engineAlarms = engine.getExistingAlarmsFromEngine('treatment', treatment.id);
+          if (engineAlarms) existingAlarms = engineAlarms;
+        }
+        setSelectedTimes(existingAlarms.selectedTimes);
+        setFrequencyType(existingAlarms.frequencyType);
+        setDaysOfWeek(existingAlarms.daysOfWeek);
+        setEveryXHours(existingAlarms.everyXHours);
+      }
     } catch (error) {
       console.error('[TRATAMIENTOS] Error cargando alarmas existentes:', error);
-      // Resetear a valores por defecto si hay error
       setSelectedTimes([]);
       setFrequencyType('daily');
       setDaysOfWeek([]);

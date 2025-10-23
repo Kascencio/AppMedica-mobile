@@ -85,7 +85,7 @@ export class UnifiedAlarmService {
     body,
     data,
     triggerDate,
-    channelId = 'medications'
+    channelId
   }: {
     id: string;
     title: string;
@@ -100,6 +100,16 @@ export class UnifiedAlarmService {
       // Determinar configuración basada en tipo de alarma
       const isAlarm = this.isAlarmNotification(data);
       const categoryId = this.getCategoryForData(data);
+      
+      // Determinar canal correcto si no se especifica
+      if (!channelId) {
+        const t = (data?.type || data?.kind || '').toString().toUpperCase();
+        if (t === 'MEDICATION' || t === 'MED') channelId = 'medications';
+        else if (t === 'APPOINTMENT') channelId = 'appointments';
+        else if (t === 'TREATMENT') channelId = 'treatments';
+        else channelId = 'alarms';
+      }
+      
       // Deep link
       const typeSlug = ((): 'medication' | 'appointment' | 'treatment' | 'alarm' => {
         const t = (data?.type || data?.kind || '').toString().toUpperCase();
@@ -108,7 +118,7 @@ export class UnifiedAlarmService {
         if (t === 'TREATMENT') return 'treatment';
         return 'alarm';
       })();
-      const bizId = data?.medicationId || data?.appointmentId || data?.refId || id;
+      const bizId = data?.medicationId || data?.appointmentId || data?.treatmentId || data?.refId || id;
       const deepLink = `recuerdamed://alarm/${typeSlug}/${bizId}`;
       
       if (Platform.OS === 'android') {
@@ -247,7 +257,7 @@ export class UnifiedAlarmService {
   }
 
   /**
-   * Navegar a AlarmScreen
+   * Navegar a AlarmScreen de forma más robusta
    */
   private async navigateToAlarmScreen(data: any): Promise<void> {
     try {
@@ -261,28 +271,63 @@ export class UnifiedAlarmService {
       const bizId = data?.medicationId || data?.appointmentId || data?.refId || 'unknown';
       const url = data?.deepLink || `recuerdamed://alarm/${typeSlug}/${bizId}`;
 
-      if (!this.navigationRef || !this.navigationRef.isReady()) {
-        console.log('[UnifiedAlarmService] Navegación no lista, esperando disponibilidad...');
-        const ready = await this.waitForNavigationReady(3500);
-        if (!ready) {
-          console.log('[UnifiedAlarmService] Navegación aún no lista, abriendo deep link');
-          Linking.openURL(url);
-          return;
+      // Intentar navegación interna primero
+      let navigated = false;
+      if (this.navigationRef && this.navigationRef.isReady()) {
+        try {
+          // Navegar directamente sin esperar
+          this.navigationRef.navigate('AlarmScreen', {
+            kind: data.kind || (data.type === 'MEDICATION' ? 'MED' : data.type === 'APPOINTMENT' ? 'APPOINTMENT' : data.type === 'TREATMENT' ? 'TREATMENT' : 'ALARM'),
+            refId: bizId,
+            scheduledFor: data.scheduledFor,
+            name: data.medicationName || data.appointmentTitle || data.name,
+            dosage: data.dosage || '',
+            instructions: data.instructions || data.notes || '',
+            time: data.time,
+            location: data.location || ''
+          });
+          navigated = true;
+          console.log('[UnifiedAlarmService] ✅ Navegación interna exitosa');
+        } catch (navError) {
+          console.log('[UnifiedAlarmService] Error navegación interna:', navError);
         }
       }
 
-      // Si la navegación está lista, navegar por nombre de pantalla
-      this.navigationRef.navigate('AlarmScreen', {
-        kind: data.kind || (data.type === 'MEDICATION' ? 'MED' : data.type === 'APPOINTMENT' ? 'APPOINTMENT' : data.type === 'TREATMENT' ? 'TREATMENT' : 'ALARM'),
-        refId: bizId,
-        scheduledFor: data.scheduledFor,
-        name: data.medicationName || data.appointmentTitle || data.name,
-        dosage: data.dosage || '',
-        instructions: data.instructions || data.notes || '',
-        time: data.time,
-        location: data.location || ''
-      });
-      console.log('[UnifiedAlarmService] ✅ Navegación a AlarmScreen');
+      // Si la navegación interna falló o no está disponible
+      if (!navigated) {
+        console.log('[UnifiedAlarmService] Navegación interna no disponible, usando deep link');
+        
+        // Intentar abrir con deep link
+        try {
+          const canOpen = await Linking.canOpenURL(url);
+          if (canOpen) {
+            await Linking.openURL(url);
+            console.log('[UnifiedAlarmService] ✅ Deep link abierto exitosamente');
+          } else {
+            // Fallback: intentar con esquema general
+            const fallbackUrl = `recuerdamed://alarm`;
+            await Linking.openURL(fallbackUrl);
+            console.log('[UnifiedAlarmService] ✅ Fallback deep link abierto');
+          }
+        } catch (linkError) {
+          console.error('[UnifiedAlarmService] Error con deep links:', linkError);
+          
+          // Último fallback: intentar después de un delay
+          setTimeout(async () => {
+            try {
+              if (this.navigationRef && this.navigationRef.isReady()) {
+                this.navigationRef.navigate('AlarmScreen', {
+                  kind: data.kind || 'ALARM',
+                  refId: bizId,
+                  name: data.medicationName || data.appointmentTitle || data.name || 'Alarma',
+                });
+              }
+            } catch (retryError) {
+              console.error('[UnifiedAlarmService] Falló navegación de reintentos:', retryError);
+            }
+          }, 1000);
+        }
+      }
     } catch (error) {
       handleAlarmError(error, 'navigateToAlarmScreen');
     }
@@ -399,8 +444,10 @@ export class UnifiedAlarmService {
     return data && (
       data.type === 'MEDICATION' ||
       data.type === 'APPOINTMENT' ||
+      data.type === 'TREATMENT' ||
       data.kind === 'MED' ||
       data.kind === 'APPOINTMENT' ||
+      data.kind === 'TREATMENT' ||
       data.isAlarm === true ||
       data.test === true
     );
@@ -414,6 +461,8 @@ export class UnifiedAlarmService {
       return 'MEDICATION_ALARM';
     } else if (data.type === 'APPOINTMENT' || data.kind === 'APPOINTMENT') {
       return 'APPOINTMENT_ALARM';
+    } else if (data.type === 'TREATMENT' || data.kind === 'TREATMENT') {
+      return 'TREATMENT_ALARM';
     }
     return 'GENERAL_ALARM';
   }
@@ -433,6 +482,13 @@ export class UnifiedAlarmService {
       await Notifications.setNotificationCategoryAsync('APPOINTMENT_ALARM', [
         { identifier: 'OPEN_ALARM', buttonTitle: 'Ver cita', options: { opensAppToForeground: true } },
         { identifier: 'SNOOZE_10', buttonTitle: 'Posponer 10 min', options: { opensAppToForeground: true } },
+      ]);
+
+      await Notifications.setNotificationCategoryAsync('TREATMENT_ALARM', [
+        { identifier: 'COMPLETED', buttonTitle: 'Realizado', options: { opensAppToForeground: true } },
+        { identifier: 'SNOOZE_10', buttonTitle: 'Posponer 10 min', options: { opensAppToForeground: true } },
+        { identifier: 'SKIP', buttonTitle: 'Omitir', options: { opensAppToForeground: true, isDestructive: true } },
+        { identifier: 'OPEN_ALARM', buttonTitle: 'Abrir tratamiento', options: { opensAppToForeground: true } },
       ]);
 
       await Notifications.setNotificationCategoryAsync('GENERAL_ALARM', [
@@ -471,6 +527,20 @@ export class UnifiedAlarmService {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 500, 250, 500, 250, 500, 250, 500],
         lightColor: '#0000FF',
+        sound: 'alarm.mp3',
+        enableVibrate: true,
+        enableLights: true,
+        bypassDnd: true,
+        showBadge: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+
+      await Notifications.setNotificationChannelAsync('treatments', {
+        name: 'Tratamientos',
+        description: 'Recordatorios de tratamientos médicos',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 500, 250, 500, 250, 500, 250, 500],
+        lightColor: '#00FF00',
         sound: 'alarm.mp3',
         enableVibrate: true,
         enableLights: true,

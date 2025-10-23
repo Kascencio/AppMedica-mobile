@@ -11,7 +11,8 @@ import {
 
 export interface AlarmConfig {
   id: string;
-  type: 'medication' | 'appointment';
+  // Se extiende para soportar 'treatment'; se tratará similar a medication
+  type: 'medication' | 'appointment' | 'treatment';
   name: string;
   time: string; // HH:mm format
   frequency: 'daily' | 'weekly' | 'interval';
@@ -54,8 +55,10 @@ export class AlarmSchedulerEngine {
 
       const { hour, minute } = timeData;
       const now = new Date();
-      const startDate = config.startDate || now;
-      const endDate = config.endDate || new Date(now.getTime() + maxOccurrences * 24 * 60 * 60 * 1000);
+  const startDate = config.startDate || now;
+  let endDate = config.endDate || new Date(now.getTime() + maxOccurrences * 24 * 60 * 60 * 1000);
+
+  // Si endDate es antes que startDate (datos inconsistentes) o demasiado cercano para generar la primera ocurrencia, lo ajustamos más adelante.
 
       // Generar fechas según la frecuencia
       let dates: Date[];
@@ -83,29 +86,71 @@ export class AlarmSchedulerEngine {
       const futureDates = dates.filter(date => date > now);
       
       if (futureDates.length === 0) {
-        console.log('[AlarmSchedulerEngine] No hay fechas futuras válidas para programar');
-        return [];
+        // Fallback inteligente: extender ventana si la primera ocurrencia cae fuera de endDate
+        try {
+          let firstCandidate: Date | null = null;
+          if (config.frequency === 'daily') {
+            firstCandidate = nextDateAtHourMinute(hour, minute, startDate);
+          } else if (config.frequency === 'interval') {
+            firstCandidate = nextDateAtHourMinute(hour, minute, startDate);
+          } else if (config.frequency === 'weekly') {
+            // Encontrar el siguiente día válido
+            if (config.daysOfWeek && config.daysOfWeek.length > 0) {
+              const probe = new Date(startDate);
+              for (let i = 0; i < 14 && !firstCandidate; i++) {
+                if (config.daysOfWeek.includes(probe.getDay())) {
+                  const cand = new Date(probe);
+                  cand.setHours(hour, minute, 0, 0);
+                  if (cand > now) firstCandidate = cand;
+                }
+                probe.setDate(probe.getDate() + 1);
+              }
+            }
+          }
+
+            if (firstCandidate && firstCandidate > endDate) {
+              // Extender endDate mínimo hasta incluir la primera ocurrencia
+              endDate = new Date(firstCandidate);
+              // Recalcular fechas
+              switch (config.frequency) {
+                case 'daily':
+                  dates = datesForDaily(startDate, endDate, hour, minute); break;
+                case 'weekly':
+                  dates = datesForDaysOfWeekWithin(config.daysOfWeek || [], startDate, endDate, hour, minute); break;
+                case 'interval':
+                  dates = datesForIntervalHours(config.intervalHours!, startDate, endDate, hour, minute); break;
+              }
+            }
+
+          const recalculated = dates.filter(date => date > now);
+          if (recalculated.length === 0) {
+            console.log('[AlarmSchedulerEngine] No hay fechas futuras válidas para programar (incluso tras fallback)');
+            return [];
+          }
+          console.log('[AlarmSchedulerEngine] Fallback aplicado. Ocurrencias generadas:', recalculated.length);
+          // Continuar usando las recalculadas
+          dates = recalculated;
+        } catch (fallbackErr) {
+          console.warn('[AlarmSchedulerEngine] Error en fallback de generación de fechas:', fallbackErr);
+          console.log('[AlarmSchedulerEngine] No hay fechas futuras válidas para programar');
+          return [];
+        }
       }
 
-      // Programar cada fecha futura
+      // Programar cada fecha futura (usar for...of para esperar cada programación y evitar devolver vacío)
       const scheduledIds: string[] = [];
+      const baseIdentifier = generateAlarmIdentifier(config.type, config.id, hour, minute, config.frequency);
+      let index = 0;
       for (const date of futureDates) {
-        const identifier = generateAlarmIdentifier(config.type, config.id, hour, minute, config.frequency);
-        const scheduledAlarm: ScheduledAlarm = {
-          identifier,
-          config,
-          scheduledDate: date,
-        };
-
-        // Programar la notificación
+        const dayStr = date.toISOString().split('T')[0].replace(/-/g, '');
+        const identifier = `${baseIdentifier}_${dayStr}_${index}`;
+        const scheduledAlarm: ScheduledAlarm = { identifier, config, scheduledDate: date };
         const notificationId = await this.scheduleNotification(config, date, identifier);
         scheduledAlarm.notificationId = notificationId;
-
-        // Guardar en el mapa
         this.scheduledAlarms.set(identifier, scheduledAlarm);
         scheduledIds.push(identifier);
-
-        console.log(`[AlarmSchedulerEngine] ✅ Alarma programada: ${config.name} para ${date.toISOString()} (${config.time})`);
+        console.log(`[AlarmSchedulerEngine] ✅ Alarma programada: ${config.name} (${identifier}) para ${date.toISOString()} (${config.time})`);
+        index++;
       }
 
       console.log(`[AlarmSchedulerEngine] ${scheduledIds.length} alarmas programadas para ${config.name}`);
@@ -121,37 +166,31 @@ export class AlarmSchedulerEngine {
    * Programa una notificación individual
    */
   private async scheduleNotification(config: AlarmConfig, date: Date, identifier: string): Promise<string> {
-    const title = config.type === 'medication' 
-      ? `⏰ ${config.name}` 
-      : `📅 ${config.name}`;
+    const isMedicationLike = config.type === 'medication' || config.type === 'treatment';
+    const title = isMedicationLike ? `⏰ ${config.name}` : `📅 ${config.name}`;
     
-    const body = config.type === 'medication'
-      ? `Es hora de tomar ${config.data.dosage || 'tu medicamento'}`
+    const body = isMedicationLike
+      ? `Es hora de tomar ${config.data.dosage || config.data.treatmentName || 'tu tratamiento'}`
       : `Tu cita es en ${config.data.location ? `${config.data.location} - ` : ''}${date.toLocaleString()}`;
 
     const notificationData = {
       ...config.data,
       type: config.type.toUpperCase(),
-      kind: config.type === 'medication' ? 'MED' : 'APPOINTMENT',
+      kind: config.type === 'medication' ? 'MED' : (config.type === 'treatment' ? 'TREATMENT' : 'APPOINTMENT'),
       scheduledFor: date.toISOString(),
       time: config.time,
       identifier,
+      frequency: config.frequency,
+      daysOfWeek: config.daysOfWeek,
+      intervalHours: config.intervalHours,
     };
 
-    if (config.type === 'medication') {
-      return await scheduleMedicationReminder({
-        title,
-        body,
-        date,
-        data: notificationData,
-      });
+    if (isMedicationLike) {
+      const nid = await scheduleMedicationReminder({ title, body, date, data: notificationData });
+      return nid || identifier;
     } else {
-      return await scheduleAppointmentReminder({
-        title,
-        body,
-        date,
-        data: notificationData,
-      });
+      const nid = await scheduleAppointmentReminder({ title, body, date, data: notificationData });
+      return nid || identifier;
     }
   }
 
@@ -161,32 +200,6 @@ export class AlarmSchedulerEngine {
    * @param elementId ID del elemento
    * @returns Número de alarmas canceladas
    */
-  async cancelAlarmsForElement(type: 'medication' | 'appointment', elementId: string): Promise<number> {
-    try {
-      console.log('[AlarmSchedulerEngine] Cancelando alarmas para elemento:', type, elementId);
-
-      const identifiersToCancel: string[] = [];
-      
-      // Buscar alarmas que coincidan con el elemento
-      for (const [identifier, alarm] of this.scheduledAlarms) {
-        if (alarm.config.type === type && alarm.config.id === elementId) {
-          identifiersToCancel.push(identifier);
-        }
-      }
-
-      if (identifiersToCancel.length === 0) {
-        console.log('[AlarmSchedulerEngine] No se encontraron alarmas para cancelar');
-        return 0;
-      }
-
-      return await this.cancelScheduledBatch(identifiersToCancel);
-
-    } catch (error) {
-      console.error('[AlarmSchedulerEngine] Error cancelando alarmas para elemento:', error);
-      throw error;
-    }
-  }
-
   /**
    * Cancela un lote de alarmas programadas
    * @param identifiers Array de identificadores a cancelar
@@ -231,20 +244,22 @@ export class AlarmSchedulerEngine {
    * @param elementId ID del elemento
    * @returns Número de alarmas canceladas
    */
-  async cancelAlarmsForElement(type: string, elementId: string): Promise<number> {
+  async cancelAlarmsForElement(type: 'medication' | 'appointment' | 'treatment', elementId: string): Promise<number> {
     try {
+      console.log('[AlarmSchedulerEngine] Cancelando alarmas para elemento:', type, elementId);
       const identifiersToCancel: string[] = [];
-      
       for (const [identifier, scheduledAlarm] of this.scheduledAlarms) {
         if (scheduledAlarm.config.type === type && scheduledAlarm.config.id === elementId) {
           identifiersToCancel.push(identifier);
         }
       }
-
+      if (identifiersToCancel.length === 0) {
+        console.log('[AlarmSchedulerEngine] No se encontraron alarmas para cancelar');
+        return 0;
+      }
       return await this.cancelScheduledBatch(identifiersToCancel);
-
     } catch (error) {
-      console.error('[AlarmSchedulerEngine] Error cancelando alarmas del elemento:', error);
+      console.error('[AlarmSchedulerEngine] Error cancelando alarmas para elemento:', error);
       throw error;
     }
   }
@@ -267,6 +282,30 @@ export class AlarmSchedulerEngine {
     return Array.from(this.scheduledAlarms.values()).filter(
       alarm => alarm.config.type === type && alarm.config.id === elementId
     );
+  }
+
+  /**
+   * Cancela una sola ocurrencia (la más cercana a una fecha objetivo) para soportar snooze
+   * @param type Tipo de elemento
+   * @param elementId ID del elemento
+   * @param originalScheduledAt Fecha original aproximada que se desea posponer
+   * @returns true si se canceló alguna
+   */
+  async cancelSingleOccurrence(type: string, elementId: string, originalScheduledAt: Date): Promise<boolean> {
+    try {
+      const alarms = this.getAlarmsForElement(type, elementId);
+      if (alarms.length === 0) return false;
+      // Buscar la alarma cuyo scheduledDate sea >= ahora y más cercana a originalScheduledAt
+      const target = alarms
+        .filter(a => a.scheduledDate >= new Date())
+        .sort((a, b) => Math.abs(a.scheduledDate.getTime() - originalScheduledAt.getTime()) - Math.abs(b.scheduledDate.getTime() - originalScheduledAt.getTime()))[0];
+      if (!target) return false;
+      await this.cancelScheduledBatch([target.identifier]);
+      return true;
+    } catch (err) {
+      console.warn('[AlarmSchedulerEngine] Error cancelando ocurrencia única:', err);
+      return false;
+    }
   }
 
   /**
@@ -303,7 +342,7 @@ export class AlarmSchedulerEngine {
       console.log('[AlarmSchedulerEngine] Reprogramando alarmas para:', config.name);
 
       // Cancelar alarmas existentes
-      await this.cancelAlarmsForElement(config.type, config.id);
+  await this.cancelAlarmsForElement(config.type as any, config.id);
 
       // Programar nuevas alarmas
       return await this.scheduleAlarmsFromConfig(config, maxOccurrences);

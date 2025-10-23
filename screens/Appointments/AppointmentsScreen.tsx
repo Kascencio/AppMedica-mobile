@@ -18,6 +18,7 @@ import AlarmScheduler from '../../components/AlarmScheduler';
 import { getExistingAlarmsForElement } from '../../lib/alarmHelper';
 import COLORS from '../../constants/colors';
 import { GLOBAL_STYLES, MEDICAL_STYLES } from '../../constants/styles';
+import { MEDICAL_SPECIALTIES } from '../../constants/medicalSpecialties';
 
 const appointmentSchema = z.object({
   doctorName: z.string().min(1, 'Obligatorio'),
@@ -32,38 +33,6 @@ const appointmentSchema = z.object({
 
 type AppointmentForm = z.infer<typeof appointmentSchema>;
 
-// Opciones de especialidades médicas
-const MEDICAL_SPECIALTIES = [
-  { value: '', label: 'Seleccionar especialidad' },
-  { value: 'Cardiology', label: 'Cardiología' },
-  { value: 'Dermatology', label: 'Dermatología' },
-  { value: 'Endocrinology', label: 'Endocrinología' },
-  { value: 'Gastroenterology', label: 'Gastroenterología' },
-  { value: 'General Medicine', label: 'Medicina General' },
-  { value: 'Gynecology', label: 'Ginecología' },
-  { value: 'Hematology', label: 'Hematología' },
-  { value: 'Infectious Diseases', label: 'Enfermedades Infecciosas' },
-  { value: 'Internal Medicine', label: 'Medicina Interna' },
-  { value: 'Nephrology', label: 'Nefrología' },
-  { value: 'Neurology', label: 'Neurología' },
-  { value: 'Oncology', label: 'Oncología' },
-  { value: 'Ophthalmology', label: 'Oftalmología' },
-  { value: 'Orthopedics', label: 'Ortopedia' },
-  { value: 'Otolaryngology', label: 'Otorrinolaringología' },
-  { value: 'Pediatrics', label: 'Pediatría' },
-  { value: 'Pulmonology', label: 'Neumología' },
-  { value: 'Psychiatry', label: 'Psiquiatría' },
-  { value: 'Radiology', label: 'Radiología' },
-  { value: 'Rheumatology', label: 'Reumatología' },
-  { value: 'Urology', label: 'Urología' },
-  { value: 'Emergency Medicine', label: 'Medicina de Emergencias' },
-  { value: 'Family Medicine', label: 'Medicina Familiar' },
-  { value: 'Physical Therapy', label: 'Fisioterapia' },
-  { value: 'Nutrition', label: 'Nutrición' },
-  { value: 'Psychology', label: 'Psicología' },
-  { value: 'Dentistry', label: 'Odontología' },
-  { value: 'Other', label: 'Otra especialidad' }
-];
 
 export default function AppointmentsScreen() {
   const { appointments, loading, error, getAppointments, createAppointment, updateAppointment, deleteAppointment, scheduleAppointmentAlarms, cancelAppointmentAlarms, rescheduleAppointmentAlarms } = useAppointments();
@@ -354,6 +323,7 @@ export default function AppointmentsScreen() {
         <View style={GLOBAL_STYLES.row}>
           <MaterialIcons name="event" size={15} color={COLORS.medical.appointment} style={GLOBAL_STYLES.icon} />
           <Text style={[GLOBAL_STYLES.sectionTitle, { marginBottom: 0 }]}>{item.title}</Text>
+          {/* Badge 'Pendiente' removido según solicitud */}
         </View>
         <View style={GLOBAL_STYLES.row}>
           <TouchableOpacity 

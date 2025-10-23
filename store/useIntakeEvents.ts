@@ -27,14 +27,20 @@ interface IntakeEventsState {
   events: IntakeEvent[];
   loading: boolean;
   error: string | null;
-  getEvents: () => Promise<void>;
+  getEvents: (patientIdOverride?: string) => Promise<void>;
   registerEvent: (data: Omit<IntakeEvent, 'id' | 'at'>) => Promise<void>;
+  forceIntakeEventsRefresh: (patientId?: string) => Promise<void>;
 }
 
 export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
   events: [],
   loading: false,
   error: null,
+
+  forceIntakeEventsRefresh: async (patientId?: string) => {
+    console.log('[useIntakeEvents] Forzando actualización de eventos de ingesta...');
+    await get().getEvents(patientId);
+  },
 
   getEvents: async (patientIdOverride?: string) => {
     console.log('[useIntakeEvents] ========== INICIO getEvents ==========');
@@ -117,8 +123,12 @@ export const useIntakeEvents = create<IntakeEventsState>((set, get) => ({
           } else if (res.status === 404) {
             console.log('[useIntakeEvents] No hay eventos disponibles (404)');
             // Cargar solo eventos offline
-            const offlineEvents = await localDB.getIntakeEvents(profile.id);
-            set({ events: offlineEvents });
+            if (profile?.id) {
+              const offlineEvents = await localDB.getIntakeEvents(profile.id);
+              set({ events: offlineEvents });
+            } else {
+              set({ events: [] });
+            }
             return;
           } else {
             console.log('[useIntakeEvents] Error de API:', res.status, res.statusText);

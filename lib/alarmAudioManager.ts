@@ -58,13 +58,13 @@ export class AlarmAudioManager {
       // Configurar audio
       await this.configureAudio();
 
-      // Cargar y reproducir sonido
+      // Cargar y reproducir sonido con volumen inicial adecuado
       const { sound } = await Audio.Sound.createAsync(
         require('../assets/alarm.mp3'),
         {
           shouldPlay: true,
           isLooping: true,
-          volume: 0.0,
+          volume: 0.3, // Iniciar con volumen audible inmediato
           rate: 1.0,
           shouldCorrectPitch: true,
         }
@@ -73,22 +73,27 @@ export class AlarmAudioManager {
       this.currentSound = sound;
       this.isPlaying = true;
 
-      // Iniciar rampa de volumen 0 -> 1.0 en ~45s
+      // Rampa de volumen más rápida: 0.3 -> 1.0 en 15s para escalada gradual pero audible
       try {
         if (this.volumeRampInterval) {
           clearInterval(this.volumeRampInterval);
           this.volumeRampInterval = null;
         }
-        const totalSteps = 30; // 30 pasos
-        const stepMs = 1500; // 1.5s por paso => 45s total
+        const totalSteps = 10; // 10 pasos
+        const stepMs = 1500; // 1.5s por paso => 15s total
+        const initialVolume = 0.3;
+        const targetVolume = 1.0;
+        const volumeIncrement = (targetVolume - initialVolume) / totalSteps;
         let step = 0;
+        
         this.volumeRampInterval = setInterval(async () => {
           try {
             if (!this.isPlaying || !this.currentSound) return;
-            const target = Math.min(1.0, (step + 1) / totalSteps);
-            await this.currentSound.setVolumeAsync(target);
             step++;
-            if (target >= 1.0 || step >= totalSteps) {
+            const currentVolume = Math.min(targetVolume, initialVolume + (volumeIncrement * step));
+            await this.currentSound.setVolumeAsync(currentVolume);
+            
+            if (currentVolume >= targetVolume || step >= totalSteps) {
               if (this.volumeRampInterval) {
                 clearInterval(this.volumeRampInterval);
                 this.volumeRampInterval = null;

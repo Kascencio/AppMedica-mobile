@@ -90,6 +90,7 @@ export interface Medication {
   patientProfileId: string;
   name: string;
   dosage: string;
+  type: string; // Changed to non-optional
   frequency: string;
   instructions?: string;
   startDate?: string;

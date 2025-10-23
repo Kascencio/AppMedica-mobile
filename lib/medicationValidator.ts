@@ -56,9 +56,16 @@ export function validateMedication(data: MedicationData): MedicationValidationRe
     }
   }
 
-  // Validar tipo
-  if (data.type && !['ORAL', 'INJECTION', 'TOPICAL', 'INHALATION', 'SUBLINGUAL'].includes(data.type.toUpperCase())) {
-    errors.push('El tipo de medicamento no es válido');
+  // Validar tipo (aceptar variaciones comunes)
+  if (data.type) {
+    const validTypes = [
+      'ORAL', 'INJECTION', 'INJECTABLE', 'TOPICAL', 'INHALATION', 'SUBLINGUAL',
+      // También aceptar español por si acaso
+      'ORAL', 'INYECTABLE', 'TÓPICO', 'INHALACIÓN', 'SUBLINGUAL'
+    ];
+    if (!validTypes.includes(data.type.toUpperCase())) {
+      errors.push('El tipo de medicamento no es válido');
+    }
   }
 
   // Validar frecuencia
